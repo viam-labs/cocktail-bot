@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.viam.com/rdk/data"
+	"go.viam.com/test"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
 )
@@ -14,9 +15,7 @@ import (
 func TestReadingsEmpty(t *testing.T) {
 	s := &orderSensor{}
 	_, err := s.Readings(context.Background(), nil)
-	if !errors.Is(err, data.ErrNoCaptureToStore) {
-		t.Fatalf("want ErrNoCaptureToStore, got %v", err)
-	}
+	test.That(t, errors.Is(err, data.ErrNoCaptureToStore), test.ShouldBeTrue)
 }
 
 func TestPushAndRead(t *testing.T) {
@@ -31,21 +30,13 @@ func TestPushAndRead(t *testing.T) {
 		EndedAt:   end,
 	})
 	got, err := s.Readings(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("Readings err: %v", err)
-	}
-	if got["order_id"] != "o1" {
-		t.Errorf("order_id: want o1, got %v", got["order_id"])
-	}
-	if got["drink"] != "negroni" {
-		t.Errorf("drink: want negroni, got %v", got["drink"])
-	}
-	if got["status"] != "succeeded" {
-		t.Errorf("status: want succeeded, got %v", got["status"])
-	}
-	if _, err := s.Readings(context.Background(), nil); !errors.Is(err, data.ErrNoCaptureToStore) {
-		t.Fatalf("after pop want ErrNoCaptureToStore, got %v", err)
-	}
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got["order_id"], test.ShouldEqual, "o1")
+	test.That(t, got["drink"], test.ShouldEqual, "negroni")
+	test.That(t, got["status"], test.ShouldEqual, "succeeded")
+
+	_, err = s.Readings(context.Background(), nil)
+	test.That(t, errors.Is(err, data.ErrNoCaptureToStore), test.ShouldBeTrue)
 }
 
 func TestPushFailure(t *testing.T) {
@@ -60,16 +51,8 @@ func TestPushFailure(t *testing.T) {
 		EndedAt:    time.Now().Add(time.Second),
 	})
 	got, err := s.Readings(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("Readings err: %v", err)
-	}
-	if got["status"] != "failed" {
-		t.Errorf("status: want failed, got %v", got["status"])
-	}
-	if got["error_message"] != "pour timed out" {
-		t.Errorf("error_message: want 'pour timed out', got %v", got["error_message"])
-	}
-	if got["failed_step"] != "pour_gin" {
-		t.Errorf("failed_step: want pour_gin, got %v", got["failed_step"])
-	}
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got["status"], test.ShouldEqual, "failed")
+	test.That(t, got["error_message"], test.ShouldEqual, "pour timed out")
+	test.That(t, got["failed_step"], test.ShouldEqual, "pour_gin")
 }
