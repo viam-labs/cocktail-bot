@@ -11,5 +11,14 @@
       "short_description": "Orchestrates a cocktail-making robot through pour, mix, and serve."
     }
   ],
-  "entrypoint": "bin/cocktail-bot"
+  "entrypoint": "bin/cocktail-bot",
+  "build": {
+    "build": "make module.tar.gz",
+    "setup": "make setup",
+    "path": "module.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  }
 }
