@@ -16,6 +16,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   compute-version:
     runs-on: ubuntu-24.04
@@ -51,11 +55,15 @@ jobs:
   publish-module:
     needs: [compute-version]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - name: Build and upload to Viam Registry
-        uses: viamrobotics/build-action@v1
+        # viamrobotics/build-action@v1.7.2 pinned to SHA; floating @v1 was
+        # resubmitting duplicate builds for the same version, racing itself
+        # on the Viam build service cache lock.
+        uses: viamrobotics/build-action@68c0a3cef8247f2324a6de7107b09fa9e9ef8b49
         with:
           version: ${{ needs.compute-version.outputs.version }}
           ref: ${{ github.sha }}
