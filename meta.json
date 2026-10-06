@@ -9,6 +9,11 @@
       "api": "rdk:service:generic",
       "model": "viam:cocktail-bot:bartender",
       "short_description": "Orchestrates a cocktail-making robot through pour, mix, and serve."
+    },
+    {
+      "api": "rdk:component:sensor",
+      "model": "viam:cocktail-bot:order-sensor",
+      "short_description": "Queues one reading per order attempt for capture by Data Management."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
