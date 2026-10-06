@@ -15,4 +15,10 @@ test:
 setup:
 	go mod tidy
 
-.PHONY: lint test setup
+module.tar.gz: meta.json $(MODULE_BINARY)
+	strip $(MODULE_BINARY)
+	tar czf $@ meta.json README.md $(MODULE_BINARY)
+
+module: test module.tar.gz
+
+.PHONY: lint test setup module

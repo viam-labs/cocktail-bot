@@ -1,0 +1,119 @@
+name: Deploy module
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version tag (e.g. v0.0.1)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump rc tag
+        id: bump
+        if: github.event_name == 'push'
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: __none__
+          pre_release_branches: main
+          append_to_pre_release_tag: rc
+          default_bump: patch
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${{ steps.bump.outputs.new_tag }}"
+          else
+            VERSION="${{ inputs.version || github.ref_name }}"
+          fi
+          echo "Resolved version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  publish-module:
+    needs: [compute-version]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and upload to Viam Registry
+        uses: viamrobotics/build-action@v1
+        with:
+          version: ${{ needs.compute-version.outputs.version }}
+          ref: ${{ github.sha }}
+          key-id: ${{ secrets.viam_key_id }}
+          key-value: ${{ secrets.viam_key_secret }}
+          token: ${{ github.token }}
+
+  send-slack-msg:
+    name: Send Slack Message
+    needs: [compute-version, publish-module]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Generate metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.compute-version.outputs.version }}"
+          ACTOR="${{ github.actor }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            KIND="rc build"
+            LINK_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+            LINK_LABEL="commit ${GITHUB_SHA:0:7}"
+          else
+            KIND="release"
+            LINK_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}"
+            LINK_LABEL="Release ${VERSION}"
+          fi
+          if [ "${{ needs.publish-module.result }}" = "success" ]; then
+            RESULT="succeeded :white_check_mark:"
+          else
+            RESULT="failed :x:"
+          fi
+          {
+            echo "version=$VERSION"
+            echo "kind=$KIND"
+            echo "actor=$ACTOR"
+            echo "link_url=$LINK_URL"
+            echo "link_label=$LINK_LABEL"
+            echo "result=$RESULT"
+            echo "module_result=${{ needs.publish-module.result }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "Deploy ${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.kind }}) ${{ steps.meta.outputs.result }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Deploy *${{ steps.meta.outputs.version }}* (${{ steps.meta.outputs.kind }}) ${{ steps.meta.outputs.result }}\n\tby *${{ steps.meta.outputs.actor }}*\n\t<${{ steps.meta.outputs.link_url }}|${{ steps.meta.outputs.link_label }}>\n\tModule: ${{ steps.meta.outputs.module_result }}\n\t<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow run>"
+                  }
+                }
+              ]
+            }
