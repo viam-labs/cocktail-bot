@@ -1,0 +1,15 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam:cocktail-bot",
+  "visibility": "public",
+  "url": "https://github.com/viam-labs/cocktail-bot",
+  "description": "Cocktail-making robot orchestration",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "viam:cocktail-bot:bartender",
+      "short_description": "Orchestrates a cocktail-making robot through pour, mix, and serve."
+    }
+  ],
+  "entrypoint": "bin/cocktail-bot"
+}
