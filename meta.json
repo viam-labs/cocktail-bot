@@ -19,6 +19,11 @@
       "api": "rdk:service:vision",
       "model": "viam:cocktail-bot:glass-finder",
       "short_description": "Locates glasses in 3D by lifting 2D detector boxes into the camera point cloud."
+    },
+    {
+      "api": "rdk:component:switch",
+      "model": "viam:cocktail-bot:pose-switcher",
+      "short_description": "Stores named arm poses with optional baseline-relative definitions; bartender reads them via get_pose_by_name."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
