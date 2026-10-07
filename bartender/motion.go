@@ -188,9 +188,9 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	return b.moveToResolvedPose(ctx, pd, label, nil)
 }
 
-// linear = straight-line through space; critical for grabbing bottles (any
-// lateral drift risks knocking the bottle). 1 mm / 5° tolerance keeps the
-// planner from refusing to plan a tight approach.
+// Straight-line through space; the empty-handed grab/release paths that risk
+// knocking the bottle laterally. For moves WITH a bottle in hand, use
+// linearCarryToPose so the no-spill orientation constraint is applied too.
 func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
@@ -204,6 +204,24 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 }
 
 const noSpillOrientationToleranceDegs = 15
+
+// Straight-line + no-spill constraint. For lifting/lowering a bottle held in the
+// gripper: linear so the planner doesn't swing the bottle sideways, orientation
+// so the planner doesn't rotate the gripper mid-ascent and tip the bottle.
+func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":linear-carry"
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1, OrientationToleranceDegs: 5}},
+		OrientationConstraint: []motionplan.OrientationConstraint{
+			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
+		},
+	}
+	return b.moveToResolvedPose(ctx, pd, label, constraints)
+}
 
 // Carry = plan-wide orientation constraint; gripper stays within ~15° of its
 // starting pose for the whole move so a held bottle doesn't slosh in transit.
