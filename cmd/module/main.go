@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/viam-labs/cocktail-bot/bartender"
 	"github.com/viam-labs/cocktail-bot/glassfinder"
+	"github.com/viam-labs/cocktail-bot/maintenancesensor"
 	"github.com/viam-labs/cocktail-bot/ordersensor"
 	"github.com/viam-labs/cocktail-bot/poseswitcher"
 
@@ -18,6 +19,7 @@ func main() {
 	module.ModularMain(
 		resource.APIModel{API: generic.API, Model: bartender.Model},
 		resource.APIModel{API: sensor.API, Model: ordersensor.Model},
+		resource.APIModel{API: sensor.API, Model: maintenancesensor.Model},
 		resource.APIModel{API: vision.API, Model: glassfinder.Model},
 		resource.APIModel{API: toggleswitch.API, Model: poseswitcher.Model},
 	)
