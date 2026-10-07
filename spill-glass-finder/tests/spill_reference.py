@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 
+from spill_glass_finder import model
+
 SPILL_GLASSLOC = Path(os.environ.get("SPILL_REPO", "/Users/robin/bov/SPILL")) / "glassloc" / "glassloc.py"
 SPILL_GLASS_DETECTOR = SPILL_GLASSLOC.with_name("GlassDetector.py")
 
@@ -91,6 +93,18 @@ def load_original_glass_detector() -> types.ModuleType:
             "airo_camera_toolkit.utils.image_converter", ImageConverter=object
         ),
         "airo_typing": _airo_typing(),
+        # keypoint_detection is not installed; the original's calls resolve to the vendored copies.
+        "keypoint_detection": _module("keypoint_detection"),
+        "keypoint_detection.utils": _module("keypoint_detection.utils"),
+        "keypoint_detection.utils.heatmap": _module(
+            "keypoint_detection.utils.heatmap",
+            get_keypoints_from_heatmap_batch_maxpool=model.get_keypoints_from_heatmap_batch_maxpool,
+        ),
+        "keypoint_detection.utils.load_checkpoints": _module(
+            "keypoint_detection.utils.load_checkpoints",
+            load_from_checkpoint=model.load_from_checkpoint,
+            get_model_from_wandb_checkpoint=None,
+        ),
     }
     return _exec_with_stubs(SPILL_GLASS_DETECTOR, "spill_original_glass_detector", stubs)
 

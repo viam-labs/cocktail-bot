@@ -24,14 +24,15 @@
 # SOFTWARE.
 #
 # Changes: YOLO is replaced by an injected detector with the same call/result shape (the robot's vision service),
-# CPU instead of CUDA, airo imports removed.
+# CPU instead of CUDA, airo imports removed, keypoint_detection's loader and peak extraction come from the vendored
+# copies in ..model (the package is not on PyPI and its loader needs torch 2.2).
 import numpy as np
 from typing import List
 import torch
 from torchvision.transforms.functional import to_tensor
 
-from keypoint_detection.utils.heatmap import get_keypoints_from_heatmap_batch_maxpool
-from keypoint_detection.utils.load_checkpoints import get_model_from_wandb_checkpoint, load_from_checkpoint
+from ..model import get_keypoints_from_heatmap_batch_maxpool
+from ..model import load_from_checkpoint
 
 class GlassDetector:
     def __init__(self, classes: List[str], keypoint_detector: str, detector) -> None:

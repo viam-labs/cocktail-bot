@@ -14,7 +14,7 @@ Per call the module takes one color image, one point cloud and the intrinsics fr
 2. SPILL's `localize_glass` does the rest:
    - It gets 2D boxes from `detector_name` (the robot's `yolov8` service, standing in for SPILL's in-process YOLO).
    - It pads each box by 64/256, crops, resizes to 256x256 and runs SPILL's keypoint model (`wild_glasses.ckpt`,
-     `keypoint_detection` package, CPU) on the BGR crop.
+     vendored MaxViT-UNet, CPU) on the BGR crop.
    - From the four structural keypoints it solves radius, height and tilt with SPILL's fixed-point loop and three
      `fsolve` stages, against the table plane.
    - It drops duplicate glasses and sorts the rest SPILL's way.
@@ -134,40 +134,67 @@ Line-level changes, `glassloc.py`:
 - `.cuda()` becomes `.cpu()`, and the `device` default changes from `"cuda"` to `"cpu"`.
 - The `OpenCVIntImageType` hint becomes `np.ndarray`.
 
-The keypoint model comes from the real `keypoint_detection` package (tlpss/keypoint-detection, pinned to commit
-`778f087`). It is loaded with its `load_from_checkpoint`, and peaks come from `get_keypoints_from_heatmap_batch_maxpool`
-with the package defaults.
+- `from keypoint_detection.utils.heatmap import get_keypoints_from_heatmap_batch_maxpool` and
+  `from keypoint_detection.utils.load_checkpoints import get_model_from_wandb_checkpoint, load_from_checkpoint`
+  become imports of the vendored copies in `spill_glass_finder/model.py` (`get_model_from_wandb_checkpoint` is
+  unused upstream and dropped).
 
-## Dependencies
+## Keypoint model (vendored, not the package)
 
-`keypoint_detection` is not on PyPI, and its loader needs an old stack:
-- **torch 2.2.2 / torchvision 0.17.2.** With torch 2.14 / torchvision 0.29, the model's feature extractor no longer
-  persists MaxViT's `relative_position_index` buffers, so the strict `load_state_dict` of `wild_glasses.ckpt`
-  fails. This happens even with timm 0.9.16.
-- **timm 0.9.16, pytorch-lightning 1.9.4, numpy<2 and scipy<1.15**, to match torch 2.2.
-- **setuptools<81.** `lightning_fabric` imports `pkg_resources`.
-- **huggingface_hub<0.30.** timm 0.9.16's hub import fails on 2.1.1; 0.29.3 works.
+`src/spill_glass_finder/model.py` vendors the MaxViT-UNet detector, `load_from_checkpoint` and
+`get_keypoints_from_heatmap_batch_maxpool` from [tlpss/keypoint-detection](https://github.com/tlpss/keypoint-detection)
+(MIT). Peak extraction keeps the package defaults (max 20 peaks, min distance 1 px, threshold 0.01). The package is
+not used directly, for three reasons:
+- It isn't on PyPI and pins `pytorch-lightning<=1.9.4`, `wandb` and `fiftyone`.
+- Its strict `load_state_dict` of `wild_glasses.ckpt` only works on the old torch 2.2.2 / torchvision 0.17.2 stack.
+  Current torch no longer persists MaxViT's `relative_position_index` buffers inside the feature extractor.
+- It builds the backbone with `pretrained=True`, which downloads ImageNet weights from the Hugging Face Hub on
+  every fresh machine.
 
-`setup.sh` installs `keypoint-detection` from git with `--no-deps`, which needs `git` on the machine. Its
-training-only pins (fiftyone, albumentations, pre-commit, pytest) are skipped. Its load path imports wandb,
-pytorch-lightning, torchmetrics, scikit-image and matplotlib, so those are in `requirements.txt`.
+The vendored loader works around these as follows:
+- It reads the checkpoint with `torch.load(weights_only=True)`, so no pickled code runs.
+- It builds the backbone with `pretrained=False`.
+- It drops the checkpoint's `relative_position_index` buffers, but only after checking that they equal the ones the
+  current model recomputes.
 
-`load_from_checkpoint` builds the MaxViT backbone with `pretrained=True`. On first start, timm therefore downloads
-the ImageNet `maxvit_nano_rw_256` weights from the Hugging Face Hub, which the checkpoint then overwrites. A machine
-needs internet on first start, or a pre-populated `~/.cache/huggingface`.
+I checked the vendored loader against the real package (torch 2.2.2 stack) on the three real-image fixtures. The
+keypoints and errors vs labels were identical.
 
-The checkpoint itself also loads with `torch.load(weights_only=True)`. Upstream's `load_from_checkpoint` does a full
-pickle load, which is the torch 2.2 default.
+## Channel order
+
+SPILL's `localize_glass` takes an `OpenCVIntImageType` (BGR) and feeds it to `to_tensor` unchanged, so the module
+converts the decoded RGB image to BGR right after decoding. The model was trained on RGB (the package's dataset
+loader uses `skimage.io.imread`), so I checked whether the order matters. On the 310 Glasses-in-the-Wild validation
+crops with their labelled keypoints:
+
+| order | all 4 found | mean error bf / tf / tl / tr (px) | median error (px) |
+|---|---|---|---|
+| rgb | 308/310 | 4.03 / 2.58 / 1.92 / 2.26 | 2.58 / 1.79 / 1.45 / 1.37 |
+| bgr | 308/310 | 4.20 / 2.65 / 1.88 / 2.25 | 2.88 / 1.72 / 1.41 / 1.40 |
+
+The paired difference (rgb - bgr) is -0.04 ± 0.06 px (SEM, n = 1238). There is no significant difference, so
+following SPILL's BGR costs nothing. That comparison used min peak distance 5; the module uses SPILL's default of 1,
+which only changes which border pixels are excluded.
+
+## Tilt is not observable
+
+SPILL pins θ ≈ 3° through the prior in `opt_shape`: its second equation is `(3° - θ)²/2 = 0`. The four keypoints
+can't observe θ. top_front, top_left and top_right all lie on the horizontal rim circle, and scaling that circle
+about the camera center keeps their projections. For every scale, some (height, θ) still puts the base front on
+its ray, so a one-parameter family of glasses reprojects exactly.
+
+If a real glass's wall angle differs from 3° by Δθ, the rim center moves about h·tan(Δθ) horizontally. That is
+about 8 mm for a 150 mm glass at Δθ = 3°. Height moves too, by about 2-28 mm in a synthetic sweep, more for tall
+glasses and steep views. No code works around this.
 
 ## CPU latency
 
-Measured on an Apple M2 Pro with torch 2.2.2 CPU and 10 threads:
+Measured on an Apple M2 Pro with torch 2.14 CPU and 6 threads:
 
 | stage | time |
 |---|---|
-| import of the keypoint_detection stack | ~2.5 s, once |
-| checkpoint load | ~1.1 s, once |
-| keypoint model per glass (SPILL runs one crop at a time) | ~100 ms |
+| checkpoint load | ~0.9 s, once |
+| keypoint model per glass (SPILL runs one crop at a time) | ~140 ms |
 | `localize_table`, 290k points | ~9 ms |
 | `localize_glass` geometry per glass | ~2 ms |
 
@@ -176,7 +203,7 @@ Expect a robot's ARM CPU to be several times slower.
 ## Development
 
 ```bash
-./setup.sh                     # .venv with CPU torch and the pinned keypoint_detection stack
+./setup.sh                     # .venv with CPU torch
 scripts/fetch_weights.sh       # weights/wild_glasses.ckpt (gitignored)
 .venv/bin/python -m pip install pytest
 .venv/bin/python -m pytest     # the real-model test skips without weights; the equivalence tests without a SPILL checkout
@@ -189,10 +216,7 @@ scripts/fetch_weights.sh       # weights/wild_glasses.ckpt (gitignored)
 
 ## Known limitations (upstream behavior, kept as is)
 
-- Tilt is not observable from the four keypoints. Scaling the rim circle about the camera keeps all three rim
-  keypoints in place, and some (height, tilt) still fits the base. SPILL's last `fsolve` has `θ − 3°` as one of its
-  two equations, so tilt effectively comes out at 3°. A real wall angle off by Δθ moves the rim center about h·tan(Δθ)
-  horizontally.
+- Tilt is assumed (≈3°), not measured; see above.
 - `keypoints_o` is built from integer heatmap peaks, so mapping it back to the image truncates to whole pixels.
 - If a crop has no peak at all in channels 0–3, `keypoints_o[:, 0]` raises IndexError and the whole call fails. The
   0.01 peak threshold makes this rare.
