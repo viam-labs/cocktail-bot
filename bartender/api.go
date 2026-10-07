@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
 )
@@ -49,6 +50,7 @@ func (b *bartender) handleExecuteAction(ctx context.Context, raw any) (map[strin
 	if err != nil {
 		return nil, err
 	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	duration, err := b.moveArmToPose(ctx, pose)
 	if err != nil {
 		return nil, err
