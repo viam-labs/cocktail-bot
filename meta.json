@@ -14,6 +14,11 @@
       "api": "rdk:component:sensor",
       "model": "viam:cocktail-bot:order-sensor",
       "short_description": "Queues one reading per order attempt for capture by Data Management."
+    },
+    {
+      "api": "rdk:service:vision",
+      "model": "viam:cocktail-bot:glass-finder",
+      "short_description": "Locates glasses in 3D by lifting 2D detector boxes into the camera point cloud."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
