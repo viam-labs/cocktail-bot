@@ -55,7 +55,7 @@ func init() {
 	f.IntVar(&pourGlassFlags.PourMs, "pour-ms", 0, "[required unless --find-only] pour duration in ms")
 	f.BoolVar(&pourGlassFlags.FindOnly, "find-only", false, "search for the glass and print its position without touching the bottle")
 	f.Float64Var(&pourGlassFlags.MouthOffsetMM, "mouth-offset-mm", 100,
-		"horizontal distance from the gripper to the bottle mouth while pouring, along the side the bottle leans; negative flips the side (default: bartender's pour_mouth_offset_mm)")
+		"horizontal distance from the gripper to the bottle mouth while pouring, toward the side the top of the bottle tips; negative flips the side (default: bartender's pour_mouth_offset_mm)")
 }
 
 func (f *PourGlassFlags) validate() error {

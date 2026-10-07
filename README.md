@@ -50,7 +50,7 @@ Finding the glass:
 2. Aim point = where the camera's optical axis meets the table (`glass_table_z_mm`, default 0).
 3. If no glass is visible, lower the camera a few millimetres at a time (`glass_search_lower_mm`, default `[0, 5, 10]`), keeping x, y and re-aiming at the same point, waiting `glass_search_settle_ms` (1000) after each move. The first view with a glass wins; unreachable views are skipped.
 
-Pouring: the bottle mouth is assumed to sit `pour_mouth_offset_mm` (default 100) from the gripper, toward the side the bottle leans when going from the saved `pour-approach` to `pour-tilt`. Both saved poses are translated in world x, y so the mouth ends up above the glass, keeping the saved height and tilt. A negative offset flips the side. If the pour would move more than `max_pour_offset_mm` (300) from the saved `pour-tilt`, the command fails before the bottle is picked up.
+Pouring: the bottle mouth is assumed to sit `pour_mouth_offset_mm` (default 100) from the gripper, toward the side the top of the bottle tips when the gripper rotates from the saved `pour-approach` to `pour-tilt`. Both saved poses are translated in world x, y so the mouth ends up above the glass, keeping the saved height and tilt. A negative offset flips the side. If the pour would move more than `max_pour_offset_mm` (300) from the saved `pour-tilt`, the command fails before the bottle is picked up.
 
 Bartender config:
 ```json
