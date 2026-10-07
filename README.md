@@ -48,7 +48,7 @@ Finds the glass with the wrist camera, picks up `--bottle`, pours `--pour-ms` in
 Finding the glass:
 1. Move to the saved `glass-look` pose (same pose switcher as `home`): where the camera looks from, not where the glass is.
 2. Aim point = where the camera's optical axis meets the table (`glass_table_z_mm`).
-3. If no glass is visible, move the camera around that point while keeping it aimed there: rotated around it (`glass_search_rotate_deg`, default `[0, 20, -20]`), then lower and more side-on (`glass_search_lower_deg`, default `[0, 15, 30]`). The first view with a glass wins; unreachable views are skipped.
+3. If no glass is visible, lower the camera a few millimetres at a time (`glass_search_lower_mm`, default `[0, 5, 10]`), keeping x, y and re-aiming at the same point, waiting `glass_search_settle_ms` (1000) after each move. The first view with a glass wins; unreachable views are skipped.
 
 Pouring: the saved `pour-approach` and `pour-tilt` poses are translated in world x, y from `pour_reference_glass` to the found glass, keeping the saved height and tilt. Glasses farther than `max_pour_offset_mm` (300) from the reference are rejected before the bottle is picked up.
 

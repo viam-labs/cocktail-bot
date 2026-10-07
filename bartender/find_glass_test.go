@@ -17,10 +17,6 @@ func testCamera() spatialmath.Pose {
 	return spatialmath.NewPose(r3.Vector{Z: 500}, &spatialmath.OrientationVector{OX: axis.X, OY: axis.Y, OZ: axis.Z})
 }
 
-func opticalAxis(p spatialmath.Pose) r3.Vector {
-	return spatialmath.Compose(p, spatialmath.NewPoseFromPoint(r3.Vector{Z: 1})).Point().Sub(p.Point())
-}
-
 func TestLookTarget(t *testing.T) {
 	target, err := lookTarget(testCamera(), 100)
 	test.That(t, err, test.ShouldBeNil)
@@ -36,46 +32,27 @@ func TestLookTargetRejectsBadViews(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 }
 
-func TestOrbitViewKeepsAimAndDistance(t *testing.T) {
+func TestLoweredViewKeepsAim(t *testing.T) {
 	cam := testCamera()
 	target, err := lookTarget(cam, 100)
 	test.That(t, err, test.ShouldBeNil)
-	dist := cam.Point().Distance(target)
 
-	for _, v := range []searchView{{0, 0}, {15, 0}, {30, 20}, {0, -20}} {
-		got := orbitView(cam, target, v.lowerDeg, v.rotateDeg)
-		test.That(t, got.Point().Distance(target), test.ShouldAlmostEqual, dist, 1e-6)
+	for _, lowerMM := range []float64{0, 5, 10} {
+		got := loweredView(cam, target, lowerMM)
+		want := cam.Point().Sub(r3.Vector{Z: lowerMM})
+		test.That(t, spatialmath.R3VectorAlmostEqual(got.Point(), want, 1e-9), test.ShouldBeTrue)
 		toTarget := target.Sub(got.Point()).Normalize()
 		test.That(t, opticalAxis(got).Normalize().Dot(toTarget), test.ShouldAlmostEqual, 1, 1e-9)
-		test.That(t, elevationDeg(got.Point(), target), test.ShouldAlmostEqual, 45-v.lowerDeg, 1e-6)
-
-		start := cam.Point().Sub(target)
-		end := got.Point().Sub(target)
-		rotated := math.Atan2(end.Y, end.X) - math.Atan2(start.Y, start.X)
-		test.That(t, wrapDeg(rotated*180/math.Pi), test.ShouldAlmostEqual, v.rotateDeg, 1e-6)
 	}
 }
 
-func wrapDeg(d float64) float64 {
-	return math.Atan2(math.Sin(d*math.Pi/180), math.Cos(d*math.Pi/180)) * 180 / math.Pi
-}
-
-func TestLoweredViewIsLowerAndFurther(t *testing.T) {
+func TestLoweredViewIsASmallRotation(t *testing.T) {
 	cam := testCamera()
 	target, _ := lookTarget(cam, 100)
-	got := orbitView(cam, target, 20, 0)
-	test.That(t, got.Point().Z, test.ShouldBeLessThan, cam.Point().Z)
-	test.That(t, target.X-got.Point().X, test.ShouldBeGreaterThan, target.X-cam.Point().X)
-}
-
-func TestSearchViewsOrderAndMinElevation(t *testing.T) {
-	cam := testCamera()
-	target, _ := lookTarget(cam, 100)
-	views := searchViews(cam, target, []float64{0, 15, 35}, []float64{0, 20, -20}, 15)
-	test.That(t, views, test.ShouldResemble, []searchView{
-		{0, 0}, {0, 20}, {0, -20},
-		{15, 0}, {15, 20}, {15, -20},
-	})
+	got := loweredView(cam, target, 10)
+	angle := spatialmath.QuatToR4AA(spatialmath.OrientationBetween(cam.Orientation(), got.Orientation()).Quaternion()).Theta
+	test.That(t, angle*180/math.Pi, test.ShouldBeLessThan, 2)
+	test.That(t, angle, test.ShouldBeGreaterThan, 0)
 }
 
 func TestBestGlassUsesFirstNonEmptyObject(t *testing.T) {

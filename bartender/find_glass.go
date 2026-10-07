@@ -17,31 +17,24 @@ import (
 const (
 	poseGlassLook = "glass-look"
 
-	defaultGlassSearchSettleMs = 500
-	minSearchElevationDeg      = 15.0
+	defaultGlassSearchSettleMs = 1000
 )
 
-var (
-	defaultGlassSearchLowerDeg  = []float64{0, 15, 30}
-	defaultGlassSearchRotateDeg = []float64{0, 20, -20}
-	worldUp                     = r3.Vector{Z: 1}
-)
+var defaultGlassSearchLowerMM = []float64{0, 5, 10}
 
 type foundGlass struct {
-	center    r3.Vector
-	label     string
-	lowerDeg  float64
-	rotateDeg float64
+	center  r3.Vector
+	label   string
+	lowerMM float64
 }
 
-type searchView struct {
-	lowerDeg  float64
-	rotateDeg float64
+func opticalAxis(cam spatialmath.Pose) r3.Vector {
+	return spatialmath.Compose(cam, spatialmath.NewPoseFromPoint(r3.Vector{Z: 1})).Point().Sub(cam.Point())
 }
 
 // lookTarget is where the camera's optical axis (+Z of the camera frame) meets the table plane.
 func lookTarget(cam spatialmath.Pose, tableZ float64) (r3.Vector, error) {
-	axis := spatialmath.Compose(cam, spatialmath.NewPoseFromPoint(r3.Vector{Z: 1})).Point().Sub(cam.Point())
+	axis := opticalAxis(cam)
 	if axis.Z > -0.1 {
 		return r3.Vector{}, errors.New("camera at glass-look does not point down at the table")
 	}
@@ -52,48 +45,24 @@ func lookTarget(cam spatialmath.Pose, tableZ float64) (r3.Vector, error) {
 	return cam.Point().Add(axis.Mul(t)), nil
 }
 
-func elevationDeg(cam, target r3.Vector) float64 {
-	d := cam.Sub(target)
-	return math.Atan2(d.Z, math.Hypot(d.X, d.Y)) * 180 / math.Pi
-}
-
-func rotateAbout(p spatialmath.Pose, center, axis r3.Vector, deg float64) spatialmath.Pose {
-	if deg == 0 {
-		return p
+// loweredView moves the camera straight down by lowerMM and re-aims it at target with the smallest
+// rotation, so the image roll stays as saved.
+func loweredView(cam spatialmath.Pose, target r3.Vector, lowerMM float64) spatialmath.Pose {
+	if lowerMM == 0 {
+		return cam
 	}
-	a := axis.Normalize()
-	rot := spatialmath.NewPoseFromOrientation(&spatialmath.R4AA{Theta: deg * math.Pi / 180, RX: a.X, RY: a.Y, RZ: a.Z})
-	toOrigin := spatialmath.NewPoseFromPoint(center.Mul(-1))
-	back := spatialmath.NewPoseFromPoint(center)
-	return spatialmath.Compose(back, spatialmath.Compose(rot, spatialmath.Compose(toOrigin, p)))
-}
-
-// orbitView moves the camera rigidly around target: lowerDeg swings it down and outward (more side-on),
-// rotateDeg swings it around the vertical through target. Rigid rotation keeps the optical axis on target.
-func orbitView(cam spatialmath.Pose, target r3.Vector, lowerDeg, rotateDeg float64) spatialmath.Pose {
-	horizontal := cam.Point().Sub(target)
-	horizontal.Z = 0
-	lowered := cam
-	if horizontal.Norm() > 1e-6 {
-		lowered = rotateAbout(cam, target, worldUp.Cross(horizontal), lowerDeg)
+	pos := cam.Point().Sub(r3.Vector{Z: lowerMM})
+	from := opticalAxis(cam).Normalize()
+	to := target.Sub(pos).Normalize()
+	axis := from.Cross(to)
+	angle := math.Atan2(axis.Norm(), from.Dot(to))
+	orientation := cam.Orientation()
+	if axis.Norm() > 1e-12 {
+		a := axis.Normalize()
+		reaim := spatialmath.NewPoseFromOrientation(&spatialmath.R4AA{Theta: angle, RX: a.X, RY: a.Y, RZ: a.Z})
+		orientation = spatialmath.Compose(reaim, spatialmath.NewPoseFromOrientation(cam.Orientation())).Orientation()
 	}
-	return rotateAbout(lowered, target, worldUp, rotateDeg)
-}
-
-// searchViews lists views nearest first: the saved view, then rotations at that height, then lower.
-// Views below minElevationDeg above the table are dropped.
-func searchViews(cam spatialmath.Pose, target r3.Vector, lowerDeg, rotateDeg []float64, minElevationDeg float64) []searchView {
-	startElevation := elevationDeg(cam.Point(), target)
-	var views []searchView
-	for _, l := range lowerDeg {
-		if startElevation-l < minElevationDeg {
-			continue
-		}
-		for _, r := range rotateDeg {
-			views = append(views, searchView{lowerDeg: l, rotateDeg: r})
-		}
-	}
-	return views
+	return spatialmath.NewPose(pos, orientation)
 }
 
 func cloudCentroid(pc pointcloud.PointCloud) (r3.Vector, bool) {
@@ -145,9 +114,9 @@ func (b *bartender) framePoseInWorld(ctx context.Context, frame string) (spatial
 	return tf.(*referenceframe.PoseInFrame).Pose(), nil
 }
 
-// findGlass goes to the saved glass-look pose and, until the glass finder sees a glass, moves the camera
-// around the spot it looks at: rotated around it, then lower and more side-on. The arm is left at the
-// view where the glass was found.
+// findGlass goes to the saved glass-look pose and, until the glass finder sees a glass, lowers the camera
+// a few millimetres at a time while keeping it aimed at the spot it looked at. The arm is left at the view
+// where the glass was found.
 func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 	if b.glassFinder == nil {
 		return foundGlass{}, errors.New("glass_finder_name is not configured")
@@ -172,10 +141,10 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 	}
 	b.logger.Infow("searching for glass", "look_target", target, "camera", camName)
 
-	for _, v := range searchViews(cam, target, b.cfg.glassSearchLowerDeg(), b.cfg.glassSearchRotateDeg(), minSearchElevationDeg) {
-		label := fmt.Sprintf("glass-search-lower%.0f-rotate%+.0f", v.lowerDeg, v.rotateDeg)
-		if v.lowerDeg != 0 || v.rotateDeg != 0 {
-			view := &poseData{pose: orbitView(cam, target, v.lowerDeg, v.rotateDeg), refFrame: referenceframe.World, componentName: camName}
+	for _, lowerMM := range b.cfg.glassSearchLowerMM() {
+		label := fmt.Sprintf("glass-search-lower%.0fmm", lowerMM)
+		if lowerMM != 0 {
+			view := &poseData{pose: loweredView(cam, target, lowerMM), refFrame: referenceframe.World, componentName: camName}
 			if _, err := b.moveToResolvedPose(ctx, view, label, nil, nil); err != nil {
 				b.logger.Warnw("skipping unreachable search view", "view", label, "err", err)
 				continue
@@ -191,7 +160,7 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 		}
 		if center, glassLabel, ok := bestGlass(objs); ok {
 			b.logger.Infow("found glass", "label", glassLabel, "x", center.X, "y", center.Y, "z", center.Z, "view", label)
-			return foundGlass{center: center, label: glassLabel, lowerDeg: v.lowerDeg, rotateDeg: v.rotateDeg}, nil
+			return foundGlass{center: center, label: glassLabel, lowerMM: lowerMM}, nil
 		}
 		b.logger.Infow("no glass in view", "view", label)
 	}

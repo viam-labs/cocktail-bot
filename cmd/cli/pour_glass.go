@@ -24,8 +24,8 @@ var pourGlassCmd = &cobra.Command{
 	Short: "Find the glass with the wrist camera, then pick up a bottle and pour into it",
 	Long: `Asks the bartender to find the glass and pour into it (DoCommand find_and_pour):
 
-  1. Move to the saved glass-look pose. If no glass is visible, move the camera around the
-     spot it looks at (rotated around it, then lower and more side-on) until one is found.
+  1. Move to the saved glass-look pose. If no glass is visible, lower the camera a few mm at a
+     time, still aimed at the same spot, until one is found.
   2. Read the glass's world (x, y) from the glass finder.
   3. Pick up --bottle, pour into the glass for --pour-ms, and put the bottle back.
 
@@ -100,8 +100,8 @@ func runPourGlass(flags PourGlassFlags) error {
 		return err
 	}
 	if glass, ok := res["glass"].(map[string]interface{}); ok {
-		logger.Infof("glass %q at world x=%v y=%v mm (view: lowered %v°, rotated %v°)",
-			glass["label"], glass["x"], glass["y"], glass["lower_deg"], glass["rotate_deg"])
+		logger.Infof("glass %q at world x=%v y=%v mm (camera lowered %v mm)",
+			glass["label"], glass["x"], glass["y"], glass["lower_mm"])
 	}
 	logger.Infof("result: %v", res)
 	return nil

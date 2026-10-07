@@ -113,12 +113,11 @@ func (b *bartender) handlePourIntoGlasses(ctx context.Context, raw any) (map[str
 
 func foundGlassResponse(g foundGlass) map[string]any {
 	return map[string]any{
-		"x":          g.center.X,
-		"y":          g.center.Y,
-		"z":          g.center.Z,
-		"label":      g.label,
-		"lower_deg":  g.lowerDeg,
-		"rotate_deg": g.rotateDeg,
+		"x":        g.center.X,
+		"y":        g.center.Y,
+		"z":        g.center.Z,
+		"label":    g.label,
+		"lower_mm": g.lowerMM,
 	}
 }
 
