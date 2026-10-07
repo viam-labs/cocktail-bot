@@ -109,17 +109,17 @@ func parsePickupPourReturn(raw any) (string, int, error) {
 }
 
 func (b *bartender) handleDispenseIce(ctx context.Context, raw any) (map[string]any, error) {
-	lever, dwellMs, err := parseDispenseIce(raw)
+	station, dwellMs, err := parseDispenseIce(raw)
 	if err != nil {
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	start := time.Now()
-	if err := b.dispenseIce(ctx, lever, dwellMs); err != nil {
+	if err := b.dispenseIce(ctx, station, dwellMs); err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"lever":       lever,
+		"station":     station,
 		"dwell_ms":    dwellMs,
 		"duration_ms": time.Since(start).Milliseconds(),
 	}, nil
@@ -128,11 +128,11 @@ func (b *bartender) handleDispenseIce(ctx context.Context, raw any) (map[string]
 func parseDispenseIce(raw any) (string, int, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", 0, fmt.Errorf("dispense_ice: expected object with 'lever' and 'dwell_ms', got %T", raw)
+		return "", 0, fmt.Errorf("dispense_ice: expected object with 'station' and 'dwell_ms', got %T", raw)
 	}
-	lever, _ := m["lever"].(string)
-	if lever == "" {
-		return "", 0, fmt.Errorf("dispense_ice: 'lever' is required")
+	station, _ := m["station"].(string)
+	if station == "" {
+		return "", 0, fmt.Errorf("dispense_ice: 'station' is required")
 	}
 	var dwellMs int
 	switch v := m["dwell_ms"].(type) {
@@ -146,7 +146,7 @@ func parseDispenseIce(raw any) (string, int, error) {
 	if dwellMs < 0 {
 		return "", 0, fmt.Errorf("dispense_ice: 'dwell_ms' must be >= 0")
 	}
-	return lever, dwellMs, nil
+	return station, dwellMs, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
