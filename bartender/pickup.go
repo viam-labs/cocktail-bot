@@ -45,13 +45,14 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 	if _, err := b.carryHeldToUniversal(ctx, posePourApproach); err != nil {
 		return fmt.Errorf("carry to pour-approach: %w", err)
 	}
-	if _, err := b.moveArmToPose(ctx, posePourTilt); err != nil {
+	pourOpts := b.pourMoveOptions()
+	if _, err := b.moveArmToPoseWithOpts(ctx, posePourTilt, pourOpts); err != nil {
 		return fmt.Errorf("pour-tilt: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(pourMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("pour dwell: %w", err)
 	}
-	if _, err := b.moveArmToPose(ctx, posePourApproach); err != nil {
+	if _, err := b.moveArmToPoseWithOpts(ctx, posePourApproach, pourOpts); err != nil {
 		return fmt.Errorf("pour-upright: %w", err)
 	}
 

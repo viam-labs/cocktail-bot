@@ -17,6 +17,8 @@ type Config struct {
 	HeldBottleGeometry    *HeldBottleGeometry `json:"held_bottle_geometry,omitempty"`
 	OrderSensorName       string              `json:"order_sensor_name,omitempty"`
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
+	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
+	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -31,6 +33,12 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if err := c.HeldBottleGeometry.Validate(path + ".held_bottle_geometry"); err != nil {
 		return nil, nil, err
+	}
+	if c.PourVelDegsPerSec < 0 {
+		return nil, nil, errors.New(path + ": pour_vel_degs_per_sec must be > 0 if set")
+	}
+	if c.PourAccDegsPerSec2 < 0 {
+		return nil, nil, errors.New(path + ": pour_acc_degs_per_sec2 must be > 0 if set")
 	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
