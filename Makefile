@@ -20,6 +20,12 @@ test:
 	go test ./...
 
 setup:
+ifeq ($(shell uname), Darwin)
+	brew tap viamrobotics/brews
+	brew install nlopt-static
+else ifeq ($(shell uname), Linux)
+	sudo apt-get install -y --no-install-recommends libnlopt-dev
+endif
 	go mod tidy
 
 module.tar.gz: meta.json $(MODULE_BINARY)

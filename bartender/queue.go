@@ -41,7 +41,8 @@ func (b *bartender) safeExecuteOrder(o order.Order) {
 		}
 		b.publishReading(o, start, time.Now(), execErr, failedStep)
 	}()
-	failedStep, execErr = b.prepareDrink(b.orderCtx(), o)
+	ctx := ctxWithOrderID(context.Background(), o.ID)
+	failedStep, execErr = b.prepareDrink(ctx, o)
 }
 
 func (b *bartender) publishReading(o order.Order, start, end time.Time, execErr error, failedStep string) {
@@ -65,8 +66,4 @@ func (b *bartender) publishReading(o order.Order, start, end time.Time, execErr 
 		StartedAt:  start,
 		EndedAt:    end,
 	})
-}
-
-func (b *bartender) orderCtx() context.Context {
-	return context.Background()
 }
