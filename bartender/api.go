@@ -36,7 +36,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["mix"]; ok {
 		return b.handleMix(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix")
+	if raw, ok := cmd["pour_from_shaker"]; ok {
+		return b.handlePourFromShaker(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -261,6 +264,47 @@ func parseMix(raw any) (string, int, error) {
 		return "", 0, fmt.Errorf("mix: 'dwell_ms' must be >= 0")
 	}
 	return station, dwellMs, nil
+}
+
+func (b *bartender) handlePourFromShaker(ctx context.Context, raw any) (map[string]any, error) {
+	station, pourMs, err := parsePourFromShaker(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.pourFromShaker(ctx, station, pourMs); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"station":     station,
+		"pour_ms":     pourMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parsePourFromShaker(raw any) (string, int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("pour_from_shaker: expected object with 'station' and 'pour_ms', got %T", raw)
+	}
+	station, _ := m["station"].(string)
+	if station == "" {
+		return "", 0, fmt.Errorf("pour_from_shaker: 'station' is required")
+	}
+	var pourMs int
+	switch v := m["pour_ms"].(type) {
+	case float64:
+		pourMs = int(v)
+	case int:
+		pourMs = v
+	default:
+		return "", 0, fmt.Errorf("pour_from_shaker: 'pour_ms' must be a number")
+	}
+	if pourMs < 0 {
+		return "", 0, fmt.Errorf("pour_from_shaker: 'pour_ms' must be >= 0")
+	}
+	return station, pourMs, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
