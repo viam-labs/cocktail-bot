@@ -24,7 +24,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["dispense_ice"]; ok {
 		return b.handleDispenseIce(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice")
+	if raw, ok := cmd["pour_into_glasses"]; ok {
+		return b.handlePourIntoGlasses(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -80,6 +83,24 @@ func (b *bartender) handlePickupPourReturn(ctx context.Context, raw any) (map[st
 	return map[string]any{
 		"bottle":      bottle,
 		"pour_ms":     pourMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func (b *bartender) handlePourIntoGlasses(ctx context.Context, raw any) (map[string]any, error) {
+	req, err := parsePourIntoGlasses(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.pourIntoGlasses(ctx, req); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"bottle":      req.bottle,
+		"pour_ms":     req.pourMs,
+		"glasses":     len(req.glasses),
 		"duration_ms": time.Since(start).Milliseconds(),
 	}, nil
 }

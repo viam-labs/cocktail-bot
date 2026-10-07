@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 const (
@@ -20,27 +22,8 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 	if err != nil {
 		return err
 	}
-
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("start-home: %w", err)
-	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover); err != nil {
-		return fmt.Errorf("hover %s: %w", bottleSwitchName, err)
-	}
-	if err := b.gripper.Open(ctx, nil); err != nil {
-		return fmt.Errorf("open gripper: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, bottleSw, poseGrab); err != nil {
-		return fmt.Errorf("linear-grab %s: %w", bottleSwitchName, err)
-	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
-		return fmt.Errorf("close gripper on %s: %w", bottleSwitchName, err)
-	}
-	if err := b.attachHeld(b.cfg.HeldBottleGeometry); err != nil {
-		return fmt.Errorf("attach held bottle: %w", err)
-	}
-	if _, err := b.linearCarryToPose(ctx, bottleSw, poseCarryHover); err != nil {
-		return fmt.Errorf("linear-lift %s: %w", bottleSwitchName, err)
+	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+		return err
 	}
 
 	if _, err := b.carryHeldToUniversal(ctx, posePourApproach); err != nil {
@@ -57,18 +40,51 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 		return fmt.Errorf("pour-upright: %w", err)
 	}
 
+	return b.returnBottle(ctx, bottleSw)
+}
+
+// Ends holding the bottle at its carry-hover pose.
+func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
+	name := bottleSw.Name().ShortName()
+	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
+		return fmt.Errorf("start-home: %w", err)
+	}
+	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover); err != nil {
+		return fmt.Errorf("hover %s: %w", name, err)
+	}
+	if err := b.gripper.Open(ctx, nil); err != nil {
+		return fmt.Errorf("open gripper: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, bottleSw, poseGrab); err != nil {
+		return fmt.Errorf("linear-grab %s: %w", name, err)
+	}
+	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		return fmt.Errorf("close gripper on %s: %w", name, err)
+	}
+	if err := b.attachHeld(b.cfg.HeldBottleGeometry); err != nil {
+		return fmt.Errorf("attach held bottle: %w", err)
+	}
+	if _, err := b.linearCarryToPose(ctx, bottleSw, poseCarryHover); err != nil {
+		return fmt.Errorf("linear-lift %s: %w", name, err)
+	}
+	return nil
+}
+
+// Starts from anywhere with the bottle held upright; ends empty-handed at home.
+func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
+	name := bottleSw.Name().ShortName()
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover); err != nil {
-		return fmt.Errorf("carry back to %s carry-hover: %w", bottleSwitchName, err)
+		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
 	}
 	if _, err := b.linearCarryToPose(ctx, bottleSw, poseGrab); err != nil {
-		return fmt.Errorf("linear-return %s: %w", bottleSwitchName, err)
+		return fmt.Errorf("linear-return %s: %w", name, err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release gripper: %w", err)
 	}
 	b.detachHeld()
 	if _, err := b.linearMoveToPose(ctx, bottleSw, poseHover); err != nil {
-		return fmt.Errorf("linear-retreat %s: %w", bottleSwitchName, err)
+		return fmt.Errorf("linear-retreat %s: %w", name, err)
 	}
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
 		return fmt.Errorf("end-home: %w", err)

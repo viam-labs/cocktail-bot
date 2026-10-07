@@ -20,6 +20,9 @@ type Config struct {
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
 	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
+	// World XY (mm) of the glass the saved pour-approach/pour-tilt poses pour into.
+	PourReferenceGlass *GlassXY `json:"pour_reference_glass,omitempty"`
+	MaxPourOffsetMM    float64  `json:"max_pour_offset_mm,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -44,6 +47,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if c.PourAccDegsPerSec2 < 0 {
 		return nil, nil, errors.New(path + ": pour_acc_degs_per_sec2 must be > 0 if set")
 	}
+	if c.MaxPourOffsetMM < 0 {
+		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")
+	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
 		arm.Named(c.ArmName).String(),
@@ -61,4 +67,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		optional = append(optional, sensor.Named(c.OrderSensorName).String())
 	}
 	return deps, optional, nil
+}
+
+func (c *Config) maxPourOffsetMM() float64 {
+	if c.MaxPourOffsetMM == 0 {
+		return defaultMaxPourOffsetMM
+	}
+	return c.MaxPourOffsetMM
 }
