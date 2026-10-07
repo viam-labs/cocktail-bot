@@ -1,67 +1,69 @@
-"""find_glasses: one RGB image + one point cloud + intrinsics + detector boxes -> fitted glasses. No Viam I/O."""
+"""Runs SPILL's localize_table + localize_glass on one frame. Unit conversion happens here: Viam mm <-> SPILL m."""
 
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
-from viam.logging import getLogger
 
 from .config import GlassFinderConfig
-from .geometry import GlassSolveError, deduplicate, solve_glass
-from .keypoints import HeatmapModel, detect_keypoints
-from .table import fit_table_plane
-from .types import BoxDetection, GlassEstimate, Intrinsics, Plane
+from .detections import FrameDetections, select_detections
+from .spill.glassloc import GlassLocalizer
+from .types import BoxDetection, GlassEstimate, Intrinsics
 
-logger = getLogger(__name__)
+PLATFORM_HEIGHT_M = 0.0
 
 
 @dataclass(frozen=True)
 class FindResult:
     glasses: list[GlassEstimate]
-    table: Plane
-
-
-def select_detections(
-    detections: list[BoxDetection], labels: tuple[str, ...], min_confidence: float
-) -> list[BoxDetection]:
-    kept = [d for d in detections if d.label in labels and d.score >= min_confidence]
-    return sorted(kept, key=lambda d: d.score, reverse=True)
+    table_height_mm: float
 
 
 def find_glasses(
-    image_rgb: NDArray[np.uint8],
-    cloud_mm: NDArray[np.float64],
+    localizer: GlassLocalizer,
+    frame_detections: FrameDetections,
+    image_bgr: NDArray[np.uint8],
+    cloud_camera_mm: NDArray[np.float64],
     intrinsics: Intrinsics,
     detections: list[BoxDetection],
-    model: HeatmapModel,
-    min_keypoint_pixel_distance: int,
     config: GlassFinderConfig,
 ) -> FindResult:
-    image_height, image_width = image_rgb.shape[:2]
+    """Glasses in SPILL's order (dedup, then sorted by distance to platform point (0, 1 m, table height))."""
+    image_height, image_width = image_bgr.shape[:2]
     if (image_width, image_height) != (intrinsics.width_px, intrinsics.height_px):
         raise ValueError(
             f"image is {image_width}x{image_height} but the camera intrinsics are for "
             f"{intrinsics.width_px}x{intrinsics.height_px}"
         )
-    table = fit_table_plane(
-        cloud_mm, config.table_max_depth_mm, config.table_ransac_threshold_mm, config.table_offset_mm
+    x_platform_camera = config.world_from_camera_m
+    table_height = localizer.localize_table(
+        cloud_camera_mm / 1000.0,
+        x_platform_camera,
+        PLATFORM_HEIGHT_M,
+        config.table_crop_height_min_m,
+        config.table_crop_height_max_m,
     )
-    candidates = select_detections(detections, config.labels, config.min_confidence)
-    keypoints = detect_keypoints(
-        image_rgb, candidates, model, config.crop_padding, config.channel_order, min_keypoint_pixel_distance
-    )
+    frame_detections.set_detections(select_detections(detections, config.labels, config.min_confidence))
+    localizer.camera_intrinsics = intrinsics.matrix()
+    spill_glasses = localizer.localize_glass(image_bgr, table_height, x_platform_camera, PLATFORM_HEIGHT_M)
 
-    k = intrinsics.matrix()
-    glasses: list[GlassEstimate] = []
-    for detection, kp in zip(candidates, keypoints):
-        if kp is None:
-            logger.info("skipping %s (score %.2f): not all four keypoints found", detection.label, detection.score)
-            continue
-        try:
-            glasses.append(solve_glass(detection, kp, k, table, config.tilt_deg))
-        except GlassSolveError as err:
-            logger.info("skipping %s (score %.2f): %s", detection.label, detection.score, err)
-    return FindResult(glasses=deduplicate(glasses), table=table)
+    glasses = []
+    for top_middle_3d, radius_3d, height_3d, glass_angle, bb, keypoints_o in spill_glasses:
+        detection = frame_detections.match(bb)
+        rim_center_platform = (x_platform_camera @ np.append(top_middle_3d, 1.0))[:3]
+        glasses.append(
+            GlassEstimate(
+                label=detection.label,
+                score=detection.score,
+                bbox=(detection.x_min, detection.y_min, detection.x_max, detection.y_max),
+                keypoints_px=np.asarray(keypoints_o[:4], dtype=np.float64),
+                rim_center_mm=rim_center_platform * 1000.0,
+                radius_mm=float(radius_3d) * 1000.0,
+                height_mm=float(height_3d) * 1000.0,
+                tilt_deg=float(np.rad2deg(glass_angle)),
+            )
+        )
+    return FindResult(glasses=glasses, table_height_mm=float(table_height) * 1000.0)
 
 
 def points_in_box(
@@ -73,3 +75,19 @@ def points_in_box(
     v = intrinsics.fy * points[:, 1] / points[:, 2] + intrinsics.cy
     x0, y0, x1, y1 = box
     return points[(u >= x0) & (u <= x1) & (v >= y0) & (v <= y1)]
+
+
+def to_world_mm(points_camera_mm: NDArray[np.float64], world_from_camera_m: NDArray[np.float64]) -> NDArray[np.float64]:
+    return points_camera_mm @ world_from_camera_m[:3, :3].T + world_from_camera_m[:3, 3] * 1000.0
+
+
+def sample_cylinder(
+    rim_center_mm: NDArray[np.float64], radius_mm: float, height_mm: float, n_points: int
+) -> NDArray[np.float64]:
+    """World-frame points on an upright cylinder hanging from the rim center (SPILL's visualizer cylinder): 80% side
+    wall, 20% rim circle."""
+    rng = np.random.default_rng(0)
+    n_rim = int(round(n_points * 0.2))
+    depth = np.concatenate([rng.uniform(0.0, height_mm, n_points - n_rim), np.zeros(n_rim)])
+    phi = rng.uniform(0.0, 2.0 * np.pi, n_points)
+    return rim_center_mm + np.column_stack([radius_mm * np.cos(phi), radius_mm * np.sin(phi), -depth])

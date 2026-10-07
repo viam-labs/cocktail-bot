@@ -30,38 +30,17 @@ class BoxDetection:
 
 
 @dataclass(frozen=True)
-class Keypoints2D:
-    """Pixel coordinates (u, v) in the full image."""
-
-    bottom_front: NDArray[np.float64]
-    top_front: NDArray[np.float64]
-    top_left: NDArray[np.float64]
-    top_right: NDArray[np.float64]
-
-    def as_dict(self) -> dict[str, list[float]]:
-        return {name: [float(v) for v in getattr(self, name)] for name in KEYPOINT_NAMES}
-
-
-@dataclass(frozen=True)
-class Plane:
-    """Table plane n·p + d = 0 in the camera frame (mm); n is unit and points up, toward the camera side."""
-
-    normal: NDArray[np.float64]
-    d_mm: float
-    inlier_ratio: float
-
-
-@dataclass(frozen=True)
 class GlassEstimate:
+    """One glass from SPILL's localize_glass, converted to mm in the world frame."""
+
     label: str
     score: float
     bbox: tuple[int, int, int, int]
-    keypoints_px: Keypoints2D
+    keypoints_px: NDArray[np.float64]
     rim_center_mm: NDArray[np.float64]
-    base_front_mm: NDArray[np.float64]
-    up: NDArray[np.float64]
-    back: NDArray[np.float64]
     radius_mm: float
     height_mm: float
     tilt_deg: float
-    reprojection_rmse_px: float
+
+    def keypoints_dict(self) -> dict[str, list[float]]:
+        return {name: [float(v) for v in uv] for name, uv in zip(KEYPOINT_NAMES, self.keypoints_px)}

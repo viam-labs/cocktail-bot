@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from spill_glass_finder.keypoints import CROP_SIZE
+CROP_SIZE = 256
 
 
 def gaussian_heatmaps(
@@ -19,14 +19,22 @@ def gaussian_heatmaps(
     return maps
 
 
-class StubHeatmapModel:
-    """Returns fixed per-crop heatmaps in batch order and records the inputs it saw."""
+class StubKeypointModel:
+    """Stands in for the Lightning KeypointDetector: one (1, 3, 256, 256) crop per call, heatmaps in call order."""
 
-    def __init__(self, per_crop_peaks: list[list[NDArray[np.float64] | None]]) -> None:
-        self.heatmaps = torch.stack([gaussian_heatmaps(peaks) for peaks in per_crop_peaks])
+    training = False
+
+    def __init__(self) -> None:
+        self.queue: list[torch.Tensor] = []
         self.inputs: list[torch.Tensor] = []
 
+    def eval(self) -> "StubKeypointModel":
+        return self
+
+    def cpu(self) -> "StubKeypointModel":
+        return self
+
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        assert x.shape == (1, 3, CROP_SIZE, CROP_SIZE) and x.dtype == torch.float32
         self.inputs.append(x)
-        assert x.shape[0] == self.heatmaps.shape[0]
-        return self.heatmaps
+        return self.queue.pop(0).unsqueeze(0)

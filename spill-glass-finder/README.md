@@ -1,24 +1,28 @@
 # spill-glass-finder
 
 `viam:cocktail-bot:spill-glass-finder` (`rdk:service:vision`, module `viam:spill-glass-finder`) finds transparent
-glasses and fits each one's rim center, radius and height in the camera frame. It ports the glass localization
-from [SPILL](https://github.com/Louadria/SPILL) (Adriaens et al., "SPILL: Size, Pose, and Internal Liquid Level
-Estimation of Transparent Glassware for Robotic Bartending", MIT license).
+glasses and returns each one's rim center, radius, height and tilt in the world frame. The algorithm is
+[SPILL](https://github.com/Louadria/SPILL)'s glass localization (Adriaens et al., "SPILL: Size, Pose, and Internal
+Liquid Level Estimation of Transparent Glassware for Robotic Bartending", MIT license). It is vendored verbatim from
+`glassloc/glassloc.py` and `glassloc/GlassDetector.py` at commit `7fe7282d29730c6026d3dd682c6d926ee3f52735`, in
+`src/spill_glass_finder/spill/`.
 
-Per call it takes one color image, one point cloud and the intrinsics from `camera_name`, then:
+Per call the module takes one color image, one point cloud and the intrinsics from `camera_name`, then:
 
-1. gets 2D boxes from `detector_name` (e.g. the robot's `yolov8` service with COCO weights) and keeps `labels` at
-   or above `min_confidence`, highest score first;
-2. pads each box by `crop_padding` on every side, crops, resizes to 256x256 (aspect not preserved) and runs SPILL's
-   MaxViT-UNet keypoint model (`wild_glasses.ckpt`) on CPU, one batch per frame; the best heatmap peak of channels
-   0-3 gives bottom_front, top_front, top_left, top_right (the fluid-level channel is ignored); a glass missing any
-   of them is skipped;
-3. fits the table plane to the point cloud (RANSAC + SVD, camera frame);
-4. intersects the bottom_front ray with the table and solves rim radius, height and the base's sideways offset from
-   the four keypoints. Depth is never read on the glass itself; it is transparent;
-5. drops a glass whose rim center is within the mean radius of a higher-scoring glass's rim center.
+1. SPILL's `localize_table` finds the table height. It transforms the cloud to the world frame, keeps heights in
+   `[table_crop_height_min_m, table_crop_height_max_m]`, takes the fullest of 500 histogram bins and subtracts 5 mm.
+2. SPILL's `localize_glass` does the rest:
+   - It gets 2D boxes from `detector_name` (the robot's `yolov8` service, standing in for SPILL's in-process YOLO).
+   - It pads each box by 64/256, crops, resizes to 256x256 and runs SPILL's keypoint model (`wild_glasses.ckpt`,
+     `keypoint_detection` package, CPU) on the BGR crop.
+   - From the four structural keypoints it solves radius, height and tilt with SPILL's fixed-point loop and three
+     `fsolve` stages, against the table plane.
+   - It drops duplicate glasses and sorts the rest SPILL's way.
 
-Distances are in mm in the camera frame. Depth must be registered to the color image with the same intrinsics.
+Fluid level is not used.
+
+Viam point clouds and outputs are in mm, while SPILL works in meters; the conversion happens only at the module
+boundary. SPILL's platform frame is the Viam world frame with `platform_height = 0`, so world z must point up.
 
 ## Config
 
@@ -30,7 +34,11 @@ Distances are in mm in the camera frame. Depth must be registered to the color i
   "attributes": {
     "camera_name": "cam",
     "detector_name": "yolov8",
-    "checkpoint_path": "/opt/spill/wild_glasses.ckpt"
+    "checkpoint_path": "/opt/spill/wild_glasses.ckpt",
+    "camera_pose_in_world": {
+      "translation": {"x": 0, "y": 0, "z": 1250},
+      "orientation": {"type": "ov_degrees", "value": {"x": 0, "y": 1, "z": -1, "th": 0}}
+    }
   }
 }
 ```
@@ -40,27 +48,30 @@ Distances are in mm in the camera frame. Depth must be registered to the color i
 | `camera_name` | required | RGB-D camera. Depth must be pixel-aligned with color |
 | `detector_name` | required | 2D detector vision service |
 | `checkpoint_path` | required | `wild_glasses.ckpt` on the machine (`scripts/fetch_weights.sh` downloads it and checks its sha256) |
-| `labels` | `["wine glass", "cup", "vase"]` | SPILL's COCO classes |
-| `min_confidence` | `0.5` | |
-| `crop_padding` | `0.25` | SPILL's 64/256 |
-| `table_max_depth_mm` | `2000` | cloud points with a larger z are ignored when fitting the table |
-| `table_ransac_threshold_mm` | `5` | |
-| `table_offset_mm` | `0` | moves the plane along its up normal; SPILL used -5 |
-| `surface_points` | `2000` | points sampled on each fitted glass |
-| `channel_order` | `"rgb"` | channel order fed to the keypoint model (see below) |
-| `tilt_deg` | `3` | assumed wall angle; it can't be measured from the keypoints (see below) |
+| `camera_pose_in_world` | required | The camera frame's pose in world, in the Viam frame-config shape (translation in mm, `ov_degrees` orientation). It must be the pose relative to **world**: if the camera's frame parent is not world, compose the chain yourself |
+| `labels` | `["cup", "vase", "wine glass"]` | SPILL's classes |
+| `min_confidence` | `0.5` | detector boxes below this are ignored |
+| `surface_points` | `2000` | points sampled on each glass's cylinder |
+| `table_crop_height_min_m` | `0.3` | SPILL's band of world heights searched for the table |
+| `table_crop_height_max_m` | `1.3` | |
+
+**The table must lie inside the crop band.** SPILL's 0.3–1.3 m band assumes the platform origin is at floor level.
+If our world origin sits at the arm base, possibly on the table, the table is near z = 0 and falls outside the band.
+`localize_table` then picks whatever else is in the band, or raises if nothing is. In that case set the band
+around the table height in your world frame, e.g. `-0.2` / `0.8`.
+
+### Why a static camera pose
+
+The Python SDK offers no supported way for a module's resource to read the frame system. Go modules get it as the
+`$framesystem` dependency, but the Python SDK has no client for that service. The module's parent `RobotClient`,
+which has `transform_pose`, is private to `viam.module.module.Module` and is never handed to resources. So the
+camera's world pose comes from config and must be kept in sync with the machine's frame system by hand. See
+"Platform shortcomings" in the repo's CLAUDE.md.
 
 ## Outputs
 
-- `GetDetections[FromCamera]`: per glass, its detector box labelled `"{class} r={r}mm h={h}mm"`, then four ±4 px
-  boxes at the keypoints labelled `kp-bottom_front`, `kp-top_front`, `kp-top_left` and `kp-top_right` so they show on the
-  camera view. `GetDetections(image)` uses the given image with the camera's current point cloud.
-- `GetObjectPointClouds`: per glass, points sampled on the fitted surface (side wall from base to rim, plus the rim
-  circle), camera frame. Its geometry is a 5 mm sphere at the rim center with the label above, and its reference frame
-  is `camera_name`. With `extra={"debug": true}` it also returns, per glass, the camera's raw points inside the box
-  (label suffix `-raw`).
-- `CaptureAllFromCamera`: image, detections and objects from one capture. Classifications and 3D detections are
-  not supported.
+All 3D outputs are in the **world** frame, in mm.
+
 - `DoCommand({"find_glasses": {}})`, the contract the bartender and `cocktail-cli hover-glass --glass-finder` use:
 
 ```json
@@ -69,121 +80,125 @@ Distances are in mm in the camera frame. Depth must be registered to the color i
     {
       "label": "wine glass", "score": 0.91, "bbox": [x0, y0, x1, y1],
       "keypoints_px": {"bottom_front": [u, v], "top_front": [u, v], "top_left": [u, v], "top_right": [u, v]},
-      "rim_center_mm": [x, y, z], "base_front_mm": [x, y, z],
-      "radius_mm": 38.2, "height_mm": 181.0, "tilt_deg": 3.0, "reprojection_rmse_px": 0.7,
-      "frame": "cam"
+      "rim_center_mm": [x, y, z], "radius_mm": 38.2, "height_mm": 181.0, "tilt_deg": 3.0,
+      "frame": "world"
     }
   ],
-  "table": {"normal": [nx, ny, nz], "d_mm": 612.0, "inlier_ratio": 0.55}
+  "table": {"height_mm": 745.0, "frame": "world"}
 }
 ```
 
-Glasses are sorted by score, highest first. The table is `normal·p + d_mm = 0`. `normal` is a unit vector that points
-up, toward the camera. Point clouds on the wire are PCD in meters, as with every Viam camera; RDK converts to mm.
+  Glasses come in SPILL's order: duplicates removed, then sorted by distance from the world point (0, 1 m, table
+  height). The keypoints are SPILL's image-space keypoints, which SPILL truncates to whole pixels.
+- `GetDetections[FromCamera]`: per glass, its detector box labelled `"{class} r={r}mm h={h}mm"`, then four ±4 px
+  boxes at the keypoints labelled `kp-bottom_front`, `kp-top_front`, `kp-top_left` and `kp-top_right`.
+- `GetObjectPointClouds`: per glass, points on an upright cylinder of the fitted radius hanging `height` below the
+  rim center. This is the cylinder SPILL's visualizer draws: 80% side wall, 20% rim circle. Reference frame is
+  `world`, and the geometry is a 5 mm sphere at the rim center. With `extra={"debug": true}` it also returns, per
+  glass, the camera's raw points inside the box, transformed to world (label suffix `-raw`).
+- `CaptureAllFromCamera`: image, detections and objects from one capture.
 
-## Differences from SPILL
+## Vendored code and its differences from upstream
 
-**Table plane in the camera frame.** SPILL takes the mode of a histogram of point heights in the platform frame,
-which needs the camera's pose. The Python SDK gives a resource no handle to the frame system: the module's parent
-`RobotClient`, which has `transform_pose`, is internal to `Module`. So this module fits the dominant plane within
-`table_max_depth_mm` directly in the camera frame. It returns camera-frame results, and the caller transforms them
-(as `cocktail-cli hover-glass --glass-finder` does). It orients the normal toward the camera and rejects planes
-with fewer than 5% inliers, or planes within 5° of the optical axis. It assumes the table is the largest plane in
-range. A wall or floor that dominates the view will be picked instead.
+`tests/test_spill_equivalence.py` loads the original files from a SPILL checkout (`SPILL_REPO`, default
+`/Users/robin/bov/SPILL`) with their airo, open3d and visualizer imports stubbed. It asserts that the vendored
+`localize_glass`, `localize_table`, `get_glass_bounding_boxes` and `keypoint_detector_local_inference` return
+identical numbers on the same inputs, with exact float equality. The test skips when no checkout is present.
 
-**One least-squares problem instead of chained `fsolve`.** SPILL runs a fixed-point size guess and then three
-`fsolve` stages: base side offset, radius, then (tilt, height). Each stage freezes the others, and `fsolve` is a
-root-finder applied to sums of norms. This module keeps SPILL's initial guess. It then solves the side offset,
-radius and height in one bounded `scipy.optimize.least_squares`. The residuals are the x/y reprojection errors of
-all four keypoints. The bounds are radius 5-500 mm and height 5-300 mm, and a glass whose solution lands on a bound
-is dropped. SPILL's top_middle-vs-midpoint residual is left out. Under perspective the projected rim center is not
-the midpoint of the projected rim extremes, so that residual biases the fit. The midpoint of the projections adds
-nothing beyond the top_left and top_right residuals.
+Line-level changes, `glassloc.py`:
+- The MIT header is added.
+- The `open3d`, `matplotlib`, `airo_*` and `CameraVisualizer` imports are removed. `GlassDetector` is imported
+  relatively, and a module logger is added.
+- `__init__(camera_intrinsics, visualize=False)` becomes `__init__(camera_intrinsics, checkpoint_name, classes,
+  detector)`. The hard-coded `checkpoint_name` and `classes` become these parameters, the visualizer setup is
+  removed, and `save_image` is removed.
+- `localize_table` takes `crop_height_min=0.3, crop_height_max=1.3` as parameters instead of local constants.
+  `point_cloud_to_open3d(point_cloud).transform(X).translate(...)` / `.to_legacy().points` becomes the same affine
+  transform in numpy, on an (N, 3) array in meters.
+- `OpenCVIntImageType`, `CameraIntrinsicsMatrixType` and `PointCloud` hints become `np.ndarray`.
+- Every `if self._camera_visualizer is not None:` block is removed, as is the open3d mesh building inside them.
+- `print(...)` becomes `logger.debug(...)`. Commented-out prints are left as they are.
+- Fluid level is removed. That covers the channel-4 branch, `fluid_level_2d` and the fluid percentage. The
+  completeness check `len(keypoints_o) - int(fluid_level_detected) - int(fluid_2nd_level_detected) < 4` becomes
+  `len(keypoints_o) < 4`, which is equivalent without fluid points.
+- `glasses.append([top_middle_3d, radius_3d, height_3d])` becomes
+  `glasses.append([top_middle_3d, radius_3d, height_3d, glass_angle, bb[0], keypoints_o])`. Dedup and sort only
+  read `glass[0]` and `glass[1]`, so they are unaffected. The extra fields carry tilt, box and keypoints to the
+  outputs.
 
-**Tilt is an input, not an estimate.** In SPILL's model the wall angle θ sets the base radius to `r - h·tanθ`.
-top_front, top_left and top_right all lie on the horizontal rim circle. Scaling that circle about the camera center
-keeps their projections, and for every scale some (h, θ) still puts the base front on its ray. So the four keypoints
-fit a one-parameter family of glasses exactly. SPILL's `fsolve` pins θ at 3°, since its second equation is
-`θ - 3° = 0`. Here θ is the `tilt_deg` attribute. If the real wall angle differs by Δθ, the rim center moves about
-`h·tan(Δθ)` horizontally, which is 8 mm for a 150 mm glass at Δθ = 3°. Height also moves, by about 2-28 mm in the
-synthetic sweep (more for tall glasses and steep views).
+`GlassDetector.py`:
+- The MIT header is added, and the `airo_*` and `ultralytics` imports are removed.
+- `__init__` takes a `detector` argument in place of `YOLO("checkpoints/yolov8m.pt").to("cuda")`. It is
+  `detections.FrameDetections`, which presents the vision service's boxes in the ultralytics result shape that
+  `get_glass_bounding_boxes` reads: float32 `xyxyn`, `cls`, `names`, highest score first.
+- `.cuda()` becomes `.cpu()`, and the `device` default changes from `"cuda"` to `"cpu"`.
+- The `OpenCVIntImageType` hint becomes `np.ndarray`.
 
-**Dedup keeps the higher-scoring glass.** SPILL keeps the later detection, which is the lower-scoring one.
+The keypoint model comes from the real `keypoint_detection` package (tlpss/keypoint-detection, pinned to commit
+`778f087`). It is loaded with its `load_from_checkpoint`, and peaks come from `get_keypoints_from_heatmap_batch_maxpool`
+with the package defaults.
 
-## Channel order evidence
+## Dependencies
 
-SPILL feeds the keypoint model BGR at inference: OpenCV images in `glassloc.py`, and Gradio RGB converted to BGR in
-the HF Space's `app.py`. The training loader in `tlpss/keypoint-detection` (`skimage.io.imread` + `ToTensor`) feeds
-it RGB. On the 310 Glasses-in-the-Wild validation crops, with GT keypoints and min peak distance 5, both orders give
-essentially the same result:
+`keypoint_detection` is not on PyPI, and its loader needs an old stack:
+- **torch 2.2.2 / torchvision 0.17.2.** With torch 2.14 / torchvision 0.29, the model's feature extractor no longer
+  persists MaxViT's `relative_position_index` buffers, so the strict `load_state_dict` of `wild_glasses.ckpt`
+  fails. This happens even with timm 0.9.16.
+- **timm 0.9.16, pytorch-lightning 1.9.4, numpy<2 and scipy<1.15**, to match torch 2.2.
+- **setuptools<81.** `lightning_fabric` imports `pkg_resources`.
+- **huggingface_hub<0.30.** timm 0.9.16's hub import fails on 2.1.1; 0.29.3 works.
 
-| order | all 4 found | mean error bf / tf / tl / tr (px) | median error (px) |
-|---|---|---|---|
-| rgb | 308/310 | 4.03 / 2.58 / 1.92 / 2.26 | 2.58 / 1.79 / 1.45 / 1.37 |
-| bgr | 308/310 | 4.20 / 2.65 / 1.88 / 2.25 | 2.88 / 1.72 / 1.41 / 1.40 |
+`setup.sh` installs `keypoint-detection` from git with `--no-deps`, which needs `git` on the machine. Its
+training-only pins (fiftyone, albumentations, pre-commit, pytest) are skipped. Its load path imports wandb,
+pytorch-lightning, torchmetrics, scikit-image and matplotlib, so those are in `requirements.txt`.
 
-The paired difference (rgb - bgr) is -0.04 ± 0.06 px (SEM, n = 1238). The default is `rgb`, which matches training
-and needs no conversion from the camera's RGB.
+`load_from_checkpoint` builds the MaxViT backbone with `pretrained=True`. On first start, timm therefore downloads
+the ImageNet `maxvit_nano_rw_256` weights from the Hugging Face Hub, which the checkpoint then overwrites. A machine
+needs internet on first start, or a pre-populated `~/.cache/huggingface`.
+
+The checkpoint itself also loads with `torch.load(weights_only=True)`. Upstream's `load_from_checkpoint` does a full
+pickle load, which is the torch 2.2 default.
 
 ## CPU latency
 
-Measured on an Apple M2 Pro with torch 2.14 CPU and 6 threads, timing the keypoint model only:
+Measured on an Apple M2 Pro with torch 2.2.2 CPU and 10 threads:
 
-| batch | ms / batch | ms / crop |
-|---|---|---|
-| 1 | 128 | 128 |
-| 2 | 278 | 139 |
-| 4 | 356 | 89 |
-| 8 | 527 | 66 |
+| stage | time |
+|---|---|
+| import of the keypoint_detection stack | ~2.5 s, once |
+| checkpoint load | ~1.1 s, once |
+| keypoint model per glass (SPILL runs one crop at a time) | ~100 ms |
+| `localize_table`, 290k points | ~9 ms |
+| `localize_glass` geometry per glass | ~2 ms |
 
-Loading the checkpoint takes about 1 s. The table fit takes about 110 ms on 270k points, and each glass solve about
-1.5 ms. Expect a robot's ARM CPU to be several times slower.
-
-## Synthetic accuracy (tests/test_geometry.py)
-
-The sweep covers glasses with radius 25-45 mm, height 60-200 mm and tilt 0-8° (tilt known). The base front is
-300-1000 mm from the camera, and the camera looks down 30-70° with 5° roll. With noise-free keypoints the solver
-recovers the rim center, radius and height to well under 1 mm. With σ = 1 px noise on every keypoint coordinate, the
-95th-percentile errors are:
-
-| range | rim center | radius | height |
-|---|---|---|---|
-| 300 mm | 1.6 mm | 0.4 mm | 1.0 mm |
-| 600 mm | 3.4 mm | 0.9 mm | 2.9 mm |
-| 1000 mm | 7.3 mm | 1.2 mm | 5.7 mm |
-
-The test asserts p95 below 1% of range for rim center and height, and below 2 mm for radius.
+Expect a robot's ARM CPU to be several times slower.
 
 ## Development
 
 ```bash
-./setup.sh                     # .venv with CPU torch
+./setup.sh                     # .venv with CPU torch and the pinned keypoint_detection stack
 scripts/fetch_weights.sh       # weights/wild_glasses.ckpt (gitignored)
 .venv/bin/python -m pip install pytest
-.venv/bin/python -m pytest     # the real-model test is skipped without the weights
+.venv/bin/python -m pytest     # the real-model test skips without weights; the equivalence tests without a SPILL checkout
 ./build.sh                     # module.tar.gz
 ```
 
-The real-model test writes an annotated image to `tests/output/real_model_keypoints.png`. Its fixtures are three
-Glasses-in-the-Wild crops (CC BY 4.0, see `tests/fixtures/glasses_in_the_wild/README.md`).
+`tests/test_real_model.py` runs the real checkpoint on three Glasses-in-the-Wild crops (CC BY 4.0, see
+`tests/fixtures/glasses_in_the_wild/README.md`). It checks that the vendored and original
+`keypoint_detector_local_inference` agree, and writes `tests/output/real_model_keypoints.png`.
 
-`src/spill_glass_finder/model.py` vendors the MaxViT-UNet detector and the heatmap peak extraction from
-[tlpss/keypoint-detection](https://github.com/tlpss/keypoint-detection) (MIT). That package isn't on PyPI and pins
-`pytorch-lightning<=1.9.4`, `wandb` and `fiftyone`. The checkpoint loads with `torch.load(weights_only=True)`.
-Current timm no longer stores MaxViT's `relative_position_index` buffers, so the loader checks that the
-checkpoint's copies equal the recomputed ones and then drops them.
+## Known limitations (upstream behavior, kept as is)
 
-## Known limitations
-
-- The wall angle is assumed, not measured (see above). This is the dominant error for tall or flared glasses.
-- SPILL's model puts top_left/top_right at `rim_center ± r·side`. The true silhouette tangents of a circle under
-  perspective differ by about `(r/D)²/2` relative, which is below 0.5% at r/D < 0.1.
-- The keypoint model can mistake a water line or the far rim for the near rim on side-on views. One of the three
-  fixtures shows this: top_front and top_right land about 26 px low.
-- Heatmap peaks are integer pixels in the 256x256 crop. That limits keypoint resolution to about one crop pixel
-  (box size / 256 in image pixels).
-- Table fitting assumes the table is the dominant plane within range.
-- The glass must stand on the fitted table plane. Stacked or held glasses come out wrong.
+- Tilt is not observable from the four keypoints. Scaling the rim circle about the camera keeps all three rim
+  keypoints in place, and some (height, tilt) still fits the base. SPILL's last `fsolve` has `θ − 3°` as one of its
+  two equations, so tilt effectively comes out at 3°. A real wall angle off by Δθ moves the rim center about h·tan(Δθ)
+  horizontally.
+- `keypoints_o` is built from integer heatmap peaks, so mapping it back to the image truncates to whole pixels.
+- If a crop has no peak at all in channels 0–3, `keypoints_o[:, 0]` raises IndexError and the whole call fails. The
+  0.01 peak threshold makes this rare.
+- After the last `fsolve`, the sanity check tests the *previous* `height_3d`, not the new `p[1]`.
+- The final sort is by distance to the platform point (0, 1 m, table height), a point from SPILL's own setup.
+- The keypoint model can mistake a water line for the rim on side-on views. One fixture shows top_front and
+  top_right about 26 px low.
+- The image and the point cloud come from separate camera calls.
 - PCD `binary_compressed` clouds are rejected.
-- The image and point cloud come from separate `GetImages` and `GetPointCloud` calls. They can be from different
-  frames if the scene or camera moves between the two calls.

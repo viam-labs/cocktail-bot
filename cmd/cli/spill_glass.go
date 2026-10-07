@@ -9,19 +9,17 @@ import (
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/vision"
-	"go.viam.com/rdk/spatialmath"
 )
 
 // spillGlass is one entry of the spill-glass-finder's {"find_glasses": {}} DoCommand response.
 type spillGlass struct {
-	Label              string
-	Score              float64
-	RimCenterMM        r3.Vector
-	RadiusMM           float64
-	HeightMM           float64
-	TiltDeg            float64
-	ReprojectionRMSEPx float64
-	Frame              string
+	Label       string
+	Score       float64
+	RimCenterMM r3.Vector
+	RadiusMM    float64
+	HeightMM    float64
+	TiltDeg     float64
+	Frame       string
 }
 
 func parseFindGlassesResponse(resp map[string]interface{}) ([]spillGlass, error) {
@@ -58,11 +56,10 @@ func parseSpillGlass(m map[string]interface{}) (spillGlass, error) {
 		return g, err
 	}
 	for key, dst := range map[string]*float64{
-		"score":                &g.Score,
-		"radius_mm":            &g.RadiusMM,
-		"height_mm":            &g.HeightMM,
-		"tilt_deg":             &g.TiltDeg,
-		"reprojection_rmse_px": &g.ReprojectionRMSEPx,
+		"score":     &g.Score,
+		"radius_mm": &g.RadiusMM,
+		"height_mm": &g.HeightMM,
+		"tilt_deg":  &g.TiltDeg,
 	} {
 		if *dst, err = floatField(m, key); err != nil {
 			return g, err
@@ -100,33 +97,27 @@ func floatField(m map[string]interface{}, key string) (float64, error) {
 	return f, nil
 }
 
-// findSpillGlass asks the spill-glass-finder service for glasses and returns the highest-scoring one with its rim
-// center in the world frame.
-func findSpillGlass(ctx context.Context, machine robot.Robot, name string) (spillGlass, r3.Vector, error) {
+// findSpillGlass asks the spill-glass-finder service for glasses and returns the first one in SPILL's order. Its rim
+// center is already in the world frame.
+func findSpillGlass(ctx context.Context, machine robot.Robot, name string) (spillGlass, error) {
 	svc, err := vision.FromProvider(machine, name)
 	if err != nil {
-		return spillGlass{}, r3.Vector{}, fmt.Errorf("vision service %q: %w", name, err)
+		return spillGlass{}, fmt.Errorf("vision service %q: %w", name, err)
 	}
 	resp, err := svc.DoCommand(ctx, map[string]interface{}{"find_glasses": map[string]interface{}{}})
 	if err != nil {
-		return spillGlass{}, r3.Vector{}, fmt.Errorf("%s find_glasses: %w", name, err)
+		return spillGlass{}, fmt.Errorf("%s find_glasses: %w", name, err)
 	}
 	glasses, err := parseFindGlassesResponse(resp)
 	if err != nil {
-		return spillGlass{}, r3.Vector{}, err
+		return spillGlass{}, err
 	}
 	if len(glasses) == 0 {
-		return spillGlass{}, r3.Vector{}, errors.New("hover-glass: no glass found")
+		return spillGlass{}, errors.New("hover-glass: no glass found")
 	}
 	glass := glasses[0]
-	world, err := machine.TransformPose(
-		ctx,
-		referenceframe.NewPoseInFrame(glass.Frame, spatialmath.NewPoseFromPoint(glass.RimCenterMM)),
-		referenceframe.World,
-		nil,
-	)
-	if err != nil {
-		return spillGlass{}, r3.Vector{}, fmt.Errorf("transform rim center from %q to world: %w", glass.Frame, err)
+	if glass.Frame != referenceframe.World {
+		return spillGlass{}, fmt.Errorf("%s returned rim center in frame %q, want %q", name, glass.Frame, referenceframe.World)
 	}
-	return glass, world.Pose().Point(), nil
+	return glass, nil
 }

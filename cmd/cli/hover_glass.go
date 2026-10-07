@@ -43,7 +43,7 @@ highest-confidence glass, and moves --component straight down-facing to (x, y, -
 Use --dry-run first to print the target without moving the arm.
 
 With --glass-finder, asks that deployed spill-glass-finder vision service for glasses instead
-(DoCommand {"find_glasses": {}}) and hovers above the highest-scoring glass's rim center.
+(DoCommand {"find_glasses": {}}) and hovers above the first returned glass's world-frame rim center.
 
 Examples:
   cocktail-cli hover-glass --machine-address bartender-main.xxxx.viam.cloud \
@@ -106,13 +106,13 @@ func runHoverGlass(flags HoverGlassFlags) error {
 
 	var center r3.Vector
 	if flags.GlassFinder != "" {
-		glass, world, err := findSpillGlass(ctx, machine, flags.GlassFinder)
+		glass, err := findSpillGlass(ctx, machine, flags.GlassFinder)
 		if err != nil {
 			return err
 		}
-		logger.Infof("glass: label=%q score=%.2f radius_mm=%.1f height_mm=%.1f tilt_deg=%.1f reprojection_rmse_px=%.2f rim_center_%s_mm=%v rim_center_world_mm=%v",
-			glass.Label, glass.Score, glass.RadiusMM, glass.HeightMM, glass.TiltDeg, glass.ReprojectionRMSEPx, glass.Frame, glass.RimCenterMM, world)
-		center = world
+		logger.Infof("glass: label=%q score=%.2f radius_mm=%.1f height_mm=%.1f tilt_deg=%.1f rim_center_world_mm=%v",
+			glass.Label, glass.Score, glass.RadiusMM, glass.HeightMM, glass.TiltDeg, glass.RimCenterMM)
+		center = glass.RimCenterMM
 	} else {
 		center, err = findLocalGlass(ctx, machine, flags, logger)
 		if err != nil {

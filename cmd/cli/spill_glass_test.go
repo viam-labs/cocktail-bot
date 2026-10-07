@@ -13,16 +13,14 @@ func spillGlassJSON() map[string]interface{} {
 		"label":    "wine glass",
 		"score":    0.91,
 		"bbox":     []interface{}{100, 120, 220, 400},
-		"frame":    "cam",
+		"frame":    "world",
 		"tilt_deg": 3,
 		"keypoints_px": map[string]interface{}{
 			"bottom_front": []interface{}{160.5, 398.0},
 		},
-		"rim_center_mm":        []interface{}{12.5, -40, 610.25},
-		"base_front_mm":        []interface{}{10.0, 80.0, 590.0},
-		"radius_mm":            38.2,
-		"height_mm":            181,
-		"reprojection_rmse_px": 0.7,
+		"rim_center_mm": []interface{}{12.5, -40, 610.25},
+		"radius_mm":     38.2,
+		"height_mm":     181,
 	}
 }
 
@@ -37,20 +35,19 @@ func roundTrip(t *testing.T, m map[string]interface{}) map[string]interface{} {
 func TestParseFindGlassesResponse(t *testing.T) {
 	resp := roundTrip(t, map[string]interface{}{
 		"glasses": []interface{}{spillGlassJSON()},
-		"table":   map[string]interface{}{"normal": []interface{}{0, -0.7, -0.7}, "d_mm": 600, "inlier_ratio": 0.6},
+		"table":   map[string]interface{}{"height_mm": 745, "frame": "world"},
 	})
 
 	glasses, err := parseFindGlassesResponse(resp)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, glasses, test.ShouldResemble, []spillGlass{{
-		Label:              "wine glass",
-		Score:              0.91,
-		RimCenterMM:        r3.Vector{X: 12.5, Y: -40, Z: 610.25},
-		RadiusMM:           38.2,
-		HeightMM:           181,
-		TiltDeg:            3,
-		ReprojectionRMSEPx: 0.7,
-		Frame:              "cam",
+		Label:       "wine glass",
+		Score:       0.91,
+		RimCenterMM: r3.Vector{X: 12.5, Y: -40, Z: 610.25},
+		RadiusMM:    38.2,
+		HeightMM:    181,
+		TiltDeg:     3,
+		Frame:       "world",
 	}})
 }
 

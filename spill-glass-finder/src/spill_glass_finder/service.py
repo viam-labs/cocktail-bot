@@ -1,4 +1,6 @@
 import asyncio
+import threading
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, ClassVar, List, Mapping, Optional, Self, Sequence, Tuple
 
@@ -18,53 +20,56 @@ from viam.services.vision import CaptureAllResult, Vision
 from viam.utils import ValueTypes, struct_to_dict
 
 from .config import GlassFinderConfig, parse_config
-from .geometry import sample_surface
-from .model import KeypointDetector, load_keypoint_detector
+from .detections import FrameDetections
 from .pcd import decode_pcd, encode_pcd
-from .pipeline import FindResult, find_glasses, points_in_box
+from .pipeline import FindResult, find_glasses, points_in_box, sample_cylinder, to_world_mm
+from .spill.glassloc import GlassLocalizer
 from .types import KEYPOINT_NAMES, BoxDetection, GlassEstimate, Intrinsics
 
 LOGGER = getLogger(__name__)
 
 KEYPOINT_BOX_HALF_SIZE_PX = 4
 RIM_MARKER_RADIUS_MM = 5.0
+WORLD = "world"
+
+
+@dataclass
+class _Spill:
+    localizer: GlassLocalizer
+    frame_detections: FrameDetections
+    lock: threading.Lock
 
 
 @lru_cache(maxsize=1)
-def _load_model(checkpoint_path: str) -> tuple[KeypointDetector, int]:
-    """Cached so the frequent resource rebuilds don't reload 70 MB of weights."""
-    model, hparams = load_keypoint_detector(checkpoint_path)
-    return model, int(hparams.get("minimal_keypoint_extraction_pixel_distance", 1))
+def _load_spill(checkpoint_path: str, labels: tuple[str, ...]) -> _Spill:
+    """Cached so the frequent resource rebuilds don't reload the checkpoint."""
+    frame_detections = FrameDetections()
+    localizer = GlassLocalizer(np.eye(3), checkpoint_path, list(labels), frame_detections)
+    return _Spill(localizer=localizer, frame_detections=frame_detections, lock=threading.Lock())
 
 
 def glass_label(glass: GlassEstimate) -> str:
     return f"{glass.label} r={glass.radius_mm:.0f}mm h={glass.height_mm:.0f}mm"
 
 
-def glass_to_dict(glass: GlassEstimate, frame: str) -> dict[str, Any]:
+def glass_to_dict(glass: GlassEstimate) -> dict[str, Any]:
     return {
         "label": glass.label,
         "score": glass.score,
         "bbox": list(glass.bbox),
-        "keypoints_px": glass.keypoints_px.as_dict(),
+        "keypoints_px": glass.keypoints_dict(),
         "rim_center_mm": [float(v) for v in glass.rim_center_mm],
-        "base_front_mm": [float(v) for v in glass.base_front_mm],
         "radius_mm": glass.radius_mm,
         "height_mm": glass.height_mm,
         "tilt_deg": glass.tilt_deg,
-        "reprojection_rmse_px": glass.reprojection_rmse_px,
-        "frame": frame,
+        "frame": WORLD,
     }
 
 
-def result_to_dict(result: FindResult, frame: str) -> dict[str, Any]:
+def result_to_dict(result: FindResult) -> dict[str, Any]:
     return {
-        "glasses": [glass_to_dict(g, frame) for g in result.glasses],
-        "table": {
-            "normal": [float(v) for v in result.table.normal],
-            "d_mm": result.table.d_mm,
-            "inlier_ratio": result.table.inlier_ratio,
-        },
+        "glasses": [glass_to_dict(g) for g in result.glasses],
+        "table": {"height_mm": result.table_height_mm, "frame": WORLD},
     }
 
 
@@ -73,8 +78,8 @@ def glass_detections(glass: GlassEstimate) -> list[Detection]:
     detections = [
         Detection(x_min=x0, y_min=y0, x_max=x1, y_max=y1, confidence=glass.score, class_name=glass_label(glass))
     ]
-    for name in KEYPOINT_NAMES:
-        u, v = (int(round(c)) for c in getattr(glass.keypoints_px, name))
+    for name, uv in zip(KEYPOINT_NAMES, glass.keypoints_px):
+        u, v = (int(round(c)) for c in uv)
         detections.append(
             Detection(
                 x_min=max(u - KEYPOINT_BOX_HALF_SIZE_PX, 0),
@@ -111,8 +116,7 @@ class SpillGlassFinder(Vision, EasyResource):
     config: GlassFinderConfig
     camera: Camera
     detector: Vision
-    keypoint_model: KeypointDetector
-    min_keypoint_pixel_distance: int
+    spill: _Spill
 
     @classmethod
     def new(cls, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]) -> Self:
@@ -120,7 +124,7 @@ class SpillGlassFinder(Vision, EasyResource):
         self.config = parse_config(struct_to_dict(config.attributes))
         self.camera = dependencies[Camera.get_resource_name(self.config.camera_name)]  # type: ignore[assignment]
         self.detector = dependencies[Vision.get_resource_name(self.config.detector_name)]  # type: ignore[assignment]
-        self.keypoint_model, self.min_keypoint_pixel_distance = _load_model(self.config.checkpoint_path)
+        self.spill = _load_spill(self.config.checkpoint_path, self.config.labels)
         return self
 
     @classmethod
@@ -154,39 +158,58 @@ class SpillGlassFinder(Vision, EasyResource):
             raise ValueError(f"camera {self.config.camera_name!r} returned point cloud mime type {mime_type!r}")
         return decode_pcd(data)
 
+    def _locked_find(
+        self,
+        image_bgr: NDArray[np.uint8],
+        cloud_mm: NDArray[np.float64],
+        intrinsics: Intrinsics,
+        detections: list[BoxDetection],
+    ) -> FindResult:
+        with self.spill.lock:
+            return find_glasses(
+                self.spill.localizer,
+                self.spill.frame_detections,
+                image_bgr,
+                cloud_mm,
+                intrinsics,
+                detections,
+                self.config,
+            )
+
     async def _run(self, image: ViamImage) -> tuple[FindResult, NDArray[np.float64], Intrinsics]:
         cloud_mm, intrinsics, raw_detections = await asyncio.gather(
             self._point_cloud(), self._intrinsics(), self.detector.get_detections(image)
         )
-        image_rgb = np.asarray(viam_to_pil_image(image).convert("RGB"))
+        # SPILL's localize_glass takes an OpenCV (BGR) image.
+        image_bgr = np.ascontiguousarray(np.asarray(viam_to_pil_image(image).convert("RGB"))[:, :, ::-1])
         detections = [
             BoxDetection(d.class_name, d.confidence, d.x_min, d.y_min, d.x_max, d.y_max) for d in raw_detections
         ]
-        result = await asyncio.to_thread(
-            find_glasses,
-            image_rgb,
-            cloud_mm,
-            intrinsics,
-            detections,
-            self.keypoint_model,
-            self.min_keypoint_pixel_distance,
-            self.config,
-        )
+        result = await asyncio.to_thread(self._locked_find, image_bgr, cloud_mm, intrinsics, detections)
         for i, glass in enumerate(result.glasses):
-            LOGGER.debug("glass %d: %s", i, glass_to_dict(glass, self.config.camera_name))
+            LOGGER.debug("glass %d: %s", i, glass_to_dict(glass))
         return result, cloud_mm, intrinsics
 
     def _objects(
         self, result: FindResult, cloud_mm: NDArray[np.float64], intrinsics: Intrinsics, debug: bool
     ) -> list[PointCloudObject]:
-        frame = self.config.camera_name
         objects = [
-            _object(sample_surface(g, self.config.surface_points), g.rim_center_mm, glass_label(g), frame)
+            _object(
+                sample_cylinder(g.rim_center_mm, g.radius_mm, g.height_mm, self.config.surface_points),
+                g.rim_center_mm,
+                glass_label(g),
+                WORLD,
+            )
             for g in result.glasses
         ]
         if debug:
             objects += [
-                _object(points_in_box(cloud_mm, intrinsics, g.bbox), g.rim_center_mm, f"{glass_label(g)}-raw", frame)
+                _object(
+                    to_world_mm(points_in_box(cloud_mm, intrinsics, g.bbox), self.config.world_from_camera_m),
+                    g.rim_center_mm,
+                    f"{glass_label(g)}-raw",
+                    WORLD,
+                )
                 for g in result.glasses
             ]
         return objects
@@ -304,5 +327,5 @@ class SpillGlassFinder(Vision, EasyResource):
         **kwargs: Any,
     ) -> Mapping[str, ValueTypes]:
         if "find_glasses" in command:
-            return result_to_dict(await self.find(), self.config.camera_name)
+            return result_to_dict(await self.find())
         raise ValueError(f"unknown command {sorted(command)}; supported: find_glasses")
