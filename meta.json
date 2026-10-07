@@ -23,7 +23,7 @@
     {
       "api": "rdk:component:switch",
       "model": "viam:cocktail-bot:pose-switcher",
-      "short_description": "Stores named arm poses with optional baseline-relative definitions; bartender reads them via get_pose_by_name."
+      "short_description": "Named arm poses; stores absolute values or baseline-relative deltas."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
