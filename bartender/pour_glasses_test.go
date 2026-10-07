@@ -1,6 +1,7 @@
 package bartender
 
 import (
+	"math"
 	"testing"
 
 	"github.com/golang/geo/r3"
@@ -17,13 +18,38 @@ func testPourPoses() (spatialmath.Pose, spatialmath.Pose) {
 	return approach, tilt
 }
 
-func TestLeanDirection(t *testing.T) {
+func TestLeanDirectionGripperSwing(t *testing.T) {
+	// The gripper's z axis swings from straight down toward +X: a rotation about -Y, so the top of the
+	// bottle moves toward -X.
 	approach, tilt := testPourPoses()
 	lean, err := leanDirection(approach, tilt)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, spatialmath.R3VectorAlmostEqual(lean, r3.Vector{X: 1}, 1e-9), test.ShouldBeTrue)
+	test.That(t, spatialmath.R3VectorAlmostEqual(lean, r3.Vector{X: -1}, 1e-9), test.ShouldBeTrue)
+}
 
-	_, err = leanDirection(approach, approach)
+func TestLeanDirectionWristTwist(t *testing.T) {
+	// Side grasp: the gripper points along +X and the pour only changes theta (a twist about the gripper's
+	// own axis), so the bottle tips sideways, along Y.
+	approach := spatialmath.NewPose(r3.Vector{X: 400, Z: 300}, &spatialmath.OrientationVectorDegrees{OX: 1, Theta: 0})
+	tilt := spatialmath.NewPose(r3.Vector{X: 400, Z: 300}, &spatialmath.OrientationVectorDegrees{OX: 1, Theta: 90})
+	lean, err := leanDirection(approach, tilt)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, math.Abs(lean.Y), test.ShouldAlmostEqual, 1, 1e-6)
+	test.That(t, lean.X, test.ShouldAlmostEqual, 0, 1e-6)
+
+	back, err := leanDirection(tilt, approach)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, spatialmath.R3VectorAlmostEqual(back, lean.Mul(-1), 1e-6), test.ShouldBeTrue)
+}
+
+func TestLeanDirectionRejectsNoTip(t *testing.T) {
+	approach, _ := testPourPoses()
+	_, err := leanDirection(approach, approach)
+	test.That(t, err, test.ShouldNotBeNil)
+
+	// Rotating about the vertical spins the bottle but does not tip it.
+	spun := spatialmath.NewPose(approach.Point(), &spatialmath.OrientationVectorDegrees{OZ: -1, Theta: 90})
+	_, err = leanDirection(approach, spun)
 	test.That(t, err, test.ShouldNotBeNil)
 }
 
