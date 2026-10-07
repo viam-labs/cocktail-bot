@@ -24,9 +24,11 @@ func TestNilSaverNoOp(t *testing.T) {
 	test.That(t, s.Close(), test.ShouldBeNil)
 }
 
-func TestNewEmptyDirReturnsNil(t *testing.T) {
+func TestNewEmptyDirDefaultsToCaptureDir(t *testing.T) {
 	s := New("", logging.NewTestLogger(t))
-	test.That(t, s, test.ShouldBeNil)
+	t.Cleanup(func() { _ = s.Close() })
+	test.That(t, s, test.ShouldNotBeNil)
+	test.That(t, s.baseDir, test.ShouldNotEqual, "")
 }
 
 func TestSaveAsyncWritesToTaggedDir(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/services/datamanager/builtin/shared"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,10 +36,10 @@ type Saver struct {
 	logger  logging.Logger
 }
 
-// New returns nil if baseDir is empty, so an unset config disables saving cleanly.
+// baseDir "" defaults to Data Manager's capture dir, so tagged files auto-sync to cloud.
 func New(baseDir string, logger logging.Logger) *Saver {
 	if baseDir == "" {
-		return nil
+		baseDir = shared.ViamCaptureDotDir
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Saver{

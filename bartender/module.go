@@ -91,10 +91,6 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		logger.Warn("order_sensor_name not set; order history will not be persisted")
 	}
 
-	if cfg.SaveMotionRequestsDir == "" {
-		logger.Warn("save_motion_requests_dir not set; motion plan requests will not be saved")
-	}
-
 	go b.processQueue()
 	return b, nil
 }
