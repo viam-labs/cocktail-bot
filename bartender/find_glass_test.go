@@ -55,6 +55,22 @@ func TestLoweredViewIsASmallRotation(t *testing.T) {
 	test.That(t, angle, test.ShouldBeGreaterThan, 0)
 }
 
+func TestPannedViewTurnsInPlace(t *testing.T) {
+	cam := testCamera()
+	axis := opticalAxis(cam)
+	for _, panDeg := range []float64{5, -5} {
+		got := pannedView(cam, panDeg)
+		test.That(t, spatialmath.R3VectorAlmostEqual(got.Point(), cam.Point(), 1e-9), test.ShouldBeTrue)
+		gotAxis := opticalAxis(got)
+		test.That(t, gotAxis.Z, test.ShouldAlmostEqual, axis.Z, 1e-9)
+		turned := math.Atan2(gotAxis.Y, gotAxis.X) - math.Atan2(axis.Y, axis.X)
+		test.That(t, turned*180/math.Pi, test.ShouldAlmostEqual, panDeg, 1e-6)
+	}
+	// Looking along +X, the camera's left is +Y.
+	test.That(t, opticalAxis(pannedView(cam, 5)).Y, test.ShouldBeGreaterThan, 0)
+	test.That(t, pannedView(cam, 0), test.ShouldEqual, cam)
+}
+
 func TestBestGlassUsesFirstNonEmptyObject(t *testing.T) {
 	empty, err := viz.NewObjectWithLabel(pointcloud.NewBasicEmpty(), "cup", nil)
 	test.That(t, err, test.ShouldBeNil)

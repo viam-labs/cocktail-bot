@@ -30,6 +30,7 @@ type Config struct {
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
 	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
 	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
+	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
 	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 }
 
@@ -107,6 +108,13 @@ func (c *Config) glassSearchLowerMM() []float64 {
 		return defaultGlassSearchLowerMM
 	}
 	return c.GlassSearchLowerMM
+}
+
+func (c *Config) glassSearchPanDeg() []float64 {
+	if len(c.GlassSearchPanDeg) == 0 {
+		return defaultGlassSearchPanDeg
+	}
+	return c.GlassSearchPanDeg
 }
 
 func (c *Config) glassSearchSettleMs() int {

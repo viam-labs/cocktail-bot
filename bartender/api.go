@@ -118,6 +118,7 @@ func foundGlassResponse(g foundGlass) map[string]any {
 		"z":        g.center.Z,
 		"label":    g.label,
 		"lower_mm": g.lowerMM,
+		"pan_deg":  g.panDeg,
 	}
 }
 
