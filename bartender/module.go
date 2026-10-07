@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/components/sensor"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/generic"
@@ -29,15 +31,17 @@ func init() {
 type bartender struct {
 	resource.Named
 	resource.AlwaysRebuild
-	logger       logging.Logger
-	cfg          *Config
-	arm          arm.Arm
-	fsSvc        framesystem.Service
-	poseSwitches []toggleswitch.Switch
-	filesaver    *filesaver.Saver
-	queue        *order.Queue
-	orderSink    orderSensorSink
-	queueStop    chan struct{}
+	logger        logging.Logger
+	cfg           *Config
+	arm           arm.Arm
+	gripper       gripper.Gripper
+	fsSvc         framesystem.Service
+	poseSwitches  []toggleswitch.Switch
+	heldGeomFrame referenceframe.Frame
+	filesaver     *filesaver.Saver
+	queue         *order.Queue
+	orderSink     orderSensorSink
+	queueStop     chan struct{}
 }
 
 func newBartender(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
@@ -49,6 +53,11 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 	armComp, err := arm.FromProvider(deps, cfg.ArmName)
 	if err != nil {
 		return nil, fmt.Errorf("arm %q: %w", cfg.ArmName, err)
+	}
+
+	gripperComp, err := gripper.FromProvider(deps, cfg.GripperName)
+	if err != nil {
+		return nil, fmt.Errorf("gripper %q: %w", cfg.GripperName, err)
 	}
 
 	fsSvc, err := framesystem.FromDependencies(deps)
@@ -70,6 +79,7 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		logger:       logger,
 		cfg:          cfg,
 		arm:          armComp,
+		gripper:      gripperComp,
 		fsSvc:        fsSvc,
 		poseSwitches: poseSwitches,
 		filesaver:    filesaver.New(cfg.SaveMotionRequestsDir, logger),

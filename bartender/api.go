@@ -18,7 +18,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["execute_action"]; ok {
 		return b.handleExecuteAction(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action")
+	if raw, ok := cmd["pickup_pour_return"]; ok {
+		return b.handlePickupPourReturn(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -59,6 +62,47 @@ func (b *bartender) handleExecuteAction(ctx context.Context, raw any) (map[strin
 		"pose":        pose,
 		"duration_ms": duration.Milliseconds(),
 	}, nil
+}
+
+func (b *bartender) handlePickupPourReturn(ctx context.Context, raw any) (map[string]any, error) {
+	bottle, pourMs, err := parsePickupPourReturn(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.pickupPourReturn(ctx, bottle, pourMs); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"bottle":      bottle,
+		"pour_ms":     pourMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parsePickupPourReturn(raw any) (string, int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("pickup_pour_return: expected object with 'bottle' and 'pour_ms', got %T", raw)
+	}
+	bottle, _ := m["bottle"].(string)
+	if bottle == "" {
+		return "", 0, fmt.Errorf("pickup_pour_return: 'bottle' is required")
+	}
+	var pourMs int
+	switch v := m["pour_ms"].(type) {
+	case float64:
+		pourMs = int(v)
+	case int:
+		pourMs = v
+	default:
+		return "", 0, fmt.Errorf("pickup_pour_return: 'pour_ms' must be a number")
+	}
+	if pourMs < 0 {
+		return "", 0, fmt.Errorf("pickup_pour_return: 'pour_ms' must be >= 0")
+	}
+	return bottle, pourMs, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {

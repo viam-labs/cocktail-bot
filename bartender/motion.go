@@ -76,6 +76,15 @@ func (b *bartender) resolvePose(ctx context.Context, poseName string) (*poseData
 	return nil, nil, fmt.Errorf("pose %q not found on any switcher: %w", poseName, lastErr)
 }
 
+func (b *bartender) findSwitch(name string) (toggleswitch.Switch, error) {
+	for _, sw := range b.poseSwitches {
+		if sw.Name().ShortName() == name {
+			return sw, nil
+		}
+	}
+	return nil, fmt.Errorf("switch %q not in pose_switcher_names", name)
+}
+
 func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSystem, referenceframe.FrameSystemInputs, error) {
 	fsCfg, err := b.fsSvc.FrameSystemConfig(ctx)
 	if err != nil {
@@ -84,6 +93,11 @@ func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSys
 	fs, err := referenceframe.NewFrameSystem("bartender", fsCfg.Parts, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build frame system: %w", err)
+	}
+	if b.heldGeomFrame != nil {
+		if err := fs.AddFrame(b.heldGeomFrame, fs.Frame(b.cfg.GripperName)); err != nil {
+			return nil, nil, fmt.Errorf("attach held geometry frame: %w", err)
+		}
 	}
 	armInputs, err := b.arm.CurrentInputs(ctx)
 	if err != nil {
@@ -118,18 +132,12 @@ func (b *bartender) savePlan(ctx context.Context, req *armplanning.PlanRequest, 
 	})
 }
 
-func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Duration, error) {
+func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints) (time.Duration, error) {
 	start := time.Now()
-	pd, _, err := b.resolvePose(ctx, poseName)
-	if err != nil {
-		return 0, err
-	}
-
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
 		return 0, err
 	}
-
 	goalPIF := referenceframe.NewPoseInFrame(pd.refFrame, pd.pose)
 	worldTF, err := fs.Transform(fsInputs.ToLinearInputs(), goalPIF, referenceframe.World)
 	if err != nil {
@@ -143,24 +151,73 @@ func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Du
 		referenceframe.FrameSystemPoses{componentName: worldTF.(*referenceframe.PoseInFrame)},
 		nil,
 	)
-
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		StartState:  armplanning.NewPlanState(nil, fsInputs),
 		Goals:       []*armplanning.PlanState{goal},
+		Constraints: constraints,
 	}
-
-	plan, err := b.planMotion(ctx, req, poseName)
+	plan, err := b.planMotion(ctx, req, label)
 	if err != nil {
 		return 0, err
 	}
-
 	positions, err := plan.Trajectory().GetFrameInputs(b.cfg.ArmName)
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, nil, nil); err != nil {
-		return 0, fmt.Errorf("execute %s: %w", poseName, err)
+		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
+}
+
+func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Duration, error) {
+	pd, _, err := b.resolvePose(ctx, poseName)
+	if err != nil {
+		return 0, err
+	}
+	return b.moveToResolvedPose(ctx, pd, poseName, nil)
+}
+
+func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName
+	return b.moveToResolvedPose(ctx, pd, label, nil)
+}
+
+// linear = straight-line through space; critical for grabbing bottles (any
+// lateral drift risks knocking the bottle). 1 mm / 5° tolerance keeps the
+// planner from refusing to plan a tight approach.
+func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":linear"
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1, OrientationToleranceDegs: 5}},
+	}
+	return b.moveToResolvedPose(ctx, pd, label, constraints)
+}
+
+const noSpillOrientationToleranceDegs = 15
+
+// Carry = plan-wide orientation constraint; gripper stays within ~15° of its
+// starting pose for the whole move so a held bottle doesn't slosh in transit.
+// IgnoreTheta so rotation about the vertical axis is still free.
+func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":carry"
+	constraints := &motionplan.Constraints{
+		OrientationConstraint: []motionplan.OrientationConstraint{
+			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
+		},
+	}
+	return b.moveToResolvedPose(ctx, pd, label, constraints)
 }
