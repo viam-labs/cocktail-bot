@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/components/arm"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/motionplan/armplanning"
@@ -132,7 +134,7 @@ func (b *bartender) savePlan(ctx context.Context, req *armplanning.PlanRequest, 
 	})
 }
 
-func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints) (time.Duration, error) {
+func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
@@ -165,7 +167,7 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
-	if err := b.arm.MoveThroughJointPositions(ctx, positions, nil, nil); err != nil {
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
@@ -176,7 +178,15 @@ func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Du
 	if err != nil {
 		return 0, err
 	}
-	return b.moveToResolvedPose(ctx, pd, poseName, nil)
+	return b.moveToResolvedPose(ctx, pd, poseName, nil, nil)
+}
+
+func (b *bartender) moveArmToPoseWithOpts(ctx context.Context, poseName string, opts *arm.MoveOptions) (time.Duration, error) {
+	pd, _, err := b.resolvePose(ctx, poseName)
+	if err != nil {
+		return 0, err
+	}
+	return b.moveToResolvedPose(ctx, pd, poseName, nil, opts)
 }
 
 func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
@@ -185,7 +195,7 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 		return 0, err
 	}
 	label := sw.Name().ShortName() + ":" + poseName
-	return b.moveToResolvedPose(ctx, pd, label, nil)
+	return b.moveToResolvedPose(ctx, pd, label, nil, nil)
 }
 
 // Straight-line through space; the empty-handed grab/release paths that risk
@@ -200,7 +210,7 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1, OrientationToleranceDegs: 5}},
 	}
-	return b.moveToResolvedPose(ctx, pd, label, constraints)
+	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
 const noSpillOrientationToleranceDegs = 15
@@ -220,7 +230,7 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	return b.moveToResolvedPose(ctx, pd, label, constraints)
+	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
 // Carry = plan-wide orientation constraint; gripper stays within ~15° of its
@@ -237,5 +247,19 @@ func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, 
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	return b.moveToResolvedPose(ctx, pd, label, constraints)
+	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+}
+
+func moveOptionsFromCfg(velDegsPerSec, accDegsPerSec2 float64) *arm.MoveOptions {
+	if velDegsPerSec == 0 && accDegsPerSec2 == 0 {
+		return nil
+	}
+	return &arm.MoveOptions{
+		MaxVelRads: velDegsPerSec * math.Pi / 180.0,
+		MaxAccRads: accDegsPerSec2 * math.Pi / 180.0,
+	}
+}
+
+func (b *bartender) pourMoveOptions() *arm.MoveOptions {
+	return moveOptionsFromCfg(b.cfg.PourVelDegsPerSec, b.cfg.PourAccDegsPerSec2)
 }
