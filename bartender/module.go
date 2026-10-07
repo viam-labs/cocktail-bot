@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/sensor"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/generic"
 
+	"github.com/viam-labs/cocktail-bot/bartender/filesaver"
 	"github.com/viam-labs/cocktail-bot/bartender/order"
 )
 
@@ -25,23 +29,52 @@ func init() {
 type bartender struct {
 	resource.Named
 	resource.AlwaysRebuild
-	logger    logging.Logger
-	queue     *order.Queue
-	orderSink orderSensorSink
-	queueStop chan struct{}
+	logger       logging.Logger
+	cfg          *Config
+	arm          arm.Arm
+	fsSvc        framesystem.Service
+	poseSwitches []toggleswitch.Switch
+	filesaver    *filesaver.Saver
+	queue        *order.Queue
+	orderSink    orderSensorSink
+	queueStop    chan struct{}
 }
 
-func newBartender(_ context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
+func newBartender(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
 	cfg, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return nil, err
 	}
 
+	armComp, err := arm.FromProvider(deps, cfg.ArmName)
+	if err != nil {
+		return nil, fmt.Errorf("arm %q: %w", cfg.ArmName, err)
+	}
+
+	fsSvc, err := framesystem.FromDependencies(deps)
+	if err != nil {
+		return nil, fmt.Errorf("frame system service: %w", err)
+	}
+
+	poseSwitches := make([]toggleswitch.Switch, 0, len(cfg.PoseSwitcherNames))
+	for _, name := range cfg.PoseSwitcherNames {
+		sw, err := toggleswitch.FromProvider(deps, name)
+		if err != nil {
+			return nil, fmt.Errorf("pose switcher %q: %w", name, err)
+		}
+		poseSwitches = append(poseSwitches, sw)
+	}
+
 	b := &bartender{
-		Named:     conf.ResourceName().AsNamed(),
-		logger:    logger,
-		queue:     order.NewQueue(),
-		queueStop: make(chan struct{}),
+		Named:        conf.ResourceName().AsNamed(),
+		logger:       logger,
+		cfg:          cfg,
+		arm:          armComp,
+		fsSvc:        fsSvc,
+		poseSwitches: poseSwitches,
+		filesaver:    filesaver.New(cfg.SaveMotionRequestsDir, logger),
+		queue:        order.NewQueue(),
+		queueStop:    make(chan struct{}),
 	}
 
 	if cfg.OrderSensorName != "" {
@@ -64,5 +97,5 @@ func newBartender(_ context.Context, deps resource.Dependencies, conf resource.C
 
 func (b *bartender) Close(_ context.Context) error {
 	close(b.queueStop)
-	return nil
+	return b.filesaver.Close()
 }
