@@ -21,7 +21,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["pickup_pour_return"]; ok {
 		return b.handlePickupPourReturn(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return")
+	if raw, ok := cmd["dispense_ice"]; ok {
+		return b.handleDispenseIce(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -103,6 +106,47 @@ func parsePickupPourReturn(raw any) (string, int, error) {
 		return "", 0, fmt.Errorf("pickup_pour_return: 'pour_ms' must be >= 0")
 	}
 	return bottle, pourMs, nil
+}
+
+func (b *bartender) handleDispenseIce(ctx context.Context, raw any) (map[string]any, error) {
+	lever, dwellMs, err := parseDispenseIce(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.dispenseIce(ctx, lever, dwellMs); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"lever":       lever,
+		"dwell_ms":    dwellMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseDispenseIce(raw any) (string, int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("dispense_ice: expected object with 'lever' and 'dwell_ms', got %T", raw)
+	}
+	lever, _ := m["lever"].(string)
+	if lever == "" {
+		return "", 0, fmt.Errorf("dispense_ice: 'lever' is required")
+	}
+	var dwellMs int
+	switch v := m["dwell_ms"].(type) {
+	case float64:
+		dwellMs = int(v)
+	case int:
+		dwellMs = v
+	default:
+		return "", 0, fmt.Errorf("dispense_ice: 'dwell_ms' must be a number")
+	}
+	if dwellMs < 0 {
+		return "", 0, fmt.Errorf("dispense_ice: 'dwell_ms' must be >= 0")
+	}
+	return lever, dwellMs, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
