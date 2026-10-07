@@ -5,6 +5,13 @@ GO_SOURCES := $(shell find . -name '*.go')
 $(MODULE_BINARY): Makefile go.mod $(GO_SOURCES)
 	go build -o $(MODULE_BINARY) cmd/module/main.go
 
+CLI_BINARY := bin/cocktail-cli
+
+$(CLI_BINARY): Makefile go.mod $(GO_SOURCES)
+	go build -o $(CLI_BINARY) ./cmd/cli
+
+cli: $(CLI_BINARY)
+
 lint:
 	gofmt -s -w .
 	golangci-lint run
@@ -27,4 +34,4 @@ module.tar.gz: meta.json $(MODULE_BINARY)
 
 module: test module.tar.gz
 
-.PHONY: lint test setup module
+.PHONY: cli lint test setup module
