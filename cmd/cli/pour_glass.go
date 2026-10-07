@@ -15,6 +15,9 @@ type PourGlassFlags struct {
 	Bottle         string
 	PourMs         int
 	FindOnly       bool
+	MouthOffsetMM  float64
+	// Only sent when the flag is given, so the bartender's pour_mouth_offset_mm applies otherwise.
+	MouthOffsetSet bool
 }
 
 var pourGlassFlags PourGlassFlags
@@ -27,15 +30,19 @@ var pourGlassCmd = &cobra.Command{
   1. Move to the saved glass-look pose. If no glass is visible, lower the camera a few mm at a
      time, still aimed at the same spot, until one is found.
   2. Read the glass's world (x, y) from the glass finder.
-  3. Pick up --bottle, pour into the glass for --pour-ms, and put the bottle back.
+  3. Pick up --bottle and replay the saved pour-approach/pour-tilt poses moved so the bottle
+     mouth (--mouth-offset-mm from the gripper, toward the side the bottle leans) is above the
+     glass. Pour for --pour-ms and put the bottle back.
 
 --find-only stops after step 2 (DoCommand find_glass). The arm still moves to search, but the
 bottle is never touched. Move the glass between runs to check the (x, y) at many positions.
 
 Examples:
   cocktail-cli pour-glass --machine-address bartender-main.xxxx.viam.cloud --find-only
-  cocktail-cli pour-glass --machine-address bartender-main.xxxx.viam.cloud --bottle bottle-gin --pour-ms 1500`,
-	RunE: func(_ *cobra.Command, _ []string) error {
+  cocktail-cli pour-glass --machine-address bartender-main.xxxx.viam.cloud --bottle bottle-gin --pour-ms 1500
+  cocktail-cli pour-glass --machine-address bartender-main.xxxx.viam.cloud --bottle bottle-gin --pour-ms 1500 --mouth-offset-mm 80`,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		pourGlassFlags.MouthOffsetSet = cmd.Flags().Changed("mouth-offset-mm")
 		return runPourGlass(pourGlassFlags)
 	},
 }
@@ -47,6 +54,8 @@ func init() {
 	f.StringVar(&pourGlassFlags.Bottle, "bottle", "", "[required unless --find-only] bottle station switch to pour from")
 	f.IntVar(&pourGlassFlags.PourMs, "pour-ms", 0, "[required unless --find-only] pour duration in ms")
 	f.BoolVar(&pourGlassFlags.FindOnly, "find-only", false, "search for the glass and print its position without touching the bottle")
+	f.Float64Var(&pourGlassFlags.MouthOffsetMM, "mouth-offset-mm", 100,
+		"horizontal distance from the gripper to the bottle mouth while pouring, along the side the bottle leans; negative flips the side (default: bartender's pour_mouth_offset_mm)")
 }
 
 func (f *PourGlassFlags) validate() error {
@@ -69,9 +78,11 @@ func (f *PourGlassFlags) command() map[string]interface{} {
 	if f.FindOnly {
 		return map[string]interface{}{"find_glass": map[string]interface{}{}}
 	}
-	return map[string]interface{}{
-		"find_and_pour": map[string]interface{}{"bottle": f.Bottle, "pour_ms": f.PourMs},
+	args := map[string]interface{}{"bottle": f.Bottle, "pour_ms": f.PourMs}
+	if f.MouthOffsetSet {
+		args["mouth_offset_mm"] = f.MouthOffsetMM
 	}
+	return map[string]interface{}{"find_and_pour": args}
 }
 
 func runPourGlass(flags PourGlassFlags) error {

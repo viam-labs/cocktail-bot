@@ -167,7 +167,7 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 	return foundGlass{}, errors.New("no glass found in any search view")
 }
 
-func (b *bartender) findAndPour(ctx context.Context, bottle string, pourMs int) (foundGlass, error) {
+func (b *bartender) findAndPour(ctx context.Context, bottle string, pourMs int, mouthOffsetMM *float64) (foundGlass, error) {
 	if _, err := b.findSwitch(bottle); err != nil {
 		return foundGlass{}, err
 	}
@@ -176,9 +176,10 @@ func (b *bartender) findAndPour(ctx context.Context, bottle string, pourMs int) 
 		return foundGlass{}, err
 	}
 	req := pourIntoGlassesReq{
-		bottle:  bottle,
-		pourMs:  pourMs,
-		glasses: []GlassXY{{X: glass.center.X, Y: glass.center.Y}},
+		bottle:        bottle,
+		pourMs:        pourMs,
+		glasses:       []GlassXY{{X: glass.center.X, Y: glass.center.Y}},
+		mouthOffsetMM: mouthOffsetMM,
 	}
 	return glass, b.pourIntoGlasses(ctx, req)
 }

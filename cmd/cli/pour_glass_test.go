@@ -26,8 +26,14 @@ func TestPourGlassCommand(t *testing.T) {
 	_, ok := findOnly.command()["find_glass"]
 	test.That(t, ok, test.ShouldBeTrue)
 
-	full := PourGlassFlags{Bottle: "bottle-gin", PourMs: 1500}
+	full := PourGlassFlags{Bottle: "bottle-gin", PourMs: 1500, MouthOffsetMM: 100}
 	test.That(t, full.command(), test.ShouldResemble, map[string]interface{}{
 		"find_and_pour": map[string]interface{}{"bottle": "bottle-gin", "pour_ms": 1500},
+	})
+
+	full.MouthOffsetMM = 80
+	full.MouthOffsetSet = true
+	test.That(t, full.command(), test.ShouldResemble, map[string]interface{}{
+		"find_and_pour": map[string]interface{}{"bottle": "bottle-gin", "pour_ms": 1500, "mouth_offset_mm": 80.0},
 	})
 }

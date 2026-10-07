@@ -50,19 +50,22 @@ Finding the glass:
 2. Aim point = where the camera's optical axis meets the table (`glass_table_z_mm`, default 0).
 3. If no glass is visible, lower the camera a few millimetres at a time (`glass_search_lower_mm`, default `[0, 5, 10]`), keeping x, y and re-aiming at the same point, waiting `glass_search_settle_ms` (1000) after each move. The first view with a glass wins; unreachable views are skipped.
 
-Pouring: the saved `pour-approach` and `pour-tilt` poses are translated in world x, y from `pour_reference_glass` to the found glass, keeping the saved height and tilt. Glasses farther than `max_pour_offset_mm` (300) from the reference are rejected before the bottle is picked up.
+Pouring: the bottle mouth is assumed to sit `pour_mouth_offset_mm` (default 100) from the gripper, toward the side the bottle leans when going from the saved `pour-approach` to `pour-tilt`. Both saved poses are translated in world x, y so the mouth ends up above the glass, keeping the saved height and tilt. A negative offset flips the side. If the pour would move more than `max_pour_offset_mm` (300) from the saved `pour-tilt`, the command fails before the bottle is picked up.
 
 Bartender config:
 ```json
 "glass_finder_name": "glass-finder",
-"pour_reference_glass": {"x": 520, "y": -80},
+"pour_mouth_offset_mm": 100,
 "max_pour_offset_mm": 300
 ```
 `glass_finder_name` is a `viam:cocktail-bot:glass-finder` vision service on the wrist camera.
 
 ```bash
-# Calibrate once: place a glass where the saved pour lands, find it, and copy its x, y into pour_reference_glass.
+# Find the glass only; the bottle is never touched.
 bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --find-only
 
 bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500
+
+# Try a different mouth offset for this run only.
+bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500 --mouth-offset-mm 80
 ```

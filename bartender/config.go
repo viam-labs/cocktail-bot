@@ -21,9 +21,10 @@ type Config struct {
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
 	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
-	// World XY (mm) of the glass the saved pour-approach/pour-tilt poses pour into.
-	PourReferenceGlass *GlassXY `json:"pour_reference_glass,omitempty"`
-	MaxPourOffsetMM    float64  `json:"max_pour_offset_mm,omitempty"`
+	// Horizontal distance (mm) from the gripper to the bottle mouth while pouring, along the side the
+	// bottle leans (default 100). Negative if the mouth is on the other end.
+	PourMouthOffsetMM *float64 `json:"pour_mouth_offset_mm,omitempty"`
+	MaxPourOffsetMM   float64  `json:"max_pour_offset_mm,omitempty"`
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
 	GlassFinderName string `json:"glass_finder_name,omitempty"`
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
@@ -85,6 +86,13 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		optional = append(optional, vision.Named(c.GlassFinderName).String())
 	}
 	return deps, optional, nil
+}
+
+func (c *Config) pourMouthOffsetMM() float64 {
+	if c.PourMouthOffsetMM == nil {
+		return defaultPourMouthOffsetMM
+	}
+	return *c.PourMouthOffsetMM
 }
 
 func (c *Config) maxPourOffsetMM() float64 {

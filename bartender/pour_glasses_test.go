@@ -9,16 +9,49 @@ import (
 	"go.viam.com/test"
 )
 
-func TestPourOffsets(t *testing.T) {
-	ref := GlassXY{X: 500, Y: 100}
-	offsets, err := pourOffsets(ref, []GlassXY{{X: 500, Y: 100}, {X: 600, Y: 50}}, 300)
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, offsets[0], test.ShouldResemble, r3.Vector{})
-	test.That(t, offsets[1], test.ShouldResemble, r3.Vector{X: 100, Y: -50})
+// Gripper pointing down (z axis -Z) at pour-approach; at pour-tilt its z axis swings toward +X.
+func testPourPoses() (spatialmath.Pose, spatialmath.Pose) {
+	approach := spatialmath.NewPose(r3.Vector{X: 400, Y: 0, Z: 300}, &spatialmath.OrientationVector{OZ: -1})
+	tilted := r3.Vector{X: 1, Z: -1}.Normalize()
+	tilt := spatialmath.NewPose(r3.Vector{X: 420, Y: 0, Z: 280}, &spatialmath.OrientationVector{OX: tilted.X, OY: tilted.Y, OZ: tilted.Z})
+	return approach, tilt
 }
 
-func TestPourOffsetsRejectsFarGlass(t *testing.T) {
-	_, err := pourOffsets(GlassXY{}, []GlassXY{{X: 10, Y: 0}, {X: 300, Y: 300}}, 300)
+func TestLeanDirection(t *testing.T) {
+	approach, tilt := testPourPoses()
+	lean, err := leanDirection(approach, tilt)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, spatialmath.R3VectorAlmostEqual(lean, r3.Vector{X: 1}, 1e-9), test.ShouldBeTrue)
+
+	_, err = leanDirection(approach, approach)
+	test.That(t, err, test.ShouldNotBeNil)
+}
+
+func TestPourShiftsPutMouthOverGlass(t *testing.T) {
+	_, tilt := testPourPoses()
+	lean := r3.Vector{X: 1}
+	shifts, err := pourShifts([]GlassXY{{X: 600, Y: 50}, {X: 520, Y: 0}}, tilt.Point(), lean, 100, 300)
+	test.That(t, err, test.ShouldBeNil)
+	for i, g := range []GlassXY{{X: 600, Y: 50}, {X: 520, Y: 0}} {
+		gripper := tilt.Point().Add(shifts[i])
+		mouth := gripper.Add(lean.Mul(100))
+		test.That(t, mouth.X, test.ShouldAlmostEqual, g.X, 1e-9)
+		test.That(t, mouth.Y, test.ShouldAlmostEqual, g.Y, 1e-9)
+		test.That(t, shifts[i].Z, test.ShouldEqual, 0.0)
+	}
+	test.That(t, spatialmath.R3VectorAlmostEqual(shifts[1], r3.Vector{}, 1e-9), test.ShouldBeTrue)
+}
+
+func TestPourShiftsNegativeOffsetFlipsSide(t *testing.T) {
+	_, tilt := testPourPoses()
+	shifts, err := pourShifts([]GlassXY{{X: 420, Y: 0}}, tilt.Point(), r3.Vector{X: 1}, -100, 300)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, spatialmath.R3VectorAlmostEqual(shifts[0], r3.Vector{X: 100}, 1e-9), test.ShouldBeTrue)
+}
+
+func TestPourShiftsRejectsFarGlass(t *testing.T) {
+	_, tilt := testPourPoses()
+	_, err := pourShifts([]GlassXY{{X: 520, Y: 0}, {X: 520, Y: 400}}, tilt.Point(), r3.Vector{X: 1}, 100, 300)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "glass 1")
 }
@@ -51,6 +84,22 @@ func TestParsePourIntoGlasses(t *testing.T) {
 	test.That(t, req.bottle, test.ShouldEqual, "bottle-gin")
 	test.That(t, req.pourMs, test.ShouldEqual, 1500)
 	test.That(t, req.glasses, test.ShouldResemble, []GlassXY{{X: 500, Y: 100}, {X: 600, Y: -20.5}})
+	test.That(t, req.mouthOffsetMM, test.ShouldBeNil)
+}
+
+func TestParsePourIntoGlassesMouthOffset(t *testing.T) {
+	req, err := parsePourIntoGlasses(map[string]any{
+		"bottle": "b", "pour_ms": 1.0, "mouth_offset_mm": -80.0,
+		"glasses": []any{map[string]any{"x": 1.0, "y": 2.0}},
+	})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, *req.mouthOffsetMM, test.ShouldEqual, -80.0)
+
+	_, err = parsePourIntoGlasses(map[string]any{
+		"bottle": "b", "pour_ms": 1.0, "mouth_offset_mm": "far",
+		"glasses": []any{map[string]any{"x": 1.0, "y": 2.0}},
+	})
+	test.That(t, err, test.ShouldNotBeNil)
 }
 
 func TestParsePourIntoGlassesErrors(t *testing.T) {

@@ -135,9 +135,13 @@ func (b *bartender) handleFindAndPour(ctx context.Context, raw any) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("find_and_pour: %w", err)
 	}
+	mouthOffsetMM, err := parseMouthOffset(raw.(map[string]any))
+	if err != nil {
+		return nil, fmt.Errorf("find_and_pour: %w", err)
+	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	start := time.Now()
-	glass, err := b.findAndPour(ctx, bottle, pourMs)
+	glass, err := b.findAndPour(ctx, bottle, pourMs, mouthOffsetMM)
 	if err != nil {
 		return nil, err
 	}
