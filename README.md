@@ -40,3 +40,32 @@ bin/cocktail-cli hover-glass --machine-address <part>.viam.cloud --camera cam --
 # Hover above the glass.
 bin/cocktail-cli hover-glass --machine-address <part>.viam.cloud --camera cam --component gripper
 ```
+
+### pour-glass
+
+Finds the glass with the wrist camera, picks up `--bottle`, pours `--pour-ms` into the glass, and puts the bottle back (bartender DoCommand `find_and_pour`). `--find-only` stops after finding the glass (`find_glass`): the arm moves to search but never touches the bottle. Move the glass between runs to check the (x, y) at many positions.
+
+Finding the glass:
+1. Move to the saved `glass-look` pose (same pose switcher as `home`): where the camera looks from, not where the glass is.
+2. Aim point = where the camera's optical axis meets the table (`glass_table_z_mm`, default 0).
+3. If no glass is visible, lower the camera a few millimetres at a time (`glass_search_lower_mm`, default `[0, 5, 10]`), keeping x, y and re-aiming at the same point, waiting `glass_search_settle_ms` (1000) after each move. The first view with a glass wins; unreachable views are skipped.
+
+Pouring: the bottle mouth is assumed to sit `pour_mouth_offset_mm` (default 100) from the gripper, toward the side the bottle leans when going from the saved `pour-approach` to `pour-tilt`. Both saved poses are translated in world x, y so the mouth ends up above the glass, keeping the saved height and tilt. A negative offset flips the side. If the pour would move more than `max_pour_offset_mm` (300) from the saved `pour-tilt`, the command fails before the bottle is picked up.
+
+Bartender config:
+```json
+"glass_finder_name": "glass-finder",
+"pour_mouth_offset_mm": 100,
+"max_pour_offset_mm": 300
+```
+`glass_finder_name` is a `viam:cocktail-bot:glass-finder` vision service on the wrist camera.
+
+```bash
+# Find the glass only; the bottle is never touched.
+bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --find-only
+
+bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500
+
+# Try a different mouth offset for this run only.
+bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500 --mouth-offset-mm 80
+```

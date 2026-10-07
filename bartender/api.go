@@ -24,7 +24,16 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["dispense_ice"]; ok {
 		return b.handleDispenseIce(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice")
+	if raw, ok := cmd["pour_into_glasses"]; ok {
+		return b.handlePourIntoGlasses(ctx, raw)
+	}
+	if _, ok := cmd["find_glass"]; ok {
+		return b.handleFindGlass(ctx)
+	}
+	if raw, ok := cmd["find_and_pour"]; ok {
+		return b.handleFindAndPour(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -78,6 +87,66 @@ func (b *bartender) handlePickupPourReturn(ctx context.Context, raw any) (map[st
 		return nil, err
 	}
 	return map[string]any{
+		"bottle":      bottle,
+		"pour_ms":     pourMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func (b *bartender) handlePourIntoGlasses(ctx context.Context, raw any) (map[string]any, error) {
+	req, err := parsePourIntoGlasses(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.pourIntoGlasses(ctx, req); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"bottle":      req.bottle,
+		"pour_ms":     req.pourMs,
+		"glasses":     len(req.glasses),
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func foundGlassResponse(g foundGlass) map[string]any {
+	return map[string]any{
+		"x":        g.center.X,
+		"y":        g.center.Y,
+		"z":        g.center.Z,
+		"label":    g.label,
+		"lower_mm": g.lowerMM,
+	}
+}
+
+func (b *bartender) handleFindGlass(ctx context.Context) (map[string]any, error) {
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	glass, err := b.findGlass(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"glass": foundGlassResponse(glass)}, nil
+}
+
+func (b *bartender) handleFindAndPour(ctx context.Context, raw any) (map[string]any, error) {
+	bottle, pourMs, err := parsePickupPourReturn(raw)
+	if err != nil {
+		return nil, fmt.Errorf("find_and_pour: %w", err)
+	}
+	mouthOffsetMM, err := parseMouthOffset(raw.(map[string]any))
+	if err != nil {
+		return nil, fmt.Errorf("find_and_pour: %w", err)
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	glass, err := b.findAndPour(ctx, bottle, pourMs, mouthOffsetMM)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"glass":       foundGlassResponse(glass),
 		"bottle":      bottle,
 		"pour_ms":     pourMs,
 		"duration_ms": time.Since(start).Milliseconds(),

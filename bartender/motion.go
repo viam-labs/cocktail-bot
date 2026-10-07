@@ -241,13 +241,33 @@ func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, 
 	if err != nil {
 		return 0, err
 	}
-	label := sw.Name().ShortName() + ":" + poseName + ":carry"
+	return b.carryHeldLevelToResolved(ctx, pd, sw.Name().ShortName()+":"+poseName+":carry")
+}
+
+func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, label string) (time.Duration, error) {
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
 	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+}
+
+// Saved poses may be expressed in any frame; shifting them by a world offset needs them in world first.
+func (b *bartender) poseInWorld(ctx context.Context, pd *poseData) (*poseData, error) {
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tf, err := fs.Transform(fsInputs.ToLinearInputs(), referenceframe.NewPoseInFrame(pd.refFrame, pd.pose), referenceframe.World)
+	if err != nil {
+		return nil, fmt.Errorf("transform pose to world: %w", err)
+	}
+	return &poseData{
+		pose:          tf.(*referenceframe.PoseInFrame).Pose(),
+		refFrame:      referenceframe.World,
+		componentName: pd.componentName,
+	}, nil
 }
 
 func moveOptionsFromCfg(velDegsPerSec, accDegsPerSec2 float64) *arm.MoveOptions {

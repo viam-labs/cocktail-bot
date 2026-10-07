@@ -20,6 +20,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(hoverGlassCmd)
+	rootCmd.AddCommand(pourGlassCmd)
 }
 
 func dialMachine(ctx context.Context, address string, logger logging.Logger) (robot.Robot, error) {

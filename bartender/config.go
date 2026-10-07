@@ -8,6 +8,7 @@ import (
 	"go.viam.com/rdk/components/sensor"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/rdk/services/vision"
 )
 
 type Config struct {
@@ -20,6 +21,16 @@ type Config struct {
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
 	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
+	// Horizontal distance (mm) from the gripper to the bottle mouth while pouring, along the side the
+	// bottle leans (default 100). Negative if the mouth is on the other end.
+	PourMouthOffsetMM *float64 `json:"pour_mouth_offset_mm,omitempty"`
+	MaxPourOffsetMM   float64  `json:"max_pour_offset_mm,omitempty"`
+	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
+	GlassFinderName string `json:"glass_finder_name,omitempty"`
+	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
+	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
+	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
+	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -44,6 +55,17 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if c.PourAccDegsPerSec2 < 0 {
 		return nil, nil, errors.New(path + ": pour_acc_degs_per_sec2 must be > 0 if set")
 	}
+	if c.MaxPourOffsetMM < 0 {
+		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")
+	}
+	if c.GlassSearchSettleMs < 0 {
+		return nil, nil, errors.New(path + ": glass_search_settle_ms must be >= 0")
+	}
+	for _, l := range c.GlassSearchLowerMM {
+		if l < 0 {
+			return nil, nil, errors.New(path + ": glass_search_lower_mm entries must be >= 0 (mm below glass-look)")
+		}
+	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
 		arm.Named(c.ArmName).String(),
@@ -60,5 +82,36 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if c.OrderSensorName != "" {
 		optional = append(optional, sensor.Named(c.OrderSensorName).String())
 	}
+	if c.GlassFinderName != "" {
+		optional = append(optional, vision.Named(c.GlassFinderName).String())
+	}
 	return deps, optional, nil
+}
+
+func (c *Config) pourMouthOffsetMM() float64 {
+	if c.PourMouthOffsetMM == nil {
+		return defaultPourMouthOffsetMM
+	}
+	return *c.PourMouthOffsetMM
+}
+
+func (c *Config) maxPourOffsetMM() float64 {
+	if c.MaxPourOffsetMM == 0 {
+		return defaultMaxPourOffsetMM
+	}
+	return c.MaxPourOffsetMM
+}
+
+func (c *Config) glassSearchLowerMM() []float64 {
+	if len(c.GlassSearchLowerMM) == 0 {
+		return defaultGlassSearchLowerMM
+	}
+	return c.GlassSearchLowerMM
+}
+
+func (c *Config) glassSearchSettleMs() int {
+	if c.GlassSearchSettleMs == 0 {
+		return defaultGlassSearchSettleMs
+	}
+	return c.GlassSearchSettleMs
 }
