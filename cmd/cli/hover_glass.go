@@ -8,8 +8,10 @@ import (
 
 	"github.com/golang/geo/r3"
 	"github.com/spf13/cobra"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/pointcloud"
 	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/robot"
 	"go.viam.com/rdk/services/motion"
 	"go.viam.com/rdk/services/vision"
 	"go.viam.com/rdk/spatialmath"
@@ -28,6 +30,7 @@ type HoverGlassFlags struct {
 	HoverZMM       float64
 	DryRun         bool
 	SavePCD        string
+	GlassFinder    string
 }
 
 var hoverGlassFlags HoverGlassFlags
@@ -39,9 +42,14 @@ var hoverGlassCmd = &cobra.Command{
 highest-confidence glass, and moves --component straight down-facing to (x, y, --hover-z-mm).
 Use --dry-run first to print the target without moving the arm.
 
+With --glass-finder, asks that deployed spill-glass-finder vision service for glasses instead
+(DoCommand {"find_glasses": {}}) and hovers above the highest-scoring glass's rim center.
+
 Examples:
   cocktail-cli hover-glass --machine-address bartender-main.xxxx.viam.cloud \
-    --camera cam --component gripper --dry-run --save-pcd glass.pcd`,
+    --camera cam --component gripper --dry-run --save-pcd glass.pcd
+  cocktail-cli hover-glass --machine-address bartender-main.xxxx.viam.cloud \
+    --glass-finder spill-glass-finder --component gripper --dry-run`,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		return runHoverGlass(hoverGlassFlags)
 	},
@@ -59,14 +67,19 @@ func init() {
 	f.Float64Var(&hoverGlassFlags.HoverZMM, "hover-z-mm", 300, "world-frame z of the hover pose in mm")
 	f.BoolVar(&hoverGlassFlags.DryRun, "dry-run", false, "print the target pose without moving")
 	f.StringVar(&hoverGlassFlags.SavePCD, "save-pcd", "", "write the glass's world-frame point cloud to this path")
+	f.StringVar(&hoverGlassFlags.GlassFinder, "glass-finder", "", "spill-glass-finder vision service to query instead of the local glass finder")
 }
 
 func (f *HoverGlassFlags) validate() error {
 	if f.MachineAddress == "" {
 		return errors.New("hover-glass: --machine-address is required")
 	}
-	if f.Camera == "" {
-		return errors.New("hover-glass: --camera is required")
+	if f.GlassFinder != "" {
+		if f.SavePCD != "" {
+			return errors.New("hover-glass: --save-pcd is not supported with --glass-finder")
+		}
+	} else if f.Camera == "" {
+		return errors.New("hover-glass: --camera is required unless --glass-finder is set")
 	}
 	if f.Component == "" && !f.DryRun {
 		return errors.New("hover-glass: --component is required unless --dry-run")
@@ -91,42 +104,24 @@ func runHoverGlass(flags HoverGlassFlags) error {
 		}
 	}()
 
-	conf := &glassfinder.Config{
-		CameraName:    flags.Camera,
-		DetectorName:  flags.Detector,
-		Labels:        flags.Labels,
-		MinConfidence: flags.MinConfidence,
-	}
-	if _, _, err := conf.Validate(""); err != nil {
-		return err
-	}
-	finder, err := glassfinder.New(vision.Named("cli-glass-finder"), conf, machine, logger)
-	if err != nil {
-		return err
-	}
-
-	glasses, _, err := finder.FindGlasses(ctx)
-	if err != nil {
-		return err
-	}
-	if len(glasses) == 0 {
-		return errors.New("hover-glass: no glass found")
-	}
-	for i, g := range glasses {
-		logger.Infof("glass %d: label=%q score=%.2f box=%v points=%d center_world_mm=%v",
-			i, g.Detection.Label(), g.Detection.Score(), *g.Detection.BoundingBox(), g.Cloud.Size(), g.Center)
-	}
-	glass := glasses[0]
-
-	if flags.SavePCD != "" {
-		if err := writePCD(flags.SavePCD, glass.Cloud); err != nil {
+	var center r3.Vector
+	if flags.GlassFinder != "" {
+		glass, world, err := findSpillGlass(ctx, machine, flags.GlassFinder)
+		if err != nil {
 			return err
 		}
-		logger.Infof("wrote world-frame glass cloud to %s", flags.SavePCD)
+		logger.Infof("glass: label=%q score=%.2f radius_mm=%.1f height_mm=%.1f tilt_deg=%.1f reprojection_rmse_px=%.2f rim_center_%s_mm=%v rim_center_world_mm=%v",
+			glass.Label, glass.Score, glass.RadiusMM, glass.HeightMM, glass.TiltDeg, glass.ReprojectionRMSEPx, glass.Frame, glass.RimCenterMM, world)
+		center = world
+	} else {
+		center, err = findLocalGlass(ctx, machine, flags, logger)
+		if err != nil {
+			return err
+		}
 	}
 
 	target := spatialmath.NewPose(
-		r3.Vector{X: glass.Center.X, Y: glass.Center.Y, Z: flags.HoverZMM},
+		r3.Vector{X: center.X, Y: center.Y, Z: flags.HoverZMM},
 		&spatialmath.OrientationVectorDegrees{OZ: -1},
 	)
 	logger.Infof("hover target (world): %v", spatialmath.PoseToProtobuf(target))
@@ -146,6 +141,43 @@ func runHoverGlass(flags HoverGlassFlags) error {
 	}
 	logger.Infof("%s is hovering above the glass", flags.Component)
 	return nil
+}
+
+func findLocalGlass(ctx context.Context, machine robot.Robot, flags HoverGlassFlags, logger logging.Logger) (r3.Vector, error) {
+	conf := &glassfinder.Config{
+		CameraName:    flags.Camera,
+		DetectorName:  flags.Detector,
+		Labels:        flags.Labels,
+		MinConfidence: flags.MinConfidence,
+	}
+	if _, _, err := conf.Validate(""); err != nil {
+		return r3.Vector{}, err
+	}
+	finder, err := glassfinder.New(vision.Named("cli-glass-finder"), conf, machine, logger)
+	if err != nil {
+		return r3.Vector{}, err
+	}
+
+	glasses, _, err := finder.FindGlasses(ctx)
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	if len(glasses) == 0 {
+		return r3.Vector{}, errors.New("hover-glass: no glass found")
+	}
+	for i, g := range glasses {
+		logger.Infof("glass %d: label=%q score=%.2f box=%v points=%d center_world_mm=%v",
+			i, g.Detection.Label(), g.Detection.Score(), *g.Detection.BoundingBox(), g.Cloud.Size(), g.Center)
+	}
+	glass := glasses[0]
+
+	if flags.SavePCD != "" {
+		if err := writePCD(flags.SavePCD, glass.Cloud); err != nil {
+			return r3.Vector{}, err
+		}
+		logger.Infof("wrote world-frame glass cloud to %s", flags.SavePCD)
+	}
+	return glass.Center, nil
 }
 
 func writePCD(path string, pc pointcloud.PointCloud) error {
