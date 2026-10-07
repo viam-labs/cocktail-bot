@@ -24,6 +24,11 @@
       "api": "rdk:component:switch",
       "model": "viam:cocktail-bot:pose-switcher",
       "short_description": "Named arm poses; stores absolute values or baseline-relative deltas."
+    },
+    {
+      "api": "rdk:component:sensor",
+      "model": "viam:cocktail-bot:maintenance-sensor",
+      "short_description": "is_safe=false while arm is moving or bartender has orders queued or running."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
