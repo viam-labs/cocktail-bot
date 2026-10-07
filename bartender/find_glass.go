@@ -121,9 +121,6 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 	if b.glassFinder == nil {
 		return foundGlass{}, errors.New("glass_finder_name is not configured")
 	}
-	if b.cfg.GlassTableZMM == nil {
-		return foundGlass{}, errors.New("glass_table_z_mm is not configured")
-	}
 	camName, err := b.glassCameraName(ctx)
 	if err != nil {
 		return foundGlass{}, err
@@ -135,7 +132,7 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 	if err != nil {
 		return foundGlass{}, err
 	}
-	target, err := lookTarget(cam, *b.cfg.GlassTableZMM)
+	target, err := lookTarget(cam, b.cfg.GlassTableZMM)
 	if err != nil {
 		return foundGlass{}, err
 	}

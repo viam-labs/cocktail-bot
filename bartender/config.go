@@ -26,8 +26,8 @@ type Config struct {
 	MaxPourOffsetMM    float64  `json:"max_pour_offset_mm,omitempty"`
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
 	GlassFinderName string `json:"glass_finder_name,omitempty"`
-	// World z (mm) of the table surface; the search keeps the camera aimed where its glass-look view meets it.
-	GlassTableZMM       *float64  `json:"glass_table_z_mm,omitempty"`
+	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
+	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
 	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
 	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 }
