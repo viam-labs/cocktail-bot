@@ -27,8 +27,9 @@ var pourGlassCmd = &cobra.Command{
 	Short: "Find the glass with the wrist camera, then pick up a bottle and pour into it",
 	Long: `Asks the bartender to find the glass and pour into it (DoCommand find_and_pour):
 
-  1. Move to the saved glass-look pose. If no glass is visible, lower the camera a few mm at a
-     time, still aimed at the same spot, until one is found.
+  1. Move to the saved glass-look pose. If no glass is visible, look a few degrees left and
+     right, then lower the camera a few mm (still aimed at the same spot) and repeat, until one
+     is found.
   2. Read the glass's world (x, y) from the glass finder.
   3. Pick up --bottle and replay the saved pour-approach/pour-tilt poses moved so the bottle
      mouth (--mouth-offset-mm from the gripper, toward the side the bottle leans) is above the
@@ -55,7 +56,7 @@ func init() {
 	f.IntVar(&pourGlassFlags.PourMs, "pour-ms", 0, "[required unless --find-only] pour duration in ms")
 	f.BoolVar(&pourGlassFlags.FindOnly, "find-only", false, "search for the glass and print its position without touching the bottle")
 	f.Float64Var(&pourGlassFlags.MouthOffsetMM, "mouth-offset-mm", 100,
-		"horizontal distance from the gripper to the bottle mouth while pouring, along the side the bottle leans; negative flips the side (default: bartender's pour_mouth_offset_mm)")
+		"horizontal distance from the gripper to the bottle mouth while pouring, toward the side the top of the bottle tips; negative flips the side (default: bartender's pour_mouth_offset_mm)")
 }
 
 func (f *PourGlassFlags) validate() error {
@@ -111,8 +112,8 @@ func runPourGlass(flags PourGlassFlags) error {
 		return err
 	}
 	if glass, ok := res["glass"].(map[string]interface{}); ok {
-		logger.Infof("glass %q at world x=%v y=%v mm (camera lowered %v mm)",
-			glass["label"], glass["x"], glass["y"], glass["lower_mm"])
+		logger.Infof("glass %q at world x=%v y=%v mm (camera lowered %v mm, panned %v°)",
+			glass["label"], glass["x"], glass["y"], glass["lower_mm"], glass["pan_deg"])
 	}
 	logger.Infof("result: %v", res)
 	return nil

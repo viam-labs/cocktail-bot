@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -30,18 +31,28 @@ type pourIntoGlassesReq struct {
 	mouthOffsetMM *float64
 }
 
-// leanDirection is the horizontal direction the gripper's z axis swings from the upright pour-approach
-// to the tilted pour-tilt pose, i.e. the side the bottle leans toward while pouring.
+const minPourTiltRad = 5 * math.Pi / 180
+
+// leanDirection is the horizontal direction the top of an upright bottle moves when the gripper rotates
+// from pour-approach to pour-tilt. It uses the world-frame rotation between the two poses, so it holds
+// whether the pour swings the gripper or twists the wrist about the gripper's own axis.
 func leanDirection(approach, tilt spatialmath.Pose) (r3.Vector, error) {
-	zAxis := func(p spatialmath.Pose) r3.Vector {
-		return spatialmath.Compose(p, spatialmath.NewPoseFromPoint(r3.Vector{Z: 1})).Point().Sub(p.Point())
+	rel := spatialmath.Compose(
+		spatialmath.NewPoseFromOrientation(tilt.Orientation()),
+		spatialmath.PoseInverse(spatialmath.NewPoseFromOrientation(approach.Orientation())),
+	).Orientation().AxisAngles()
+	if math.Abs(rel.Theta) < minPourTiltRad {
+		return r3.Vector{}, fmt.Errorf("pour-approach and pour-tilt differ by only %.1f° of rotation; cannot tell which way the bottle tips",
+			rel.Theta*180/math.Pi)
 	}
-	swing := zAxis(tilt).Sub(zAxis(approach))
-	swing.Z = 0
-	if swing.Norm() < 1e-3 {
-		return r3.Vector{}, errors.New("pour-approach and pour-tilt have the same tilt; cannot tell which way the bottle leans")
+	axis := r3.Vector{X: rel.RX, Y: rel.RY, Z: rel.RZ}.Mul(math.Copysign(1, rel.Theta))
+	// A point above the pivot moves along axis × up for a positive rotation.
+	lean := axis.Cross(r3.Vector{Z: 1})
+	lean.Z = 0
+	if lean.Norm() < 0.1 {
+		return r3.Vector{}, errors.New("pour-approach to pour-tilt rotates about the vertical, which does not tip the bottle")
 	}
-	return swing.Normalize(), nil
+	return lean.Normalize(), nil
 }
 
 // pourShifts returns, per glass, the world XY translation of the saved pour poses that puts the bottle

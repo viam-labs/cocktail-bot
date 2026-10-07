@@ -21,8 +21,8 @@ type Config struct {
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
 	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
-	// Horizontal distance (mm) from the gripper to the bottle mouth while pouring, along the side the
-	// bottle leans (default 100). Negative if the mouth is on the other end.
+	// Horizontal distance (mm) from the gripper to the bottle mouth while pouring, toward the side the
+	// top of the bottle tips (default 100). Negative flips the side.
 	PourMouthOffsetMM *float64 `json:"pour_mouth_offset_mm,omitempty"`
 	MaxPourOffsetMM   float64  `json:"max_pour_offset_mm,omitempty"`
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
@@ -30,6 +30,7 @@ type Config struct {
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
 	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
 	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
+	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
 	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 }
 
@@ -107,6 +108,13 @@ func (c *Config) glassSearchLowerMM() []float64 {
 		return defaultGlassSearchLowerMM
 	}
 	return c.GlassSearchLowerMM
+}
+
+func (c *Config) glassSearchPanDeg() []float64 {
+	if len(c.GlassSearchPanDeg) == 0 {
+		return defaultGlassSearchPanDeg
+	}
+	return c.GlassSearchPanDeg
 }
 
 func (c *Config) glassSearchSettleMs() int {
