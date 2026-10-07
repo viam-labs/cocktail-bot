@@ -1,0 +1,7 @@
+.venv/
+weights/
+tests/output/
+module.tar.gz
+__pycache__/
+.pytest_cache/
+_archive/

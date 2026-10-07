@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["src/spill_glass_finder/spill", "_archive"]

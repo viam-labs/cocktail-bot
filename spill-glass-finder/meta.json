@@ -1,0 +1,24 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam:spill-glass-finder",
+  "visibility": "private",
+  "url": "https://github.com/viam-labs/cocktail-bot",
+  "description": "Transparent glass size and pose from SPILL keypoints and the table plane",
+  "models": [
+    {
+      "api": "rdk:service:vision",
+      "model": "viam:cocktail-bot:spill-glass-finder",
+      "short_description": "Fits each glass's rim, radius and height from SPILL keypoints and the depth table plane."
+    }
+  ],
+  "entrypoint": "run.sh",
+  "build": {
+    "setup": "./setup.sh",
+    "build": "./build.sh",
+    "path": "module.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  }
+}

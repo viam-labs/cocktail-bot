@@ -22,6 +22,8 @@
 
 `labels` defaults to `["wine glass", "cup"]` (COCO classes) and `min_confidence` to `0.5`. The camera must be in the frame system.
 
+`viam:cocktail-bot:spill-glass-finder` (`rdk:service:vision`) is a separate Python module in [`spill-glass-finder/`](spill-glass-finder/README.md). It runs SPILL's glass localization, vendored verbatim, and returns each transparent glass's world-frame rim center, radius, height and tilt.
+
 ## CLI
 
 ```bash
@@ -39,4 +41,10 @@ bin/cocktail-cli hover-glass --machine-address <part>.viam.cloud --camera cam --
 
 # Hover above the glass.
 bin/cocktail-cli hover-glass --machine-address <part>.viam.cloud --camera cam --component gripper
+```
+
+With `--glass-finder <name>`, the CLI uses a deployed `spill-glass-finder` vision service instead of the local glass finder. It calls `DoCommand({"find_glasses": {}})` and takes the first glass in SPILL's order. It logs radius, height and tilt, then hovers at the world (x, y) of the rim center, which the service already returns in the world frame. `--camera`, `--detector`, `--labels` and `--min-confidence` are ignored, and `--save-pcd` is rejected.
+
+```bash
+bin/cocktail-cli hover-glass --machine-address <part>.viam.cloud --glass-finder spill-glass-finder --dry-run
 ```
