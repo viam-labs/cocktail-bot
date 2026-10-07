@@ -9,14 +9,14 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
-type HeldBottleGeometry struct {
+type HeldObjectGeometry struct {
 	Type      string  `json:"type"`
 	RadiusMM  float64 `json:"radius_mm"`
 	LengthMM  float64 `json:"length_mm"`
 	ZOffsetMM float64 `json:"z_offset_mm"`
 }
 
-func (g *HeldBottleGeometry) Validate(path string) error {
+func (g *HeldObjectGeometry) Validate(path string) error {
 	if g == nil {
 		return nil
 	}
@@ -29,32 +29,32 @@ func (g *HeldBottleGeometry) Validate(path string) error {
 	return nil
 }
 
-const heldBottleFrameName = "held-bottle"
+const heldObjectFrameName = "held-object"
 
 // Returns (nil, nil) when g is nil so callers can call unconditionally.
-func buildHeldBottleFrame(g *HeldBottleGeometry) (referenceframe.Frame, error) {
+func buildHeldObjectFrame(g *HeldObjectGeometry) (referenceframe.Frame, error) {
 	if g == nil {
 		return nil, nil
 	}
 	geom, err := spatialmath.NewCapsule(
 		spatialmath.NewPose(r3.Vector{X: 0, Y: 0, Z: -g.ZOffsetMM}, &spatialmath.OrientationVectorDegrees{OZ: 1}),
-		g.RadiusMM, g.LengthMM, heldBottleFrameName,
+		g.RadiusMM, g.LengthMM, heldObjectFrameName,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("build held-bottle geometry: %w", err)
+		return nil, fmt.Errorf("build held-object geometry: %w", err)
 	}
-	return referenceframe.NewStaticFrameWithGeometry(heldBottleFrameName, spatialmath.NewZeroPose(), geom)
+	return referenceframe.NewStaticFrameWithGeometry(heldObjectFrameName, spatialmath.NewZeroPose(), geom)
 }
 
-// No-op when HeldBottleGeometry is nil so pickup code doesn't branch on config.
-func (b *bartender) attachHeldBottle() error {
-	if b.cfg.HeldBottleGeometry == nil {
+// No-op when g is nil so caller code doesn't branch on config.
+func (b *bartender) attachHeld(g *HeldObjectGeometry) error {
+	if g == nil {
 		return nil
 	}
 	if b.heldGeomFrame != nil {
-		return errors.New("attachHeldBottle: already holding a bottle; detach first")
+		return errors.New("attachHeld: already holding an object; detach first")
 	}
-	frame, err := buildHeldBottleFrame(b.cfg.HeldBottleGeometry)
+	frame, err := buildHeldObjectFrame(g)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (b *bartender) attachHeldBottle() error {
 	return nil
 }
 
-// Idempotent so release-the-bottle paths don't branch on held-state.
-func (b *bartender) detachHeldBottle() {
+// Idempotent so release paths don't branch on held-state.
+func (b *bartender) detachHeld() {
 	b.heldGeomFrame = nil
 }
