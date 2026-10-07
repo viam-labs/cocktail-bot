@@ -13,6 +13,7 @@ import (
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/generic"
+	"go.viam.com/rdk/services/vision"
 
 	"github.com/viam-labs/cocktail-bot/bartender/filesaver"
 	"github.com/viam-labs/cocktail-bot/bartender/order"
@@ -41,6 +42,7 @@ type bartender struct {
 	filesaver     *filesaver.Saver
 	queue         *order.Queue
 	orderSink     orderSensorSink
+	glassFinder   vision.Service
 	queueStop     chan struct{}
 }
 
@@ -99,6 +101,14 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		b.orderSink = sink
 	} else {
 		logger.Warn("order_sensor_name not set; order history will not be persisted")
+	}
+
+	if cfg.GlassFinderName != "" {
+		gf, err := vision.FromProvider(deps, cfg.GlassFinderName)
+		if err != nil {
+			return nil, fmt.Errorf("glass finder %q: %w", cfg.GlassFinderName, err)
+		}
+		b.glassFinder = gf
 	}
 
 	go b.processQueue()

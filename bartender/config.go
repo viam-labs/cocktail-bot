@@ -8,6 +8,7 @@ import (
 	"go.viam.com/rdk/components/sensor"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/rdk/services/vision"
 )
 
 type Config struct {
@@ -23,6 +24,13 @@ type Config struct {
 	// World XY (mm) of the glass the saved pour-approach/pour-tilt poses pour into.
 	PourReferenceGlass *GlassXY `json:"pour_reference_glass,omitempty"`
 	MaxPourOffsetMM    float64  `json:"max_pour_offset_mm,omitempty"`
+	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
+	GlassFinderName string `json:"glass_finder_name,omitempty"`
+	// World z (mm) of the table surface; the search keeps the camera aimed where its glass-look view meets it.
+	GlassTableZMM        *float64  `json:"glass_table_z_mm,omitempty"`
+	GlassSearchLowerDeg  []float64 `json:"glass_search_lower_deg,omitempty"`
+	GlassSearchRotateDeg []float64 `json:"glass_search_rotate_deg,omitempty"`
+	GlassSearchSettleMs  int       `json:"glass_search_settle_ms,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -50,6 +58,14 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if c.MaxPourOffsetMM < 0 {
 		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")
 	}
+	if c.GlassSearchSettleMs < 0 {
+		return nil, nil, errors.New(path + ": glass_search_settle_ms must be >= 0")
+	}
+	for _, l := range c.GlassSearchLowerDeg {
+		if l < 0 {
+			return nil, nil, errors.New(path + ": glass_search_lower_deg entries must be >= 0 (degrees lower than glass-look)")
+		}
+	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
 		arm.Named(c.ArmName).String(),
@@ -66,6 +82,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	if c.OrderSensorName != "" {
 		optional = append(optional, sensor.Named(c.OrderSensorName).String())
 	}
+	if c.GlassFinderName != "" {
+		optional = append(optional, vision.Named(c.GlassFinderName).String())
+	}
 	return deps, optional, nil
 }
 
@@ -74,4 +93,25 @@ func (c *Config) maxPourOffsetMM() float64 {
 		return defaultMaxPourOffsetMM
 	}
 	return c.MaxPourOffsetMM
+}
+
+func (c *Config) glassSearchLowerDeg() []float64 {
+	if len(c.GlassSearchLowerDeg) == 0 {
+		return defaultGlassSearchLowerDeg
+	}
+	return c.GlassSearchLowerDeg
+}
+
+func (c *Config) glassSearchRotateDeg() []float64 {
+	if len(c.GlassSearchRotateDeg) == 0 {
+		return defaultGlassSearchRotateDeg
+	}
+	return c.GlassSearchRotateDeg
+}
+
+func (c *Config) glassSearchSettleMs() int {
+	if c.GlassSearchSettleMs == 0 {
+		return defaultGlassSearchSettleMs
+	}
+	return c.GlassSearchSettleMs
 }
