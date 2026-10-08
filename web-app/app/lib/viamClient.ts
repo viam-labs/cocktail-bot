@@ -243,3 +243,18 @@ export async function pourFromShaker(
     pour_from_shaker: { station, pour_ms: pourMs },
   });
 }
+
+export async function makeCocktail(
+  conn: ViamConnection,
+  drinkId: string,
+): Promise<{ duration_ms: number }> {
+  if (conn.isDev) {
+    const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
+    const stepCount = recipe?.steps.length ?? 1;
+    await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * stepCount));
+    return { duration_ms: DEV_VERB_DELAY_MS * stepCount };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    make_cocktail: { drink_id: drinkId },
+  });
+}

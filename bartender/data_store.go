@@ -16,12 +16,16 @@ type Recipe struct {
 }
 
 type RecipeStep struct {
-	Verb    string  `json:"verb"`
-	Bottle  string  `json:"bottle,omitempty"`
-	Station string  `json:"station,omitempty"`
-	Oz      float64 `json:"oz,omitempty"`
-	PourMs  int     `json:"pour_ms,omitempty"`
-	DwellMs int     `json:"dwell_ms,omitempty"`
+	Verb         string  `json:"verb"`
+	Bottle       string  `json:"bottle,omitempty"`
+	Station      string  `json:"station,omitempty"`
+	Source       string  `json:"source,omitempty"`
+	StrainFlow   string  `json:"strain_flow,omitempty"`
+	Oz           float64 `json:"oz,omitempty"`
+	PourMs       int     `json:"pour_ms,omitempty"`
+	DwellMs      int     `json:"dwell_ms,omitempty"`
+	DrainDwellMs int     `json:"drain_dwell_ms,omitempty"`
+	DumpDwellMs  int     `json:"dump_dwell_ms,omitempty"`
 }
 
 type Inventory struct {
