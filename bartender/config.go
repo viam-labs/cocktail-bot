@@ -39,6 +39,24 @@ type Config struct {
 	BottlePourerOz      map[string]float64 `json:"bottle_pourer_oz,omitempty"`
 	DataDir             string             `json:"data_dir,omitempty"`
 	PickupObstacles     map[string]string  `json:"pickup_obstacles,omitempty"`
+	RecipeDefaults      *RecipeDefaults    `json:"recipe_defaults,omitempty"`
+}
+
+// RecipeDefaults names the stations and dwell times make_cocktail uses when a
+// recipe just lists pours — the whole mechanical sequence (ice, mix, strain,
+// serve, rotate) is boilerplate that doesn't vary per drink today, so it lives
+// here instead of leaking into every recipe JSON.
+type RecipeDefaults struct {
+	ShakerSource  string `json:"shaker_source,omitempty"`
+	IceStation    string `json:"ice_station,omitempty"`
+	MixerStation  string `json:"mixer_station,omitempty"`
+	StrainFlow    string `json:"strain_flow,omitempty"`
+	ServeStation  string `json:"serve_station,omitempty"`
+	IceDwellMs    int    `json:"ice_dwell_ms,omitempty"`
+	MixDwellMs    int    `json:"mix_dwell_ms,omitempty"`
+	ServeMs       int    `json:"serve_ms,omitempty"`
+	StrainDrainMs int    `json:"strain_drain_ms,omitempty"`
+	StrainDumpMs  int    `json:"strain_dump_ms,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {

@@ -37,12 +37,9 @@ const DEV_RECIPES: Recipe[] = [
   {
     id: "espresso_martini",
     name: "Espresso Martini",
-    steps: [
-      { verb: "pour_into_shaker", bottle: "vodka", oz: 2 },
-      { verb: "pour_into_shaker", bottle: "coffee-liquor", oz: 1 },
-      { verb: "dispense_ice", station: "ice-station", dwell_ms: 3000 },
-      { verb: "mix", station: "mixer", dwell_ms: 10000 },
-      { verb: "pour_from_shaker", station: "serving", pour_ms: 5000 },
+    pours: [
+      { ingredient: "vodka", oz: 2 },
+      { ingredient: "coffee-liquor", oz: 1 },
     ],
   },
 ];
@@ -250,9 +247,10 @@ export async function makeCocktail(
 ): Promise<{ duration_ms: number }> {
   if (conn.isDev) {
     const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
-    const stepCount = recipe?.steps.length ?? 1;
-    await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * stepCount));
-    return { duration_ms: DEV_VERB_DELAY_MS * stepCount };
+    // Pours plus the fixed suffix (ice, mix, strain, serve, rotate = 5 phases).
+    const phases = (recipe?.pours.length ?? 0) + 5;
+    await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * phases));
+    return { duration_ms: DEV_VERB_DELAY_MS * phases };
   }
   return doCommand(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { drink_id: drinkId },
