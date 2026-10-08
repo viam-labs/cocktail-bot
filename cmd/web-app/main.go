@@ -9,7 +9,7 @@ import (
 	"go.viam.com/rdk/resource"
 )
 
-var model = resource.NewModel("viam-labs", "cocktail-bot-app", "cocktail-bot")
+var model = resource.NewModel("viam", "cocktail-bot-app", "cocktail-bot")
 
 type placeholder struct {
 	resource.AlwaysRebuild
