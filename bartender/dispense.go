@@ -9,6 +9,7 @@ import (
 const (
 	poseShakerHover      = "shaker-hover"
 	poseShakerGrab       = "shaker-grab"
+	poseShakerLift       = "shaker-lift"
 	poseShakerCarryHover = "shaker-carry-hover"
 	poseDepositApproach  = "deposit-approach"
 	poseDepositPlace     = "deposit-place"
@@ -36,6 +37,9 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	}
 	if _, err := b.linearMoveToPose(ctx, sw, poseShakerGrab, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker grab: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseShakerLift, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-lift shaker before closing: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on shaker: %w", err)
@@ -99,11 +103,14 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.carryHeldLevel(ctx, sw, poseShakerCarryHover, shakerAllow...); err != nil {
 		return fmt.Errorf("carry back to shaker carry-hover: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseShakerGrab, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-to shaker grab: %w", err)
+	if _, err := b.linearCarryToPose(ctx, sw, poseShakerLift, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-descend to shaker lift: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
-		return fmt.Errorf("release shaker at source: %w", err)
+		return fmt.Errorf("release shaker grip at lift: %w", err)
+	}
+	if _, err := b.linearCarryToPose(ctx, sw, poseShakerGrab, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
 	}
 	b.detachHeld()
 	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHover, shakerAllow...); err != nil {
