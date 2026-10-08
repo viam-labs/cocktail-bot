@@ -14,6 +14,7 @@ const (
 	poseShakerALift       = "shaker-a-lift"
 	poseShakerACarryHover = "shaker-a-carry-hover"
 	poseShakerBHover      = "shaker-b-hover"
+	poseShakerBHoverAbove = "shaker-b-hover-above"
 	poseShakerBPlace      = "shaker-b-place"
 	poseShakerBDescend    = "shaker-b-descend"
 	poseFilterALift       = "filter-a-lift"
@@ -83,8 +84,8 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 		return fmt.Errorf("untilt A at strain-approach: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, flowSw, poseShakerBHover, shakerBAllow...); err != nil {
-		return fmt.Errorf("carry A to shaker-b-hover: %w", err)
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseShakerBHoverAbove, shakerBAllow...); err != nil {
+		return fmt.Errorf("carry A to shaker-b-hover-above: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, flowSw, poseShakerBPlace, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend to shaker-b-place: %w", err)
