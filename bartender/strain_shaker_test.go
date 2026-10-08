@@ -9,9 +9,7 @@ import (
 func TestParseStrainShaker(t *testing.T) {
 	ok := map[string]any{
 		"source":         "ice-station",
-		"strain":         "strain-station",
-		"garbage":        "garbage",
-		"parking":        "shaker-parking",
+		"strain_flow":    "strain-flow",
 		"drain_dwell_ms": 4000.0,
 		"dump_dwell_ms":  2000.0,
 	}
@@ -25,9 +23,7 @@ func TestParseStrainShaker(t *testing.T) {
 		{"ok", ok, false, ""},
 		{"not object", "not-a-map", true, "object"},
 		{"missing source", omit(ok, "source"), true, "source"},
-		{"missing strain", omit(ok, "strain"), true, "strain"},
-		{"missing garbage", omit(ok, "garbage"), true, "garbage"},
-		{"missing parking", omit(ok, "parking"), true, "parking"},
+		{"missing strain_flow", omit(ok, "strain_flow"), true, "strain_flow"},
 		{"missing drain dwell", omit(ok, "drain_dwell_ms"), true, "drain_dwell_ms"},
 		{"missing dump dwell", omit(ok, "dump_dwell_ms"), true, "dump_dwell_ms"},
 		{"negative drain", override(ok, "drain_dwell_ms", -1.0), true, ">= 0"},
@@ -44,9 +40,7 @@ func TestParseStrainShaker(t *testing.T) {
 			}
 			test.That(t, err, test.ShouldBeNil)
 			test.That(t, req.source, test.ShouldEqual, "ice-station")
-			test.That(t, req.strain, test.ShouldEqual, "strain-station")
-			test.That(t, req.garbage, test.ShouldEqual, "garbage")
-			test.That(t, req.parking, test.ShouldEqual, "shaker-parking")
+			test.That(t, req.strainFlow, test.ShouldEqual, "strain-flow")
 			test.That(t, req.drainDwellMs, test.ShouldEqual, 4000)
 			test.That(t, req.dumpDwellMs, test.ShouldEqual, 2000)
 		})
