@@ -5,6 +5,11 @@ import type { ViamConnection } from "./lib/viamClient";
 import { getInventory, updateInventoryItem } from "./lib/viamClient";
 import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
+import styles from "./inventory.module.css";
+
+function cap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
 
 export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
@@ -52,69 +57,98 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   }
 
   const items = inventory ? Object.entries(inventory.ingredients).sort(([a], [b]) => a.localeCompare(b)) : [];
+  const inStock = items.filter(([, s]) => s.in_stock);
+  const outOfStock = items.filter(([, s]) => !s.in_stock);
 
   return (
     <>
       <Nav current="inventory" />
-      <main className="max-w-3xl mx-auto p-6 flex flex-col gap-6">
-        <h1 className="text-3xl font-semibold tracking-tight">Inventory</h1>
+      <div className={styles.scope}>
+        <main className={styles.page}>
+          <div className={styles.toolbar}>
+            <h1 className={styles.pageTitle}>Inventory</h1>
+            <div className={styles.addRow}>
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="New ingredient"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addIngredient();
+                }}
+              />
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnMain}`}
+                onClick={addIngredient}
+                disabled={busy || !newName.trim()}
+              >
+                Add
+              </button>
+            </div>
+          </div>
 
-        <section className="flex gap-2">
-          <input
-            type="text"
-            placeholder="New ingredient name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") addIngredient();
-            }}
-            className="flex-1 h-11 border border-gray-300 rounded-lg px-4"
-          />
-          <button
-            type="button"
-            onClick={addIngredient}
-            disabled={busy || !newName.trim()}
-            className="h-11 px-5 rounded-lg bg-black text-white font-medium disabled:opacity-50"
-          >
-            Add
-          </button>
-        </section>
+          {error && <p className={styles.error}>{error}</p>}
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-
-        {!inventory ? (
-          <p className="text-gray-600">Loading…</p>
-        ) : items.length === 0 ? (
-          <p className="text-gray-600">No ingredients yet. Add one above.</p>
-        ) : (
-          <ul className="divide-y divide-gray-200 border border-gray-200 rounded-xl overflow-hidden bg-white">
-            {items.map(([name, stock]) => (
-              <li key={name} className="flex items-center justify-between px-5 h-16">
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      stock.in_stock ? "bg-green-600" : "bg-gray-300"
-                    }`}
-                  />
-                  <span className="font-medium">{name}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => toggle(name, !stock.in_stock)}
-                  disabled={busy}
-                  className={`h-9 px-4 rounded-lg text-sm font-medium border ${
-                    stock.in_stock
-                      ? "border-gray-300 text-gray-700 hover:bg-gray-50"
-                      : "border-black bg-black text-white"
-                  } disabled:opacity-50`}
-                >
-                  {stock.in_stock ? "In stock" : "Out of stock"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
+          {!inventory ? (
+            <p className={styles.empty}>Loading…</p>
+          ) : items.length === 0 ? (
+            <p className={styles.empty}>No ingredients yet. Add one above.</p>
+          ) : (
+            <>
+              <StockSection title="In stock" count={inStock.length} items={inStock} inStock busy={busy} onToggle={toggle} />
+              <StockSection title="Out of stock" count={outOfStock.length} items={outOfStock} inStock={false} busy={busy} onToggle={toggle} />
+            </>
+          )}
+        </main>
+      </div>
     </>
+  );
+}
+
+function StockSection({
+  title,
+  count,
+  items,
+  inStock,
+  busy,
+  onToggle,
+}: {
+  title: string;
+  count: number;
+  items: [string, { in_stock: boolean }][];
+  inStock: boolean;
+  busy: boolean;
+  onToggle: (name: string, next: boolean) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className={styles.section}>
+      <h2>
+        {title}
+        <span className={styles.sectionCount}>{count}</span>
+      </h2>
+      <div className={styles.rows}>
+        {items.map(([name]) => (
+          <div key={name} className={styles.row}>
+            <span
+              className={styles.dot}
+              style={{ background: inStock ? "var(--ok)" : "var(--smoke)" }}
+              aria-hidden
+            />
+            <span className={styles.name}>{cap(name)}</span>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() => onToggle(name, !inStock)}
+              disabled={busy}
+            >
+              Mark {inStock ? "out of stock" : "in stock"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
