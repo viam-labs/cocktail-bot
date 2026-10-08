@@ -40,6 +40,9 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err != nil {
 		return fmt.Errorf("strain_flow switch: %w", err)
 	}
+	shakerAllow := b.pickupAllowedCollisions("shaker")
+	parkingAllow := b.pickupAllowedCollisions("parking")
+	receiveAllow := b.pickupAllowedCollisions("receive-shaker")
 
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
 		return fmt.Errorf("start-home: %w", err)
@@ -51,7 +54,7 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper before source shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sourceSw, poseShakerGrab); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sourceSw, poseShakerGrab, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-to source shaker grab: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
@@ -60,7 +63,7 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker A: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, sourceSw, poseShakerCarryHover); err != nil {
+	if _, err := b.carryHeldLevel(ctx, sourceSw, poseShakerCarryHover, shakerAllow...); err != nil {
 		return fmt.Errorf("carry to source shaker-carry-hover: %w", err)
 	}
 
@@ -77,17 +80,17 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 		return fmt.Errorf("untilt A at strain-approach: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, flowSw, poseParkingCarryHover); err != nil {
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseParkingCarryHover, parkingAllow...); err != nil {
 		return fmt.Errorf("carry A to parking carry-hover: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, flowSw, poseParkingGrab); err != nil {
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseParkingGrab, parkingAllow...); err != nil {
 		return fmt.Errorf("linear-to parking grab: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release A at parking: %w", err)
 	}
 	b.detachHeld()
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseParkingHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseParkingHover, parkingAllow...); err != nil {
 		return fmt.Errorf("linear-retreat from parked A: %w", err)
 	}
 
@@ -145,7 +148,7 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper before receive-shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseReceiveShakerGrab); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseReceiveShakerGrab, receiveAllow...); err != nil {
 		return fmt.Errorf("linear-to receive-shaker grab: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
@@ -154,21 +157,21 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker B: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, flowSw, poseReceiveShakerCarryHover); err != nil {
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseReceiveShakerCarryHover, receiveAllow...); err != nil {
 		return fmt.Errorf("carry B to receive-shaker-carry-hover: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, sourceSw, poseShakerCarryHover); err != nil {
+	if _, err := b.carryHeldLevel(ctx, sourceSw, poseShakerCarryHover, shakerAllow...); err != nil {
 		return fmt.Errorf("carry B to source carry-hover: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, sourceSw, poseShakerGrab); err != nil {
+	if _, err := b.linearCarryToPose(ctx, sourceSw, poseShakerGrab, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-to source shaker grab: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release B at source: %w", err)
 	}
 	b.detachHeld()
-	if _, err := b.linearMoveToPose(ctx, sourceSw, poseShakerHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sourceSw, poseShakerHover, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-retreat from B at source: %w", err)
 	}
 

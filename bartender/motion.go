@@ -207,10 +207,55 @@ func (b *bartender) moveArmToPoseOnSwitchWithOpts(ctx context.Context, sw toggle
 	return b.moveToResolvedPose(ctx, pd, label, nil, opts)
 }
 
+// AllowedCollision names a pair of frames whose collision the planner should
+// skip for one move; the two frames can be given in either order. Used by
+// pickup/release moves where the gripper is intentionally entering the volume
+// of an obstacle that models the object about to be picked up.
+type AllowedCollision struct {
+	Frame1 string
+	Frame2 string
+}
+
+// withAllowedCollisions returns constraints with ac added to its collision-spec
+// allow list. Nil constraints becomes a fresh one; empty ac is a no-op.
+func withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
+	if len(ac) == 0 {
+		return constraints
+	}
+	if constraints == nil {
+		constraints = &motionplan.Constraints{}
+	}
+	allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, len(ac))
+	for i, a := range ac {
+		allows[i] = motionplan.CollisionSpecificationAllowedFrameCollisions{Frame1: a.Frame1, Frame2: a.Frame2}
+	}
+	constraints.CollisionSpecification = append(constraints.CollisionSpecification, motionplan.CollisionSpecification{Allows: allows})
+	return constraints
+}
+
+// pickupAllowedCollisions returns the frame pairs whose collision should be
+// skipped while the gripper is in or around the obstacle modeling the object
+// at pickup location `key` (lookup via Config.PickupObstacles). Allows the two
+// gripper-attached collision bodies and the held-object frame to overlap the
+// obstacle, so the pickup, release, and lift-away moves can plan through what
+// would otherwise be the obstacle's volume. Returns nil when no obstacle is
+// configured — the move then plans with no override.
+func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
+	obstacle := b.cfg.PickupObstacles[key]
+	if obstacle == "" {
+		return nil
+	}
+	return []AllowedCollision{
+		{Frame1: "claws-middle", Frame2: obstacle},
+		{Frame1: "grip-point", Frame2: obstacle},
+		{Frame1: heldObjectFrameName, Frame2: obstacle},
+	}
+}
+
 // Straight-line through space; the empty-handed grab/release paths that risk
 // knocking the bottle laterally. For moves WITH a bottle in hand, use
 // linearCarryToPose so the no-spill orientation constraint is applied too.
-func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
 		return 0, err
@@ -219,6 +264,7 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1, OrientationToleranceDegs: 5}},
 	}
+	constraints = withAllowedCollisions(constraints, allowed)
 	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
@@ -227,7 +273,7 @@ const noSpillOrientationToleranceDegs = 15
 // Straight-line + no-spill constraint. For lifting/lowering a bottle held in the
 // gripper: linear so the planner doesn't swing the bottle sideways, orientation
 // so the planner doesn't rotate the gripper mid-ascent and tip the bottle.
-func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
 		return 0, err
@@ -239,26 +285,28 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
+	constraints = withAllowedCollisions(constraints, allowed)
 	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
 // Carry = plan-wide orientation constraint on the held object's long axis, so
 // the shaker stays within ~15° of upright for the whole move and doesn't slosh.
 // IgnoreTheta so rotation about the shaker's own vertical axis is still free.
-func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
 		return 0, err
 	}
-	return b.carryHeldLevelToResolved(ctx, pd, sw.Name().ShortName()+":"+poseName+":carry")
+	return b.carryHeldLevelToResolved(ctx, pd, sw.Name().ShortName()+":"+poseName+":carry", allowed...)
 }
 
-func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, label string) (time.Duration, error) {
+func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, label string, allowed ...AllowedCollision) (time.Duration, error) {
 	constraints := &motionplan.Constraints{
 		OrientationConstraint: []motionplan.OrientationConstraint{
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
+	constraints = withAllowedCollisions(constraints, allowed)
 	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
