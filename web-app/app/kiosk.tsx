@@ -11,6 +11,7 @@ import type { Recipe, RecipeStep } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
 import { makeDispatcher, runOrder, stepLabel } from "./lib/orderRunner";
+import { Nav } from "./nav";
 
 type OrderState =
   | { kind: "idle" }
@@ -67,7 +68,9 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   const resetOrder = useCallback(() => setOrder({ kind: "idle" }), []);
 
   return (
-    <main className="min-h-screen flex flex-col items-center p-8 gap-8">
+    <>
+      <Nav current="kiosk" />
+      <main className="min-h-screen flex flex-col items-center p-8 gap-8">
       <header className="flex flex-col items-center gap-2">
         <h1 className="text-4xl font-semibold tracking-tight">Cocktails</h1>
         <p className={`text-sm ${connected ? "text-green-700" : "text-amber-700"}`}>
@@ -96,7 +99,8 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
       {order.kind === "error" && (
         <OrderError recipe={order.recipe} message={order.message} onDismiss={resetOrder} />
       )}
-    </main>
+      </main>
+    </>
   );
 }
 

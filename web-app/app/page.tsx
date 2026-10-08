@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useViamConnection } from "./lib/useViamConnection";
 import { Kiosk } from "./kiosk";
 import { Admin } from "./admin";
+import { InventoryPage } from "./inventory";
+import { RecipesPage } from "./recipes";
 
 function PageInner() {
   const params = useSearchParams();
@@ -34,6 +36,12 @@ function PageInner() {
 
   if (view === "admin") {
     return <Admin conn={conn} />;
+  }
+  if (view === "inventory") {
+    return <InventoryPage conn={conn} />;
+  }
+  if (view === "recipes") {
+    return <RecipesPage conn={conn} />;
   }
   return <Kiosk conn={conn} connected={connected} />;
 }
