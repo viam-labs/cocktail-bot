@@ -198,6 +198,15 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	return b.moveToResolvedPose(ctx, pd, label, nil, nil)
 }
 
+func (b *bartender) moveArmToPoseOnSwitchWithOpts(ctx context.Context, sw toggleswitch.Switch, poseName string, opts *arm.MoveOptions) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName
+	return b.moveToResolvedPose(ctx, pd, label, nil, opts)
+}
+
 // Straight-line through space; the empty-handed grab/release paths that risk
 // knocking the bottle laterally. For moves WITH a bottle in hand, use
 // linearCarryToPose so the no-spill orientation constraint is applied too.
