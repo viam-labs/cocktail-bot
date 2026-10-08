@@ -42,6 +42,8 @@ func (b *bartender) safeExecuteOrder(o order.Order) {
 		b.publishReading(o, start, time.Now(), execErr, failedStep)
 	}()
 	ctx := ctxWithOrderID(context.Background(), o.ID)
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	failedStep, execErr = b.prepareDrink(ctx, o)
 }
 
