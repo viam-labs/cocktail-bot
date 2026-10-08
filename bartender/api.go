@@ -42,6 +42,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["pour_into_shaker"]; ok {
 		return b.handlePourIntoShaker(ctx, raw)
 	}
+	if raw, ok := cmd["strain_shaker"]; ok {
+		return b.handleStrainShaker(ctx, raw)
+	}
 	if _, ok := cmd["get_recipes"]; ok {
 		return b.handleGetRecipes()
 	}
@@ -51,7 +54,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["update_inventory_item"]; ok {
 		return b.handleUpdateInventoryItem(raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, get_recipes, get_inventory, update_inventory_item")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, get_recipes, get_inventory, update_inventory_item")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -402,6 +405,87 @@ func parseUpdateInventoryItem(raw any) (string, bool, error) {
 		return "", false, fmt.Errorf("update_inventory_item: 'in_stock' must be a boolean")
 	}
 	return ingredient, inStock, nil
+}
+
+func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string]any, error) {
+	req, err := parseStrainShaker(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.strainShaker(ctx, req); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"source":         req.source,
+		"strain":         req.strain,
+		"garbage":        req.garbage,
+		"parking":        req.parking,
+		"drain_dwell_ms": req.drainDwellMs,
+		"dump_dwell_ms":  req.dumpDwellMs,
+		"duration_ms":    time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseStrainShaker(raw any) (strainShakerRequest, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: expected object, got %T", raw)
+	}
+	source, _ := m["source"].(string)
+	if source == "" {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'source' is required")
+	}
+	strain, _ := m["strain"].(string)
+	if strain == "" {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'strain' is required")
+	}
+	garbage, _ := m["garbage"].(string)
+	if garbage == "" {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'garbage' is required")
+	}
+	parking, _ := m["parking"].(string)
+	if parking == "" {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'parking' is required")
+	}
+	drainDwellMs, err := intField(m, "drain_dwell_ms")
+	if err != nil {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
+	}
+	dumpDwellMs, err := intField(m, "dump_dwell_ms")
+	if err != nil {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
+	}
+	return strainShakerRequest{
+		source:       source,
+		strain:       strain,
+		garbage:      garbage,
+		parking:      parking,
+		drainDwellMs: drainDwellMs,
+		dumpDwellMs:  dumpDwellMs,
+	}, nil
+}
+
+func intField(m map[string]any, name string) (int, error) {
+	v, ok := m[name]
+	if !ok {
+		return 0, fmt.Errorf("'%s' is required", name)
+	}
+	switch n := v.(type) {
+	case float64:
+		if n < 0 {
+			return 0, fmt.Errorf("'%s' must be >= 0", name)
+		}
+		return int(n), nil
+	case int:
+		if n < 0 {
+			return 0, fmt.Errorf("'%s' must be >= 0", name)
+		}
+		return n, nil
+	default:
+		return 0, fmt.Errorf("'%s' must be a number", name)
+	}
 }
 
 func parseExecuteAction(raw any) (string, error) {
