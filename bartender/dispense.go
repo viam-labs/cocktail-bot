@@ -13,6 +13,7 @@ const (
 	poseShakerHomeCarryHover = "shaker-home-carry-hover"
 	poseDepositApproach      = "deposit-approach"
 	poseDepositPlace         = "deposit-place"
+	poseDepositDescend       = "deposit-descend"
 	poseDepositExit          = "deposit-exit"
 	poseLeverHover           = "lever-hover"
 	poseLeverEngage          = "lever-engage"
@@ -60,6 +61,9 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release shaker at deposit: %w", err)
 	}
+	if _, err := b.linearCarryToPose(ctx, sw, poseDepositDescend); err != nil {
+		return fmt.Errorf("linear-descend below shaker rim at deposit: %w", err)
+	}
 	b.detachHeld()
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositExit); err != nil {
 		return fmt.Errorf("linear-exit from deposit: %w", err)
@@ -86,6 +90,9 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositExit); err != nil {
 		return fmt.Errorf("linear-back to deposit-exit: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseDepositDescend); err != nil {
+		return fmt.Errorf("linear-to below shaker rim at deposit: %w", err)
 	}
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositPlace); err != nil {
 		return fmt.Errorf("linear-to shaker at deposit: %w", err)
