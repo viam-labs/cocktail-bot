@@ -350,3 +350,7 @@ func moveOptionsFromCfg(velDegsPerSec, accDegsPerSec2 float64) *arm.MoveOptions 
 func (b *bartender) pourMoveOptions() *arm.MoveOptions {
 	return moveOptionsFromCfg(b.cfg.PourVelDegsPerSec, b.cfg.PourAccDegsPerSec2)
 }
+
+func (b *bartender) serveMoveOptions() *arm.MoveOptions {
+	return moveOptionsFromCfg(b.cfg.ServeVelDegsPerSec, b.cfg.ServeAccDegsPerSec2)
+}

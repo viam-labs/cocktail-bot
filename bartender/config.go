@@ -23,6 +23,8 @@ type Config struct {
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
 	PourAccDegsPerSec2    float64             `json:"pour_acc_degs_per_sec2,omitempty"`
+	ServeVelDegsPerSec    float64             `json:"serve_vel_degs_per_sec,omitempty"`
+	ServeAccDegsPerSec2   float64             `json:"serve_acc_degs_per_sec2,omitempty"`
 	// Horizontal distance (mm) from the gripper to the bottle mouth while pouring, toward the side the
 	// top of the bottle tips (default 100). Negative flips the side.
 	PourMouthOffsetMM *float64 `json:"pour_mouth_offset_mm,omitempty"`
@@ -59,6 +61,12 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.PourAccDegsPerSec2 < 0 {
 		return nil, nil, errors.New(path + ": pour_acc_degs_per_sec2 must be > 0 if set")
+	}
+	if c.ServeVelDegsPerSec < 0 {
+		return nil, nil, errors.New(path + ": serve_vel_degs_per_sec must be > 0 if set")
+	}
+	if c.ServeAccDegsPerSec2 < 0 {
+		return nil, nil, errors.New(path + ": serve_acc_degs_per_sec2 must be > 0 if set")
 	}
 	if c.MaxPourOffsetMM < 0 {
 		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")

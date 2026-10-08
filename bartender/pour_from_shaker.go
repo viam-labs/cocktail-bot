@@ -39,14 +39,14 @@ func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string
 	if _, err := b.carryHeldLevel(ctx, sw, poseServeApproach); err != nil {
 		return fmt.Errorf("carry to serve-approach: %w", err)
 	}
-	pourOpts := b.pourMoveOptions()
-	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeTilt, pourOpts); err != nil {
+	serveOpts := b.serveMoveOptions()
+	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeTilt, serveOpts); err != nil {
 		return fmt.Errorf("tilt shaker over glass: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(pourMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("pour dwell: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeApproach, pourOpts); err != nil {
+	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeApproach, serveOpts); err != nil {
 		return fmt.Errorf("untilt shaker over glass: %w", err)
 	}
 
