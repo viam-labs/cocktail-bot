@@ -1,0 +1,21 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam-labs:cocktail-bot-app",
+  "visibility": "public",
+  "url": "https://github.com/viam-labs/cocktail-bot",
+  "description": "Cocktail-bot web app — order drinks and track inventory",
+  "models": [
+    {
+      "api": "rdk:component:generic",
+      "model": "viam-labs:cocktail-bot-app:cocktail-bot"
+    }
+  ],
+  "entrypoint": "cocktail-bot-app",
+  "applications": [
+    {
+      "name": "cocktail-bot",
+      "type": "multi_machine",
+      "entrypoint": "out/index.html"
+    }
+  ]
+}

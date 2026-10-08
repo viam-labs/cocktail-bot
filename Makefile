@@ -1,6 +1,6 @@
 MODULE_BINARY := bin/cocktail-bot
 
-GO_SOURCES := $(shell find . -name '*.go')
+GO_SOURCES := $(shell find . -name '*.go' -not -path './web-app/*')
 
 $(MODULE_BINARY): Makefile go.mod $(GO_SOURCES)
 	go build -o $(MODULE_BINARY) cmd/module/main.go
@@ -34,4 +34,27 @@ module.tar.gz: meta.json $(MODULE_BINARY)
 
 module: test module.tar.gz
 
-.PHONY: cli lint test setup module
+web-app-install:
+	cd web-app && npm ci
+
+web-app-build: web-app-install
+	cd web-app && npm run build
+
+web-app-dev:
+	cd web-app && npm run dev
+
+web-app-test:
+	cd web-app && npm test
+
+web-app-lint:
+	cd web-app && npm run lint
+
+WEB_APP_BINARY := web-app/cocktail-bot-app
+
+$(WEB_APP_BINARY): cmd/web-app/main.go
+	go build -o $@ ./cmd/web-app/
+
+web-app-module: web-app-build $(WEB_APP_BINARY)
+	cd web-app && tar czf module.tar.gz out cocktail-bot-app meta.json
+
+.PHONY: cli lint test setup module web-app-install web-app-build web-app-dev web-app-test web-app-lint web-app-module
