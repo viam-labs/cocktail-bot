@@ -35,7 +35,7 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.linearMoveToPose(ctx, sw, poseShakerDrop); err != nil {
 		return fmt.Errorf("linear-into shaker cradle: %w", err)
 	}
-	if err := b.attachHeld(b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseShakerLift); err != nil {
@@ -84,7 +84,7 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositDrop); err != nil {
 		return fmt.Errorf("linear-into deposit drop position: %w", err)
 	}
-	if err := b.attachHeld(b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker with ice: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseDepositPlace); err != nil {

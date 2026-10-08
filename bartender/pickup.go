@@ -61,7 +61,7 @@ func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on %s: %w", name, err)
 	}
-	if err := b.attachHeld(b.cfg.HeldBottleGeometry); err != nil {
+	if err := b.attachHeld(ctx, b.cfg.HeldBottleGeometry); err != nil {
 		return fmt.Errorf("attach held bottle: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, bottleSw, poseCarryHover); err != nil {

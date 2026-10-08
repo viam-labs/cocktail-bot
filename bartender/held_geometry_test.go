@@ -33,13 +33,13 @@ func TestHeldObjectGeometryValidate(t *testing.T) {
 }
 
 func TestBuildHeldObjectFrameNil(t *testing.T) {
-	frame, err := buildHeldObjectFrame(nil)
+	frame, err := buildHeldObjectFrame(nil, nil)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, frame, test.ShouldBeNil)
 }
 
 func TestBuildHeldObjectFrameCylinder(t *testing.T) {
-	frame, err := buildHeldObjectFrame(&HeldObjectGeometry{Type: "cylinder", RadiusMM: 35, LengthMM: 300, ZOffsetMM: 150})
+	frame, err := buildHeldObjectFrame(&HeldObjectGeometry{Type: "cylinder", RadiusMM: 35, LengthMM: 300, ZOffsetMM: 150}, nil)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, frame, test.ShouldNotBeNil)
 	test.That(t, frame.Name(), test.ShouldEqual, heldObjectFrameName)

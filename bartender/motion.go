@@ -239,12 +239,12 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
-// Carry = plan-wide orientation constraint; gripper stays within ~15° of its
-// starting pose for the whole move so a held bottle doesn't slosh in transit.
-// IgnoreTheta so rotation about the vertical axis is still free.
+// Carry = plan-wide orientation constraint on the held object's long axis, so
+// the shaker stays within ~15° of upright for the whole move and doesn't slosh.
+// IgnoreTheta so rotation about the shaker's own vertical axis is still free.
 func (b *bartender) carryHeldLevel(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
@@ -259,7 +259,65 @@ func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, 
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
+}
+
+// moveHeldToResolvedPose plans with the held-object frame as the goal, so any
+// orientation constraint bounds the shaker's own long axis rather than the
+// gripper's tool axis. Falls back to moveToResolvedPose when nothing is held.
+func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
+	if b.heldGeomFrame == nil {
+		return b.moveToResolvedPose(ctx, pd, label, constraints, opts)
+	}
+	start := time.Now()
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	linearInputs := fsInputs.ToLinearInputs()
+
+	destTF, err := fs.Transform(linearInputs, referenceframe.NewPoseInFrame(pd.refFrame, pd.pose), referenceframe.World)
+	if err != nil {
+		return 0, fmt.Errorf("transform carry destination to world: %w", err)
+	}
+	destPose := destTF.(*referenceframe.PoseInFrame).Pose()
+
+	// Where held-object sits relative to the destination's component frame; constant
+	// because both hang rigidly off the gripper.
+	destComponent := pd.componentName
+	if destComponent == "" {
+		destComponent = b.cfg.ArmName
+	}
+	offTF, err := fs.Transform(linearInputs, referenceframe.NewPoseInFrame(heldObjectFrameName, spatialmath.NewZeroPose()), destComponent)
+	if err != nil {
+		return 0, fmt.Errorf("transform %q into %q: %w", heldObjectFrameName, destComponent, err)
+	}
+	heldGoalPose := spatialmath.Compose(destPose, offTF.(*referenceframe.PoseInFrame).Pose())
+
+	goal := armplanning.NewPlanState(
+		referenceframe.FrameSystemPoses{
+			heldObjectFrameName: referenceframe.NewPoseInFrame(referenceframe.World, heldGoalPose),
+		},
+		nil,
+	)
+	req := &armplanning.PlanRequest{
+		FrameSystem: fs,
+		StartState:  armplanning.NewPlanState(nil, fsInputs),
+		Goals:       []*armplanning.PlanState{goal},
+		Constraints: constraints,
+	}
+	plan, err := b.planMotion(ctx, req, label)
+	if err != nil {
+		return 0, err
+	}
+	positions, err := plan.Trajectory().GetFrameInputs(b.cfg.ArmName)
+	if err != nil {
+		return 0, fmt.Errorf("extract trajectory: %w", err)
+	}
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+		return 0, fmt.Errorf("execute %s: %w", label, err)
+	}
+	return time.Since(start).Round(time.Millisecond), nil
 }
 
 // Saved poses may be expressed in any frame; shifting them by a world offset needs them in world first.
