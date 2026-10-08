@@ -107,16 +107,16 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper before filter grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerAApproach); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerAApproach, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker-a-approach before filter grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterALift); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterALift, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to filter-a-lift: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on filter: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterAHoverAbove); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterAHoverAbove, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-lift to filter-a-hover-above: %w", err)
 	}
 
@@ -136,16 +136,16 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseFilterBHoverAbove); err != nil {
 		return fmt.Errorf("carry filter to filter-b-hover-above: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterBPlace); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterBPlace, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend to filter-b-place: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release filter at filter-b-place: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBDescend); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBDescend, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend to shaker-b-descend after filter place: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBHover, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-retreat to shaker-b-hover after filter place: %w", err)
 	}
 
