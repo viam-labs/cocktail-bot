@@ -82,7 +82,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
             <button
               type="button"
               className={`${styles.btn} ${styles.btnMain}`}
-              onClick={() => setEditing({ index: null, recipe: { id: "", name: "", pours: [], on_menu: false } })}
+              onClick={() => setEditing({ index: null, recipe: { id: "", name: "", pours: [], on_menu: true } })}
             >
               New recipe
             </button>
@@ -103,7 +103,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
                   onClick={() => setEditing({ index: i, recipe: structuredClone(recipe) })}
                 >
                   <h2>{recipe.name || recipe.id || "(unnamed)"}</h2>
-                  {recipe.on_menu ? (
+                  {recipe.on_menu !== false ? (
                     <span className={styles.st}>
                       <i style={{ background: "var(--ok)" }} />
                       On the menu
@@ -187,7 +187,7 @@ function RecipeEditor({
   const [name, setName] = useState(initial.name);
   const [id, setId] = useState(initial.id);
   const [idTouched, setIdTouched] = useState(initial.id !== "");
-  const [onMenu, setOnMenu] = useState(initial.on_menu ?? false);
+  const [onMenu, setOnMenu] = useState(initial.on_menu !== false);
   const [pours, setPours] = useState<Pour[]>(
     initial.pours.length > 0 ? initial.pours : [{ ingredient: ingredientNames[0] ?? "", oz: 1, tol_oz: 0.05 }],
   );

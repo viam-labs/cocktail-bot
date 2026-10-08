@@ -83,9 +83,11 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         <p className="text-gray-600">Loading menu…</p>
       ) : recipes.length === 0 ? (
         <p className="text-gray-600">No recipes configured.</p>
+      ) : recipes.filter((r) => r.on_menu !== false).length === 0 ? (
+        <p className="text-gray-600">No drinks on the menu right now.</p>
       ) : (
         <DrinkGrid
-          recipes={recipes}
+          recipes={recipes.filter((r) => r.on_menu !== false)}
           inventory={inventory}
           disabled={order.kind === "running"}
           onOrder={startOrder}
