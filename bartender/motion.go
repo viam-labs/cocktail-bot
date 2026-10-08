@@ -198,15 +198,6 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	return b.moveToResolvedPose(ctx, pd, label, nil, nil)
 }
 
-func (b *bartender) moveArmToPoseOnSwitchWithOpts(ctx context.Context, sw toggleswitch.Switch, poseName string, opts *arm.MoveOptions) (time.Duration, error) {
-	pd, err := fetchPose(ctx, sw, poseName)
-	if err != nil {
-		return 0, err
-	}
-	label := sw.Name().ShortName() + ":" + poseName
-	return b.moveToResolvedPose(ctx, pd, label, nil, opts)
-}
-
 // AllowedCollision names a pair of frames whose collision the planner should
 // skip for one move; the two frames can be given in either order. Used by
 // pickup/release moves where the gripper is intentionally entering the volume

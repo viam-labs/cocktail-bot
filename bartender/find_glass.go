@@ -18,6 +18,8 @@ const (
 	poseGlassLook = "glass-look"
 
 	defaultGlassSearchSettleMs = 1000
+	// The detector can box one glass twice (e.g. "cup" and "wine glass"); closer centroids are the same glass.
+	defaultGlassMinSeparationMM = 50.0
 )
 
 var (
@@ -92,18 +94,37 @@ func cloudCentroid(pc pointcloud.PointCloud) (r3.Vector, bool) {
 	return sum.Mul(1 / float64(pc.Size())), true
 }
 
-// The glass finder returns objects highest score first, in the world frame.
-func bestGlass(objs []*viz.Object) (r3.Vector, string, bool) {
+type glassHit struct {
+	center r3.Vector
+	label  string
+}
+
+// glassesInView returns one hit per glass, highest score first (the glass finder's order, world frame).
+// Objects whose centroid is within minSeparationMM in x, y of a better one are the same glass.
+func glassesInView(objs []*viz.Object, minSeparationMM float64) []glassHit {
+	var hits []glassHit
 	for _, o := range objs {
-		if c, ok := cloudCentroid(o.PointCloud); ok {
-			label := ""
-			if o.Geometry != nil {
-				label = o.Geometry.Label()
-			}
-			return c, label, true
+		c, ok := cloudCentroid(o.PointCloud)
+		if !ok {
+			continue
 		}
+		duplicate := false
+		for _, h := range hits {
+			if math.Hypot(c.X-h.center.X, c.Y-h.center.Y) < minSeparationMM {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		label := ""
+		if o.Geometry != nil {
+			label = o.Geometry.Label()
+		}
+		hits = append(hits, glassHit{center: c, label: label})
 	}
-	return r3.Vector{}, "", false
+	return hits
 }
 
 func (b *bartender) glassCameraName(ctx context.Context) (string, error) {
@@ -129,27 +150,37 @@ func (b *bartender) framePoseInWorld(ctx context.Context, frame string) (spatial
 	return tf.(*referenceframe.PoseInFrame).Pose(), nil
 }
 
-// findGlass goes to the saved glass-look pose and, until the glass finder sees a glass, tries nearby views:
-// at each height (lowered a few millimetres, re-aimed at the spot it looked at) it also pans a few degrees
-// left and right. The arm is left at the view where the glass was found.
+// findGlass returns the best glass from findGlasses.
 func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
+	glasses, err := b.findGlasses(ctx)
+	if err != nil {
+		return foundGlass{}, err
+	}
+	return glasses[0], nil
+}
+
+// findGlasses goes to the saved glass-look pose and, until the glass finder sees at least one glass, tries
+// nearby views: at each height (lowered a few millimetres, re-aimed at the spot it looked at) it also pans a
+// few degrees left and right. It returns every glass in the first view that has any, best first. The arm is
+// left at that view.
+func (b *bartender) findGlasses(ctx context.Context) ([]foundGlass, error) {
 	if b.glassFinder == nil {
-		return foundGlass{}, errors.New("glass_finder_name is not configured")
+		return nil, errors.New("glass_finder_name is not configured")
 	}
 	camName, err := b.glassCameraName(ctx)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, err
 	}
 	if _, err := b.moveArmToPose(ctx, poseGlassLook); err != nil {
-		return foundGlass{}, fmt.Errorf("move to %s: %w", poseGlassLook, err)
+		return nil, fmt.Errorf("move to %s: %w", poseGlassLook, err)
 	}
 	cam, err := b.framePoseInWorld(ctx, camName)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, err
 	}
 	target, err := lookTarget(cam, b.cfg.GlassTableZMM)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, err
 	}
 	b.logger.Infow("searching for glass", "look_target", target, "camera", camName)
 
@@ -165,23 +196,27 @@ func (b *bartender) findGlass(ctx context.Context) (foundGlass, error) {
 			}
 			// Let the arm settle so the camera delivers a frame taken at this view.
 			if err := sleepCtx(ctx, time.Duration(b.cfg.glassSearchSettleMs())*time.Millisecond); err != nil {
-				return foundGlass{}, err
+				return nil, err
 			}
 			objs, err := b.glassFinder.GetObjectPointClouds(ctx, camName, nil)
 			if err != nil {
-				return foundGlass{}, fmt.Errorf("%s: glass finder: %w", label, err)
+				return nil, fmt.Errorf("%s: glass finder: %w", label, err)
 			}
-			if center, glassLabel, ok := bestGlass(objs); ok {
-				b.logger.Infow("found glass", "label", glassLabel, "x", center.X, "y", center.Y, "z", center.Z, "view", label)
-				return foundGlass{center: center, label: glassLabel, lowerMM: lowerMM, panDeg: panDeg}, nil
+			if hits := glassesInView(objs, b.cfg.glassMinSeparationMM()); len(hits) > 0 {
+				glasses := make([]foundGlass, len(hits))
+				for i, h := range hits {
+					b.logger.Infow("found glass", "index", i, "label", h.label, "x", h.center.X, "y", h.center.Y, "z", h.center.Z, "view", label)
+					glasses[i] = foundGlass{center: h.center, label: h.label, lowerMM: lowerMM, panDeg: panDeg}
+				}
+				return glasses, nil
 			}
 			b.logger.Infow("no glass in view", "view", label)
 		}
 	}
 	if _, err := b.moveArmToPose(ctx, poseGlassLook); err != nil {
-		return foundGlass{}, fmt.Errorf("no glass found, and return to %s failed: %w", poseGlassLook, err)
+		return nil, fmt.Errorf("no glass found, and return to %s failed: %w", poseGlassLook, err)
 	}
-	return foundGlass{}, errors.New("no glass found in any search view")
+	return nil, errors.New("no glass found in any search view")
 }
 
 func (b *bartender) findAndPour(ctx context.Context, bottle string, pourMs int, mouthOffsetMM *float64) (foundGlass, error) {

@@ -71,20 +71,32 @@ func TestPannedViewTurnsInPlace(t *testing.T) {
 	test.That(t, pannedView(cam, 0), test.ShouldEqual, cam)
 }
 
-func TestBestGlassUsesFirstNonEmptyObject(t *testing.T) {
-	empty, err := viz.NewObjectWithLabel(pointcloud.NewBasicEmpty(), "cup", nil)
-	test.That(t, err, test.ShouldBeNil)
+func glassObject(t *testing.T, label string, pts ...r3.Vector) *viz.Object {
+	t.Helper()
 	pc := pointcloud.NewBasicEmpty()
-	test.That(t, pc.Set(r3.Vector{X: 10, Y: 20, Z: 0}, nil), test.ShouldBeNil)
-	test.That(t, pc.Set(r3.Vector{X: 30, Y: 40, Z: 100}, nil), test.ShouldBeNil)
-	glass, err := viz.NewObjectWithLabel(pc, "wine glass", nil)
+	for _, p := range pts {
+		test.That(t, pc.Set(p, nil), test.ShouldBeNil)
+	}
+	o, err := viz.NewObjectWithLabel(pc, label, nil)
 	test.That(t, err, test.ShouldBeNil)
+	return o
+}
 
-	c, label, ok := bestGlass([]*viz.Object{empty, glass})
-	test.That(t, ok, test.ShouldBeTrue)
-	test.That(t, label, test.ShouldEqual, "wine glass")
-	test.That(t, spatialmath.R3VectorAlmostEqual(c, r3.Vector{X: 20, Y: 30, Z: 50}, 1e-9), test.ShouldBeTrue)
+func TestGlassesInView(t *testing.T) {
+	objs := []*viz.Object{
+		glassObject(t, "cup"),
+		glassObject(t, "wine glass", r3.Vector{X: 10, Y: 20, Z: 0}, r3.Vector{X: 30, Y: 40, Z: 100}),
+		// Same glass boxed again as "cup": centroid 14 mm away in x, y.
+		glassObject(t, "cup", r3.Vector{X: 30, Y: 40, Z: 50}),
+		glassObject(t, "cup", r3.Vector{X: 200, Y: -50, Z: 60}),
+	}
+	hits := glassesInView(objs, 50)
+	test.That(t, len(hits), test.ShouldEqual, 2)
+	test.That(t, hits[0].label, test.ShouldEqual, "wine glass")
+	test.That(t, spatialmath.R3VectorAlmostEqual(hits[0].center, r3.Vector{X: 20, Y: 30, Z: 50}, 1e-9), test.ShouldBeTrue)
+	test.That(t, hits[1].label, test.ShouldEqual, "cup")
+	test.That(t, spatialmath.R3VectorAlmostEqual(hits[1].center, r3.Vector{X: 200, Y: -50, Z: 60}, 1e-9), test.ShouldBeTrue)
 
-	_, _, ok = bestGlass(nil)
-	test.That(t, ok, test.ShouldBeFalse)
+	test.That(t, len(glassesInView(objs, 5)), test.ShouldEqual, 3)
+	test.That(t, glassesInView(nil, 50), test.ShouldBeEmpty)
 }

@@ -69,3 +69,11 @@ bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-
 # Try a different mouth offset for this run only.
 bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500 --mouth-offset-mm 80
 ```
+
+### find_and_pour_from_shaker (bartender DoCommand)
+
+```json
+{"find_and_pour_from_shaker": {"pour_ms": 5000}}
+```
+
+Finds the glasses like `find_glass`: every glass in the first search view that has any, best detection first. Detections whose centroids are closer than `glass_min_separation_mm` (50) in x, y count as one glass. For each glass it runs the full `pour_from_shaker` sequence on the `serving_station` switch (default `serving-glass-center`), with `serve-approach` and `serve-tilt` moved to that glass's world x, y; z and orientation stay as saved. Glasses more than `max_pour_offset_mm` (300) from the saved `serve-tilt` are skipped and listed under `skipped`; if all are skipped, nothing is grabbed.
