@@ -10,14 +10,16 @@ import (
 )
 
 type Recipe struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Pours []Pour `json:"pours"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Pours  []Pour `json:"pours"`
+	OnMenu bool   `json:"on_menu,omitempty"`
 }
 
 type Pour struct {
 	Ingredient string  `json:"ingredient"`
 	Oz         float64 `json:"oz"`
+	TolOz      float64 `json:"tol_oz,omitempty"`
 }
 
 type Inventory struct {

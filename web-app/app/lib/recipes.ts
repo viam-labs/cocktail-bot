@@ -2,11 +2,13 @@ export interface Recipe {
   id: string;
   name: string;
   pours: Pour[];
+  on_menu?: boolean;
 }
 
 export interface Pour {
   ingredient: string;
   oz: number;
+  tol_oz?: number;
 }
 
 export function recipeIngredients(recipe: Recipe): string[] {
