@@ -45,6 +45,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["strain_shaker"]; ok {
 		return b.handleStrainShaker(ctx, raw)
 	}
+	if raw, ok := cmd["rotate_shakers"]; ok {
+		return b.handleRotateShakers(ctx, raw)
+	}
 	if _, ok := cmd["get_recipes"]; ok {
 		return b.handleGetRecipes()
 	}
@@ -54,7 +57,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["update_inventory_item"]; ok {
 		return b.handleUpdateInventoryItem(raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, get_recipes, get_inventory, update_inventory_item")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -474,6 +477,34 @@ func intField(m map[string]any, name string) (int, error) {
 	default:
 		return 0, fmt.Errorf("'%s' must be a number", name)
 	}
+}
+
+func (b *bartender) handleRotateShakers(ctx context.Context, raw any) (map[string]any, error) {
+	strainFlow, err := parseRotateShakers(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.rotateShakers(ctx, strainFlow); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"strain_flow": strainFlow,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseRotateShakers(raw any) (string, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("rotate_shakers: expected object, got %T", raw)
+	}
+	strainFlow, _ := m["strain_flow"].(string)
+	if strainFlow == "" {
+		return "", fmt.Errorf("rotate_shakers: 'strain_flow' is required")
+	}
+	return strainFlow, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
