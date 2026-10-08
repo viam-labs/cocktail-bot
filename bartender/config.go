@@ -2,6 +2,7 @@ package bartender
 
 import (
 	"errors"
+	"fmt"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
@@ -28,10 +29,11 @@ type Config struct {
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
 	GlassFinderName string `json:"glass_finder_name,omitempty"`
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
-	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
-	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
-	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
-	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
+	GlassTableZMM       float64            `json:"glass_table_z_mm,omitempty"`
+	GlassSearchLowerMM  []float64          `json:"glass_search_lower_mm,omitempty"`
+	GlassSearchPanDeg   []float64          `json:"glass_search_pan_deg,omitempty"`
+	GlassSearchSettleMs int                `json:"glass_search_settle_ms,omitempty"`
+	BottlePourerOz      map[string]float64 `json:"bottle_pourer_oz,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -65,6 +67,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	for _, l := range c.GlassSearchLowerMM {
 		if l < 0 {
 			return nil, nil, errors.New(path + ": glass_search_lower_mm entries must be >= 0 (mm below glass-look)")
+		}
+	}
+	for name, oz := range c.BottlePourerOz {
+		if oz <= 0 {
+			return nil, nil, fmt.Errorf("%s: bottle_pourer_oz[%q] must be > 0", path, name)
 		}
 	}
 	deps := []string{

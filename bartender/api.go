@@ -39,7 +39,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["pour_from_shaker"]; ok {
 		return b.handlePourFromShaker(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker")
+	if raw, ok := cmd["pour_into_shaker"]; ok {
+		return b.handlePourIntoShaker(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -305,6 +308,47 @@ func parsePourFromShaker(raw any) (string, int, error) {
 		return "", 0, fmt.Errorf("pour_from_shaker: 'pour_ms' must be >= 0")
 	}
 	return station, pourMs, nil
+}
+
+func (b *bartender) handlePourIntoShaker(ctx context.Context, raw any) (map[string]any, error) {
+	bottle, oz, err := parsePourIntoShaker(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.pourIntoShaker(ctx, bottle, oz); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"bottle":      bottle,
+		"oz":          oz,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parsePourIntoShaker(raw any) (string, float64, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("pour_into_shaker: expected object with 'bottle' and 'oz', got %T", raw)
+	}
+	bottle, _ := m["bottle"].(string)
+	if bottle == "" {
+		return "", 0, fmt.Errorf("pour_into_shaker: 'bottle' is required")
+	}
+	var oz float64
+	switch v := m["oz"].(type) {
+	case float64:
+		oz = v
+	case int:
+		oz = float64(v)
+	default:
+		return "", 0, fmt.Errorf("pour_into_shaker: 'oz' must be a number")
+	}
+	if oz <= 0 {
+		return "", 0, fmt.Errorf("pour_into_shaker: 'oz' must be > 0")
+	}
+	return bottle, oz, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
