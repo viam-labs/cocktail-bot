@@ -111,6 +111,20 @@ func TestGetInventoryReturnsCopy(t *testing.T) {
 	test.That(t, fresh.Ingredients["vodka"].InStock, test.ShouldBeTrue)
 }
 
+func TestDataDirFallsBackToModuleEnv(t *testing.T) {
+	t.Setenv("VIAM_MODULE_DATA", "/env/dir")
+
+	explicit := &Config{DataDir: "/explicit"}
+	test.That(t, explicit.dataDir(), test.ShouldEqual, "/explicit")
+
+	fallback := &Config{}
+	test.That(t, fallback.dataDir(), test.ShouldEqual, "/env/dir")
+
+	t.Setenv("VIAM_MODULE_DATA", "")
+	unset := &Config{}
+	test.That(t, unset.dataDir(), test.ShouldEqual, "")
+}
+
 func writeJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	bytes, err := json.Marshal(v)

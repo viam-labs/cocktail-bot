@@ -3,6 +3,7 @@ package bartender
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
@@ -95,6 +96,13 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		optional = append(optional, vision.Named(c.GlassFinderName).String())
 	}
 	return deps, optional, nil
+}
+
+func (c *Config) dataDir() string {
+	if c.DataDir != "" {
+		return c.DataDir
+	}
+	return os.Getenv("VIAM_MODULE_DATA")
 }
 
 func (c *Config) pourMouthOffsetMM() float64 {
