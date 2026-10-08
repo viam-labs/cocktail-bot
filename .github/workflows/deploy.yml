@@ -1,4 +1,4 @@
-name: Deploy module
+name: Deploy module and app
 
 on:
   push:
@@ -71,9 +71,41 @@ jobs:
           key-value: ${{ secrets.viam_key_secret }}
           token: ${{ github.token }}
 
+  publish-app:
+    needs: [compute-version]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-app/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build web app module
+        run: make web-app-module
+
+      - name: Upload to Viam Registry
+        uses: viamrobotics/upload-module@31b3909ba4d40f22a58c8479f3b4302538a5099b
+        with:
+          meta-path: web-app/meta.json
+          module-path: web-app/module.tar.gz
+          platform: any
+          version: ${{ needs.compute-version.outputs.version }}
+          key-id: ${{ secrets.viam_key_id }}
+          key-value: ${{ secrets.viam_key_secret }}
+          do-update: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && !github.event.release.prerelease) }}
+          do-upload: true
+
   send-slack-msg:
     name: Send Slack Message
-    needs: [compute-version, publish-module]
+    needs: [compute-version, publish-module, publish-app]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -92,7 +124,7 @@ jobs:
             LINK_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}"
             LINK_LABEL="Release ${VERSION}"
           fi
-          if [ "${{ needs.publish-module.result }}" = "success" ]; then
+          if [ "${{ needs.publish-module.result }}" = "success" ] && [ "${{ needs.publish-app.result }}" = "success" ]; then
             RESULT="succeeded :white_check_mark:"
           else
             RESULT="failed :x:"
@@ -105,6 +137,7 @@ jobs:
             echo "link_label=$LINK_LABEL"
             echo "result=$RESULT"
             echo "module_result=${{ needs.publish-module.result }}"
+            echo "app_result=${{ needs.publish-app.result }}"
           } >> "$GITHUB_OUTPUT"
 
       - uses: slackapi/slack-github-action@v2
@@ -120,7 +153,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "Deploy *${{ steps.meta.outputs.version }}* (${{ steps.meta.outputs.kind }}) ${{ steps.meta.outputs.result }}\n\tby *${{ steps.meta.outputs.actor }}*\n\t<${{ steps.meta.outputs.link_url }}|${{ steps.meta.outputs.link_label }}>\n\tModule: ${{ steps.meta.outputs.module_result }}\n\t<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow run>"
+                    "text": "Deploy *${{ steps.meta.outputs.version }}* (${{ steps.meta.outputs.kind }}) ${{ steps.meta.outputs.result }}\n\tby *${{ steps.meta.outputs.actor }}*\n\t<${{ steps.meta.outputs.link_url }}|${{ steps.meta.outputs.link_label }}>\n\tModule: ${{ steps.meta.outputs.module_result }}\n\tWeb app: ${{ steps.meta.outputs.app_result }}\n\t<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow run>"
                   }
                 }
               ]
