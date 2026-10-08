@@ -3,7 +3,20 @@ export interface Recipe {
   name: string;
   pours: Pour[];
   on_menu?: boolean;
+  image?: string;
 }
+
+export const DRINK_IMAGE_SLUGS = [
+  "aperol-spritz",
+  "espresso-martini",
+  "gin-and-tonic",
+  "margarita",
+  "martini",
+  "mocktail",
+  "moscow-mule",
+  "negroni",
+  "old-fashioned",
+] as const;
 
 export interface Pour {
   ingredient: string;

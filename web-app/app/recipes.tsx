@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
 import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
 import type { Pour, Recipe } from "./lib/recipes";
+import { DRINK_IMAGE_SLUGS } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
 import styles from "./recipes.module.css";
@@ -188,6 +189,7 @@ function RecipeEditor({
   const [id, setId] = useState(initial.id);
   const [idTouched, setIdTouched] = useState(initial.id !== "");
   const [onMenu, setOnMenu] = useState(initial.on_menu !== false);
+  const [image, setImage] = useState(initial.image ?? "");
   const [pours, setPours] = useState<Pour[]>(
     initial.pours.length > 0 ? initial.pours : [{ ingredient: ingredientNames[0] ?? "", oz: 1, tol_oz: 0.05 }],
   );
@@ -216,7 +218,7 @@ function RecipeEditor({
       alert("Recipe id is required");
       return;
     }
-    onSave({ id: effectiveId, name: trimmedName, pours, on_menu: onMenu });
+    onSave({ id: effectiveId, name: trimmedName, pours, on_menu: onMenu, image: image || undefined });
   }
 
   return (
@@ -263,6 +265,18 @@ function RecipeEditor({
           <label className={styles.toggle}>
             <input type="checkbox" checked={onMenu} onChange={(e) => setOnMenu(e.target.checked)} />
             On the menu
+          </label>
+
+          <label>
+            <span>Illustration</span>
+            <select className={styles.select} value={image} onChange={(e) => setImage(e.target.value)}>
+              <option value="">None (grey tile)</option>
+              {DRINK_IMAGE_SLUGS.map((slug) => (
+                <option key={slug} value={slug}>
+                  {cap(slug.replace(/-/g, " "))}
+                </option>
+              ))}
+            </select>
           </label>
 
           <p className={styles.sub}>Pours, in order</p>

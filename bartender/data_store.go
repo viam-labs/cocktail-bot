@@ -14,6 +14,7 @@ type Recipe struct {
 	Name   string `json:"name"`
 	Pours  []Pour `json:"pours"`
 	OnMenu bool   `json:"on_menu,omitempty"`
+	Image  string `json:"image,omitempty"`
 }
 
 type Pour struct {
