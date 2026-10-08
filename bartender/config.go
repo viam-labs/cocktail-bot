@@ -35,13 +35,15 @@ type Config struct {
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
 	GlassFinderName string `json:"glass_finder_name,omitempty"`
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
-	GlassTableZMM       float64            `json:"glass_table_z_mm,omitempty"`
-	GlassSearchLowerMM  []float64          `json:"glass_search_lower_mm,omitempty"`
-	GlassSearchPanDeg   []float64          `json:"glass_search_pan_deg,omitempty"`
-	GlassSearchSettleMs int                `json:"glass_search_settle_ms,omitempty"`
-	BottlePourerOz      map[string]float64 `json:"bottle_pourer_oz,omitempty"`
-	DataDir             string             `json:"data_dir,omitempty"`
-	PickupObstacles     map[string]string  `json:"pickup_obstacles,omitempty"`
+	GlassTableZMM       float64   `json:"glass_table_z_mm,omitempty"`
+	GlassSearchLowerMM  []float64 `json:"glass_search_lower_mm,omitempty"`
+	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
+	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
+	// Detections whose centroids are closer than this in x, y count as one glass (default 50).
+	GlassMinSeparationMM float64            `json:"glass_min_separation_mm,omitempty"`
+	BottlePourerOz       map[string]float64 `json:"bottle_pourer_oz,omitempty"`
+	DataDir              string             `json:"data_dir,omitempty"`
+	PickupObstacles      map[string]string  `json:"pickup_obstacles,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -74,6 +76,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.MaxPourOffsetMM < 0 {
 		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")
+	}
+	if c.GlassMinSeparationMM < 0 {
+		return nil, nil, errors.New(path + ": glass_min_separation_mm must be >= 0")
 	}
 	if c.GlassSearchSettleMs < 0 {
 		return nil, nil, errors.New(path + ": glass_search_settle_ms must be >= 0")
@@ -150,6 +155,13 @@ func (c *Config) glassSearchPanDeg() []float64 {
 		return defaultGlassSearchPanDeg
 	}
 	return c.GlassSearchPanDeg
+}
+
+func (c *Config) glassMinSeparationMM() float64 {
+	if c.GlassMinSeparationMM == 0 {
+		return defaultGlassMinSeparationMM
+	}
+	return c.GlassMinSeparationMM
 }
 
 func (c *Config) glassSearchSettleMs() int {

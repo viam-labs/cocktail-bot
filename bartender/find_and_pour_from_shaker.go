@@ -30,38 +30,63 @@ func checkServeShift(glass, savedTilt r3.Vector, maxShiftMM float64) error {
 	return nil
 }
 
-// findAndPourFromShaker finds the glass, then runs pour_from_shaker on the serving station with its
-// serve-approach and serve-tilt moved to the glass's x, y (z and orientation as saved).
-func (b *bartender) findAndPourFromShaker(ctx context.Context, pourMs int) (foundGlass, error) {
+type skippedGlass struct {
+	glass  foundGlass
+	reason string
+}
+
+// findAndPourFromShaker finds the glasses, then runs the full pour_from_shaker sequence once per glass on the
+// serving station, with serve-approach and serve-tilt moved to that glass's x, y (z and orientation as saved).
+// Glasses too far from the saved serve-tilt are skipped; if none is left, nothing is grabbed.
+func (b *bartender) findAndPourFromShaker(ctx context.Context, pourMs int) ([]foundGlass, []skippedGlass, error) {
 	sw, err := b.findSwitch(b.cfg.servingStation())
 	if err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
 	approach, err := fetchPose(ctx, sw, poseServeApproach)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
 	tilt, err := fetchPose(ctx, sw, poseServeTilt)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
 	if approach, err = b.poseInWorld(ctx, approach); err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
 	if tilt, err = b.poseInWorld(ctx, tilt); err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
 
-	glass, err := b.findGlass(ctx)
+	glasses, err := b.findGlasses(ctx)
 	if err != nil {
-		return foundGlass{}, err
+		return nil, nil, err
 	}
-	if err := checkServeShift(glass.center, tilt.pose.Point(), b.cfg.maxPourOffsetMM()); err != nil {
-		return foundGlass{}, err
+	var targets []foundGlass
+	var skipped []skippedGlass
+	for _, g := range glasses {
+		if err := checkServeShift(g.center, tilt.pose.Point(), b.cfg.maxPourOffsetMM()); err != nil {
+			b.logger.Warnw("skipping glass", "x", g.center.X, "y", g.center.Y, "err", err)
+			skipped = append(skipped, skippedGlass{glass: g, reason: err.Error()})
+			continue
+		}
+		targets = append(targets, g)
 	}
-	b.logger.Infow("serving into found glass", "x", glass.center.X, "y", glass.center.Y,
-		"saved_serve_tilt", tilt.pose.Point(), "station", sw.Name().ShortName())
-	return glass, b.pourFromShakerAt(ctx, sw, pourMs,
-		withXY(approach, glass.center.X, glass.center.Y),
-		withXY(tilt, glass.center.X, glass.center.Y))
+	if len(targets) == 0 {
+		return nil, skipped, fmt.Errorf("found %d glass(es) but none within max_pour_offset_mm of the saved serve-tilt: %s",
+			len(glasses), skipped[0].reason)
+	}
+
+	var poured []foundGlass
+	for i, g := range targets {
+		b.logger.Infow("serving into found glass", "glass", i+1, "of", len(targets), "x", g.center.X, "y", g.center.Y,
+			"saved_serve_tilt", tilt.pose.Point(), "station", sw.Name().ShortName())
+		if err := b.pourFromShakerAt(ctx, sw, pourMs,
+			withXY(approach, g.center.X, g.center.Y),
+			withXY(tilt, g.center.X, g.center.Y)); err != nil {
+			return poured, skipped, fmt.Errorf("glass %d of %d at (%.0f, %.0f): %w", i+1, len(targets), g.center.X, g.center.Y, err)
+		}
+		poured = append(poured, g)
+	}
+	return poured, skipped, nil
 }

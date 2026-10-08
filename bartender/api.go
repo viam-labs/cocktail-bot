@@ -155,11 +155,15 @@ func foundGlassResponse(g foundGlass) map[string]any {
 
 func (b *bartender) handleFindGlass(ctx context.Context) (map[string]any, error) {
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	glass, err := b.findGlass(ctx)
+	glasses, err := b.findGlasses(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"glass": foundGlassResponse(glass)}, nil
+	all := make([]any, len(glasses))
+	for i, g := range glasses {
+		all[i] = foundGlassResponse(g)
+	}
+	return map[string]any{"glass": foundGlassResponse(glasses[0]), "glasses": all}, nil
 }
 
 func (b *bartender) handleFindAndPour(ctx context.Context, raw any) (map[string]any, error) {
@@ -315,12 +319,23 @@ func (b *bartender) handleFindAndPourFromShaker(ctx context.Context, raw any) (m
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	start := time.Now()
-	glass, err := b.findAndPourFromShaker(ctx, pourMs)
+	poured, skipped, err := b.findAndPourFromShaker(ctx, pourMs)
 	if err != nil {
 		return nil, err
 	}
+	pouredResp := make([]any, len(poured))
+	for i, g := range poured {
+		pouredResp[i] = foundGlassResponse(g)
+	}
+	skippedResp := make([]any, len(skipped))
+	for i, s := range skipped {
+		r := foundGlassResponse(s.glass)
+		r["reason"] = s.reason
+		skippedResp[i] = r
+	}
 	return map[string]any{
-		"glass":       foundGlassResponse(glass),
+		"glasses":     pouredResp,
+		"skipped":     skippedResp,
 		"station":     b.cfg.servingStation(),
 		"pour_ms":     pourMs,
 		"duration_ms": time.Since(start).Milliseconds(),
