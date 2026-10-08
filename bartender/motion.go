@@ -208,16 +208,29 @@ type AllowedCollision struct {
 }
 
 // withAllowedCollisions returns constraints with ac added to its collision-spec
-// allow list. Nil constraints becomes a fresh one; empty ac is a no-op.
-func withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
-	if len(ac) == 0 {
+// allow list. Nil constraints becomes a fresh one; empty ac is a no-op. Allow
+// entries that reference the held-object frame are dropped when nothing is
+// attached, since the planner rejects allow entries whose frame doesn't exist
+// in the current frame system.
+func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
+	filtered := ac
+	if b.heldGeomFrame == nil {
+		filtered = filtered[:0:0]
+		for _, a := range ac {
+			if a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName {
+				continue
+			}
+			filtered = append(filtered, a)
+		}
+	}
+	if len(filtered) == 0 {
 		return constraints
 	}
 	if constraints == nil {
 		constraints = &motionplan.Constraints{}
 	}
-	allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, len(ac))
-	for i, a := range ac {
+	allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, len(filtered))
+	for i, a := range filtered {
 		allows[i] = motionplan.CollisionSpecificationAllowedFrameCollisions{Frame1: a.Frame1, Frame2: a.Frame2}
 	}
 	constraints.CollisionSpecification = append(constraints.CollisionSpecification, motionplan.CollisionSpecification{Allows: allows})
@@ -255,7 +268,7 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1, OrientationToleranceDegs: 5}},
 	}
-	constraints = withAllowedCollisions(constraints, allowed)
+	constraints = b.withAllowedCollisions(constraints, allowed)
 	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
@@ -276,7 +289,7 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	constraints = withAllowedCollisions(constraints, allowed)
+	constraints = b.withAllowedCollisions(constraints, allowed)
 	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
@@ -297,7 +310,7 @@ func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, 
 			{OrientationToleranceDegs: noSpillOrientationToleranceDegs, IgnoreTheta: true},
 		},
 	}
-	constraints = withAllowedCollisions(constraints, allowed)
+	constraints = b.withAllowedCollisions(constraints, allowed)
 	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
