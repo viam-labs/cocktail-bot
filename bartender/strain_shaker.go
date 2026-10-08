@@ -7,26 +7,28 @@ import (
 )
 
 const (
-	poseStrainApproach    = "strain-approach"
-	poseStrainTilt        = "strain-tilt"
-	poseFilterHover       = "filter-hover"
-	poseFilterGrab        = "filter-grab"
-	poseGarbageHover      = "garbage-hover"
-	poseGarbageApproach   = "garbage-approach"
-	poseGarbageTilt       = "garbage-tilt"
-	poseParkingHover      = "parking-hover"
-	poseParkingDrop       = "parking-drop"
-	poseParkingLift       = "parking-lift"
-	poseParkingCarryHover = "parking-carry-hover"
-	poseFilterApproach    = "filter-approach"
-	poseFilterPlace       = "filter-place"
+	poseStrainApproach          = "strain-approach"
+	poseStrainTilt              = "strain-tilt"
+	poseFilterPickupHover       = "filter-pickup-hover"
+	poseFilterPickupGrab        = "filter-pickup-grab"
+	poseGarbageHover            = "garbage-hover"
+	poseGarbageApproach         = "garbage-approach"
+	poseGarbageTilt             = "garbage-tilt"
+	poseParkingHover            = "parking-hover"
+	poseParkingDrop             = "parking-drop"
+	poseParkingLift             = "parking-lift"
+	poseParkingCarryHover       = "parking-carry-hover"
+	poseParkingFilterHover      = "parking-filter-hover"
+	poseParkingFilterPlace      = "parking-filter-place"
+	poseReceiveShakerHover      = "receive-shaker-hover"
+	poseReceiveShakerDrop       = "receive-shaker-drop"
+	poseReceiveShakerLift       = "receive-shaker-lift"
+	poseReceiveShakerCarryHover = "receive-shaker-carry-hover"
 )
 
 type strainShakerRequest struct {
 	source       string
-	strain       string
-	garbage      string
-	parking      string
+	strainFlow   string
 	drainDwellMs int
 	dumpDwellMs  int
 }
@@ -36,17 +38,9 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err != nil {
 		return fmt.Errorf("source switch: %w", err)
 	}
-	strainSw, err := b.findSwitch(req.strain)
+	flowSw, err := b.findSwitch(req.strainFlow)
 	if err != nil {
-		return fmt.Errorf("strain switch: %w", err)
-	}
-	garbageSw, err := b.findSwitch(req.garbage)
-	if err != nil {
-		return fmt.Errorf("garbage switch: %w", err)
-	}
-	parkingSw, err := b.findSwitch(req.parking)
-	if err != nil {
-		return fmt.Errorf("parking switch: %w", err)
+		return fmt.Errorf("strain_flow switch: %w", err)
 	}
 
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
@@ -69,95 +63,95 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 		return fmt.Errorf("carry to source shaker-carry-hover: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, strainSw, poseStrainApproach); err != nil {
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseStrainApproach); err != nil {
 		return fmt.Errorf("carry to strain-approach: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, strainSw, poseStrainTilt); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseStrainTilt); err != nil {
 		return fmt.Errorf("tilt A over filter: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(req.drainDwellMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("strain dwell: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, strainSw, poseStrainApproach); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseStrainApproach); err != nil {
 		return fmt.Errorf("untilt A at strain-approach: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, parkingSw, poseParkingCarryHover); err != nil {
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseParkingCarryHover); err != nil {
 		return fmt.Errorf("carry A to parking carry-hover: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, parkingSw, poseParkingLift); err != nil {
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseParkingLift); err != nil {
 		return fmt.Errorf("linear-down to parking-lift: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, parkingSw, poseParkingDrop); err != nil {
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseParkingDrop); err != nil {
 		return fmt.Errorf("linear-drop A at parking: %w", err)
 	}
 	b.detachHeld()
-	if _, err := b.linearMoveToPose(ctx, parkingSw, poseParkingHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseParkingHover); err != nil {
 		return fmt.Errorf("linear-retreat from parked A: %w", err)
 	}
 
-	if _, err := b.moveArmToPoseOnSwitch(ctx, strainSw, poseFilterHover); err != nil {
-		return fmt.Errorf("move to filter-hover: %w", err)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseFilterPickupHover); err != nil {
+		return fmt.Errorf("move to filter-pickup-hover: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("open gripper before filter grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, strainSw, poseFilterGrab); err != nil {
-		return fmt.Errorf("linear-descend to filter-grab: %w", err)
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterPickupGrab); err != nil {
+		return fmt.Errorf("linear-descend to filter-pickup-grab: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on filter: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, strainSw, poseFilterHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterPickupHover); err != nil {
 		return fmt.Errorf("linear-lift filter: %w", err)
 	}
 
-	if _, err := b.moveArmToPoseOnSwitch(ctx, garbageSw, poseGarbageHover); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseGarbageHover); err != nil {
 		return fmt.Errorf("carry filter to garbage-hover: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, garbageSw, poseGarbageApproach); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseGarbageApproach); err != nil {
 		return fmt.Errorf("linear to garbage-approach: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, garbageSw, poseGarbageTilt); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseGarbageTilt); err != nil {
 		return fmt.Errorf("tilt filter over garbage: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(req.dumpDwellMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("dump dwell: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, garbageSw, poseGarbageApproach); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseGarbageApproach); err != nil {
 		return fmt.Errorf("untilt filter at garbage-approach: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, garbageSw, poseGarbageHover); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseGarbageHover); err != nil {
 		return fmt.Errorf("linear-retreat from garbage: %w", err)
 	}
 
-	if _, err := b.moveArmToPoseOnSwitch(ctx, parkingSw, poseFilterApproach); err != nil {
-		return fmt.Errorf("carry filter to parking filter-approach: %w", err)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseParkingFilterHover); err != nil {
+		return fmt.Errorf("carry filter to parking-filter-hover: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, parkingSw, poseFilterPlace); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseParkingFilterPlace); err != nil {
 		return fmt.Errorf("linear-place filter on parked A: %w", err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
 		return fmt.Errorf("release filter on parked A: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, parkingSw, poseFilterApproach); err != nil {
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseParkingFilterHover); err != nil {
 		return fmt.Errorf("linear-retreat from parked filter: %w", err)
 	}
 
-	if _, err := b.moveArmToPoseOnSwitch(ctx, strainSw, poseShakerHover); err != nil {
-		return fmt.Errorf("move to strain shaker-hover: %w", err)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseReceiveShakerHover); err != nil {
+		return fmt.Errorf("move to receive-shaker-hover: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, strainSw, poseShakerDrop); err != nil {
-		return fmt.Errorf("linear-into strain shaker cradle: %w", err)
+	if _, err := b.linearMoveToPose(ctx, flowSw, poseReceiveShakerDrop); err != nil {
+		return fmt.Errorf("linear-into receive-shaker cradle: %w", err)
 	}
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker B: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, strainSw, poseShakerLift); err != nil {
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseReceiveShakerLift); err != nil {
 		return fmt.Errorf("linear-lift B: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, strainSw, poseShakerCarryHover); err != nil {
-		return fmt.Errorf("carry B to strain carry-hover: %w", err)
+	if _, err := b.carryHeldLevel(ctx, flowSw, poseReceiveShakerCarryHover); err != nil {
+		return fmt.Errorf("carry B to receive-shaker-carry-hover: %w", err)
 	}
 
 	if _, err := b.carryHeldLevel(ctx, sourceSw, poseShakerCarryHover); err != nil {

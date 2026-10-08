@@ -419,9 +419,7 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 	}
 	return map[string]any{
 		"source":         req.source,
-		"strain":         req.strain,
-		"garbage":        req.garbage,
-		"parking":        req.parking,
+		"strain_flow":    req.strainFlow,
 		"drain_dwell_ms": req.drainDwellMs,
 		"dump_dwell_ms":  req.dumpDwellMs,
 		"duration_ms":    time.Since(start).Milliseconds(),
@@ -437,17 +435,9 @@ func parseStrainShaker(raw any) (strainShakerRequest, error) {
 	if source == "" {
 		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'source' is required")
 	}
-	strain, _ := m["strain"].(string)
-	if strain == "" {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'strain' is required")
-	}
-	garbage, _ := m["garbage"].(string)
-	if garbage == "" {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'garbage' is required")
-	}
-	parking, _ := m["parking"].(string)
-	if parking == "" {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'parking' is required")
+	strainFlow, _ := m["strain_flow"].(string)
+	if strainFlow == "" {
+		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'strain_flow' is required")
 	}
 	drainDwellMs, err := intField(m, "drain_dwell_ms")
 	if err != nil {
@@ -459,9 +449,7 @@ func parseStrainShaker(raw any) (strainShakerRequest, error) {
 	}
 	return strainShakerRequest{
 		source:       source,
-		strain:       strain,
-		garbage:      garbage,
-		parking:      parking,
+		strainFlow:   strainFlow,
 		drainDwellMs: drainDwellMs,
 		dumpDwellMs:  dumpDwellMs,
 	}, nil
