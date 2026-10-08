@@ -8,9 +8,13 @@ export interface RecipeStep {
   verb: string;
   bottle?: string;
   station?: string;
+  source?: string;
+  strain_flow?: string;
   oz?: number;
   pour_ms?: number;
   dwell_ms?: number;
+  drain_dwell_ms?: number;
+  dump_dwell_ms?: number;
 }
 
 export function recipeIngredients(recipe: Recipe): string[] {
