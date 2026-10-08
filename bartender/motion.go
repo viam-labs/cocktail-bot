@@ -238,7 +238,6 @@ func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
 	}
 	return []AllowedCollision{
 		{Frame1: "claws-middle", Frame2: obstacle},
-		{Frame1: "grip-point", Frame2: obstacle},
 		{Frame1: heldObjectFrameName, Frame2: obstacle},
 	}
 }
