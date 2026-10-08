@@ -1,6 +1,7 @@
 package bartender
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -31,8 +32,12 @@ func (g *HeldObjectGeometry) Validate(path string) error {
 
 const heldObjectFrameName = "held-object"
 
-// Returns (nil, nil) when g is nil so callers can call unconditionally.
-func buildHeldObjectFrame(g *HeldObjectGeometry) (referenceframe.Frame, error) {
+// buildHeldObjectFrame attaches the held cylinder to the gripper with an
+// orientation offset so the frame's +Z axis aligns with the object's long axis
+// in the world at attach time. The no-spill carry constraint applies to this
+// frame's orientation, so without that rotation the planner would be bounding
+// the gripper's up vector, not the object's.
+func buildHeldObjectFrame(g *HeldObjectGeometry, orientationInGripper spatialmath.Orientation) (referenceframe.Frame, error) {
 	if g == nil {
 		return nil, nil
 	}
@@ -43,18 +48,30 @@ func buildHeldObjectFrame(g *HeldObjectGeometry) (referenceframe.Frame, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build held-object geometry: %w", err)
 	}
-	return referenceframe.NewStaticFrameWithGeometry(heldObjectFrameName, spatialmath.NewZeroPose(), geom)
+	if orientationInGripper == nil {
+		orientationInGripper = &spatialmath.OrientationVectorDegrees{OZ: 1}
+	}
+	return referenceframe.NewStaticFrameWithGeometry(heldObjectFrameName, spatialmath.NewPoseFromOrientation(orientationInGripper), geom)
 }
 
-// No-op when g is nil so caller code doesn't branch on config.
-func (b *bartender) attachHeld(g *HeldObjectGeometry) error {
+// attachHeld installs the held cylinder on the gripper. The frame's orientation
+// is set so its +Z axis matches the object's long axis in the world at this
+// moment — the shaker is physically upright at every attach point, so the
+// frame's world orientation is identity, and relative-to-gripper that is the
+// inverse of the gripper's current world rotation. The attach is a no-op when
+// g is nil so caller code doesn't branch on config.
+func (b *bartender) attachHeld(ctx context.Context, g *HeldObjectGeometry) error {
 	if g == nil {
 		return nil
 	}
 	if b.heldGeomFrame != nil {
 		return errors.New("attachHeld: already holding an object; detach first")
 	}
-	frame, err := buildHeldObjectFrame(g)
+	orient, err := b.gripperOrientationInGripperFromWorldUp(ctx)
+	if err != nil {
+		return err
+	}
+	frame, err := buildHeldObjectFrame(g, orient)
 	if err != nil {
 		return err
 	}
@@ -65,4 +82,24 @@ func (b *bartender) attachHeld(g *HeldObjectGeometry) error {
 // Idempotent so release paths don't branch on held-state.
 func (b *bartender) detachHeld() {
 	b.heldGeomFrame = nil
+}
+
+// Returns the rotation to apply inside the gripper's frame so a child frame's
+// +Z axis points along world +Z — the inverse of the gripper's current world
+// rotation.
+func (b *bartender) gripperOrientationInGripperFromWorldUp(ctx context.Context) (spatialmath.Orientation, error) {
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gripperInWorld, err := fs.Transform(
+		fsInputs.ToLinearInputs(),
+		referenceframe.NewPoseInFrame(b.cfg.GripperName, spatialmath.NewZeroPose()),
+		referenceframe.World,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("transform gripper to world: %w", err)
+	}
+	gripperPose := gripperInWorld.(*referenceframe.PoseInFrame).Pose()
+	return spatialmath.PoseBetween(gripperPose, spatialmath.NewZeroPose()).Orientation(), nil
 }

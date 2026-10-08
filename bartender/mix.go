@@ -29,7 +29,7 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	if _, err := b.linearMoveToPose(ctx, sw, poseShakerDrop); err != nil {
 		return fmt.Errorf("linear-into shaker cradle: %w", err)
 	}
-	if err := b.attachHeld(b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseShakerLift); err != nil {
