@@ -118,6 +118,32 @@ func (ds *dataStore) GetInventory() Inventory {
 	return out
 }
 
+func (ds *dataStore) UpdateRecipes(recipes []Recipe) error {
+	if recipes == nil {
+		recipes = []Recipe{}
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.recipes = recipes
+	return ds.persistRecipesLocked()
+}
+
+func (ds *dataStore) persistRecipesLocked() error {
+	bytes, err := json.MarshalIndent(ds.recipes, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal recipes: %w", err)
+	}
+	path := filepath.Join(ds.dir, recipesFileName)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, bytes, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
+	return nil
+}
+
 func (ds *dataStore) UpdateInventoryItem(ingredient string, inStock bool) error {
 	if ingredient == "" {
 		return errors.New("ingredient is required")
