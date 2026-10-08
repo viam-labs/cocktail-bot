@@ -187,6 +187,19 @@ export async function updateInventoryItem(
   });
 }
 
+export async function updateRecipes(
+  conn: ViamConnection,
+  recipes: Recipe[],
+): Promise<{ count: number }> {
+  if (conn.isDev) {
+    DEV_RECIPES.splice(0, DEV_RECIPES.length, ...recipes);
+    return { count: recipes.length };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    update_recipes: { recipes: recipes as unknown as import("@bufbuild/protobuf").JsonValue },
+  });
+}
+
 export async function pourIntoShaker(
   conn: ViamConnection,
   bottle: string,

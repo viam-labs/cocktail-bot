@@ -4,10 +4,12 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useViamConnection } from "./lib/useViamConnection";
 import { Kiosk } from "./kiosk";
+import { Admin } from "./admin";
 
 function PageInner() {
   const params = useSearchParams();
   const partId = params.get("partId") ?? "";
+  const view = params.get("view") ?? "";
   const { conn, connected, error } = useViamConnection(partId);
 
   if (error) {
@@ -30,6 +32,9 @@ function PageInner() {
     );
   }
 
+  if (view === "admin") {
+    return <Admin conn={conn} />;
+  }
   return <Kiosk conn={conn} connected={connected} />;
 }
 
