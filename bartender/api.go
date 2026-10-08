@@ -61,7 +61,10 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes")
+	if raw, ok := cmd["make_cocktail"]; ok {
+		return b.handleMakeCocktail(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -543,6 +546,46 @@ func parseRotateShakers(raw any) (string, error) {
 		return "", fmt.Errorf("rotate_shakers: 'strain_flow' is required")
 	}
 	return strainFlow, nil
+}
+
+func (b *bartender) handleMakeCocktail(ctx context.Context, raw any) (map[string]any, error) {
+	drinkID, recipe, err := parseMakeCocktail(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	if err := b.makeCocktail(ctx, drinkID, recipe); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"drink_id":    drinkID,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseMakeCocktail(raw any) (string, *Recipe, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", nil, fmt.Errorf("make_cocktail: expected object with 'drink_id' or 'recipe', got %T", raw)
+	}
+	drinkID, _ := m["drink_id"].(string)
+	recipeRaw, hasRecipe := m["recipe"]
+	if drinkID == "" && !hasRecipe {
+		return "", nil, fmt.Errorf("make_cocktail: either 'drink_id' or 'recipe' is required")
+	}
+	if !hasRecipe {
+		return drinkID, nil, nil
+	}
+	bytes, err := json.Marshal(recipeRaw)
+	if err != nil {
+		return "", nil, fmt.Errorf("make_cocktail: marshal recipe: %w", err)
+	}
+	var recipe Recipe
+	if err := json.Unmarshal(bytes, &recipe); err != nil {
+		return "", nil, fmt.Errorf("make_cocktail: invalid recipe shape: %w", err)
+	}
+	return drinkID, &recipe, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
