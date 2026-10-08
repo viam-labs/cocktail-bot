@@ -69,3 +69,11 @@ bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-
 # Try a different mouth offset for this run only.
 bin/cocktail-cli pour-glass --machine-address <part>.viam.cloud --bottle bottle-gin --pour-ms 1500 --mouth-offset-mm 80
 ```
+
+### find_and_pour_from_shaker (bartender DoCommand)
+
+```json
+{"find_and_pour_from_shaker": {"pour_ms": 5000}}
+```
+
+Finds the glass exactly like `find_glass`, then runs `pour_from_shaker` on the `serving_station` switch (default `serving-glass-center`) with its `serve-approach` and `serve-tilt` moved to the glass's world x, y; z and orientation stay as saved. Fails before grabbing the shaker if the glass is more than `max_pour_offset_mm` (300) from the saved `serve-tilt`.

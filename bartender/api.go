@@ -37,6 +37,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["mix"]; ok {
 		return b.handleMix(ctx, raw)
 	}
+	if raw, ok := cmd["find_and_pour_from_shaker"]; ok {
+		return b.handleFindAndPourFromShaker(ctx, raw)
+	}
 	if raw, ok := cmd["pour_from_shaker"]; ok {
 		return b.handlePourFromShaker(ctx, raw)
 	}
@@ -61,7 +64,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -303,6 +306,45 @@ func (b *bartender) handlePourFromShaker(ctx context.Context, raw any) (map[stri
 		"pour_ms":     pourMs,
 		"duration_ms": time.Since(start).Milliseconds(),
 	}, nil
+}
+
+func (b *bartender) handleFindAndPourFromShaker(ctx context.Context, raw any) (map[string]any, error) {
+	pourMs, err := parseFindAndPourFromShaker(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	start := time.Now()
+	glass, err := b.findAndPourFromShaker(ctx, pourMs)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"glass":       foundGlassResponse(glass),
+		"station":     b.cfg.servingStation(),
+		"pour_ms":     pourMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseFindAndPourFromShaker(raw any) (int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return 0, fmt.Errorf("find_and_pour_from_shaker: expected object with 'pour_ms', got %T", raw)
+	}
+	var pourMs int
+	switch v := m["pour_ms"].(type) {
+	case float64:
+		pourMs = int(v)
+	case int:
+		pourMs = v
+	default:
+		return 0, fmt.Errorf("find_and_pour_from_shaker: 'pour_ms' must be a number")
+	}
+	if pourMs < 0 {
+		return 0, fmt.Errorf("find_and_pour_from_shaker: 'pour_ms' must be >= 0")
+	}
+	return pourMs, nil
 }
 
 func parsePourFromShaker(raw any) (string, int, error) {

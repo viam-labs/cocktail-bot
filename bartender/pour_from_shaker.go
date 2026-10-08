@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 const (
@@ -16,6 +18,21 @@ func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string
 	if err != nil {
 		return err
 	}
+	approach, err := fetchPose(ctx, sw, poseServeApproach)
+	if err != nil {
+		return err
+	}
+	tilt, err := fetchPose(ctx, sw, poseServeTilt)
+	if err != nil {
+		return err
+	}
+	return b.pourFromShakerAt(ctx, sw, pourMs, approach, tilt)
+}
+
+// pourFromShakerAt runs the pour_from_shaker sequence with the given serve-approach and serve-tilt poses,
+// so callers can move the serve point (e.g. to a glass found by vision).
+func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, tilt *poseData) error {
+	station := sw.Name().ShortName()
 	shakerAllow := b.pickupAllowedCollisions("shaker")
 
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
@@ -43,17 +60,17 @@ func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string
 		return fmt.Errorf("carry to shaker carry-hover: %w", err)
 	}
 
-	if _, err := b.carryHeldLevel(ctx, sw, poseServeApproach); err != nil {
+	if _, err := b.carryHeldLevelToResolved(ctx, approach, station+":"+poseServeApproach+":carry"); err != nil {
 		return fmt.Errorf("carry to serve-approach: %w", err)
 	}
 	serveOpts := b.serveMoveOptions()
-	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeTilt, serveOpts); err != nil {
+	if _, err := b.moveToResolvedPose(ctx, tilt, station+":"+poseServeTilt, nil, serveOpts); err != nil {
 		return fmt.Errorf("tilt shaker over glass: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(pourMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("pour dwell: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitchWithOpts(ctx, sw, poseServeApproach, serveOpts); err != nil {
+	if _, err := b.moveToResolvedPose(ctx, approach, station+":"+poseServeApproach, nil, serveOpts); err != nil {
 		return fmt.Errorf("untilt shaker over glass: %w", err)
 	}
 

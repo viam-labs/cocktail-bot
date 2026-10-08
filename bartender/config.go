@@ -29,6 +29,9 @@ type Config struct {
 	// top of the bottle tips (default 100). Negative flips the side.
 	PourMouthOffsetMM *float64 `json:"pour_mouth_offset_mm,omitempty"`
 	MaxPourOffsetMM   float64  `json:"max_pour_offset_mm,omitempty"`
+	// Switch holding the shaker and serve-approach/serve-tilt poses used by find_and_pour_from_shaker
+	// (default "serving-glass-center").
+	ServingStation string `json:"serving_station,omitempty"`
 	// Vision service returning world-frame glass point clouds, e.g. viam:cocktail-bot:glass-finder on the wrist camera.
 	GlassFinderName string `json:"glass_finder_name,omitempty"`
 	// World z (mm) of the table surface (default 0); the search keeps the camera aimed where its glass-look view meets it.
@@ -119,6 +122,13 @@ func (c *Config) pourMouthOffsetMM() float64 {
 		return defaultPourMouthOffsetMM
 	}
 	return *c.PourMouthOffsetMM
+}
+
+func (c *Config) servingStation() string {
+	if c.ServingStation == "" {
+		return defaultServingStation
+	}
+	return c.ServingStation
 }
 
 func (c *Config) maxPourOffsetMM() float64 {
