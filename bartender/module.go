@@ -44,6 +44,7 @@ type bartender struct {
 	orderSink     orderSensorSink
 	glassFinder   vision.Service
 	queueStop     chan struct{}
+	dataStore     *dataStore
 }
 
 func newBartender(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {
@@ -109,6 +110,16 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 			return nil, fmt.Errorf("glass finder %q: %w", cfg.GlassFinderName, err)
 		}
 		b.glassFinder = gf
+	}
+
+	if cfg.DataDir != "" {
+		ds, err := newDataStore(cfg.DataDir)
+		if err != nil {
+			return nil, fmt.Errorf("data store: %w", err)
+		}
+		b.dataStore = ds
+	} else {
+		logger.Warn("data_dir not set; recipes and inventory DoCommands unavailable")
 	}
 
 	go b.processQueue()

@@ -42,7 +42,16 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["pour_into_shaker"]; ok {
 		return b.handlePourIntoShaker(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker")
+	if _, ok := cmd["get_recipes"]; ok {
+		return b.handleGetRecipes()
+	}
+	if _, ok := cmd["get_inventory"]; ok {
+		return b.handleGetInventory()
+	}
+	if raw, ok := cmd["update_inventory_item"]; ok {
+		return b.handleUpdateInventoryItem(raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, mix, pour_from_shaker, pour_into_shaker, get_recipes, get_inventory, update_inventory_item")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -349,6 +358,50 @@ func parsePourIntoShaker(raw any) (string, float64, error) {
 		return "", 0, fmt.Errorf("pour_into_shaker: 'oz' must be > 0")
 	}
 	return bottle, oz, nil
+}
+
+func (b *bartender) handleGetRecipes() (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	return map[string]any{"recipes": b.dataStore.Recipes()}, nil
+}
+
+func (b *bartender) handleGetInventory() (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	return map[string]any{"inventory": b.dataStore.GetInventory()}, nil
+}
+
+func (b *bartender) handleUpdateInventoryItem(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, inStock, err := parseUpdateInventoryItem(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.UpdateInventoryItem(ingredient, inStock); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "in_stock": inStock}, nil
+}
+
+func parseUpdateInventoryItem(raw any) (string, bool, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", false, fmt.Errorf("update_inventory_item: expected object with 'ingredient' and 'in_stock', got %T", raw)
+	}
+	ingredient, _ := m["ingredient"].(string)
+	if ingredient == "" {
+		return "", false, fmt.Errorf("update_inventory_item: 'ingredient' is required")
+	}
+	inStock, ok := m["in_stock"].(bool)
+	if !ok {
+		return "", false, fmt.Errorf("update_inventory_item: 'in_stock' must be a boolean")
+	}
+	return ingredient, inStock, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {

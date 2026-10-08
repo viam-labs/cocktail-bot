@@ -34,6 +34,7 @@ type Config struct {
 	GlassSearchPanDeg   []float64          `json:"glass_search_pan_deg,omitempty"`
 	GlassSearchSettleMs int                `json:"glass_search_settle_ms,omitempty"`
 	BottlePourerOz      map[string]float64 `json:"bottle_pourer_oz,omitempty"`
+	DataDir             string             `json:"data_dir,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
