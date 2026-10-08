@@ -1,5 +1,9 @@
 import type { JsonValue } from "@bufbuild/protobuf";
 import type { ViamClient, RobotClient } from "@viamrobotics/sdk";
+import type { Recipe } from "./recipes";
+import type { Inventory } from "./inventory";
+
+const BARTENDER_SERVICE_NAME = "bartender";
 
 export interface ViamConnection {
   viamClient: ViamClient;
@@ -87,4 +91,32 @@ export async function connectToViam(partId: string): Promise<ViamConnection> {
 export async function getMachineName(conn: ViamConnection): Promise<string> {
   const robot = await conn.viamClient.appClient.getRobot(conn.machineId);
   return robot?.name ?? "";
+}
+
+export async function getRecipes(conn: ViamConnection): Promise<Recipe[]> {
+  const resp = await doCommand<{ recipes: Recipe[] }>(
+    conn,
+    BARTENDER_SERVICE_NAME,
+    { get_recipes: true },
+  );
+  return resp.recipes ?? [];
+}
+
+export async function getInventory(conn: ViamConnection): Promise<Inventory> {
+  const resp = await doCommand<{ inventory: Inventory }>(
+    conn,
+    BARTENDER_SERVICE_NAME,
+    { get_inventory: true },
+  );
+  return resp.inventory ?? { ingredients: {} };
+}
+
+export async function updateInventoryItem(
+  conn: ViamConnection,
+  ingredient: string,
+  inStock: boolean,
+): Promise<{ ingredient: string; in_stock: boolean }> {
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    update_inventory_item: { ingredient, in_stock: inStock },
+  });
 }
