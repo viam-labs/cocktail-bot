@@ -32,11 +32,9 @@ func TestLoadRecipesFromDisk(t *testing.T) {
 		{
 			ID:   "espresso_martini",
 			Name: "Espresso Martini",
-			Steps: []RecipeStep{
-				{Verb: "pour_into_shaker", Bottle: "vodka", Oz: 2.0},
-				{Verb: "dispense_ice", Station: "ice-station", DwellMs: 3000},
-				{Verb: "mix", Station: "mixer", DwellMs: 10000},
-				{Verb: "pour_from_shaker", Station: "serving", PourMs: 5000},
+			Pours: []Pour{
+				{Ingredient: "vodka", Oz: 2.0},
+				{Ingredient: "coffee-liquor", Oz: 1.0},
 			},
 		},
 	}
@@ -47,7 +45,7 @@ func TestLoadRecipesFromDisk(t *testing.T) {
 	got := ds.Recipes()
 	test.That(t, len(got), test.ShouldEqual, 1)
 	test.That(t, got[0].ID, test.ShouldEqual, "espresso_martini")
-	test.That(t, len(got[0].Steps), test.ShouldEqual, 4)
+	test.That(t, len(got[0].Pours), test.ShouldEqual, 2)
 }
 
 func TestLoadInventoryFromDisk(t *testing.T) {

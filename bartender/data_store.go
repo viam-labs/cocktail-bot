@@ -10,18 +10,14 @@ import (
 )
 
 type Recipe struct {
-	ID    string       `json:"id"`
-	Name  string       `json:"name"`
-	Steps []RecipeStep `json:"steps"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Pours []Pour `json:"pours"`
 }
 
-type RecipeStep struct {
-	Verb    string  `json:"verb"`
-	Bottle  string  `json:"bottle,omitempty"`
-	Station string  `json:"station,omitempty"`
-	Oz      float64 `json:"oz,omitempty"`
-	PourMs  int     `json:"pour_ms,omitempty"`
-	DwellMs int     `json:"dwell_ms,omitempty"`
+type Pour struct {
+	Ingredient string  `json:"ingredient"`
+	Oz         float64 `json:"oz"`
 }
 
 type Inventory struct {

@@ -6,16 +6,16 @@ import {
   getInventory,
   getRecipes,
   getMachineName,
+  makeCocktail,
 } from "./lib/viamClient";
-import type { Recipe, RecipeStep } from "./lib/recipes";
+import type { Recipe } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
-import { makeDispatcher, runOrder, stepLabel } from "./lib/orderRunner";
 import { Nav } from "./nav";
 
 type OrderState =
   | { kind: "idle" }
-  | { kind: "running"; recipe: Recipe; step: RecipeStep; index: number; total: number }
+  | { kind: "running"; recipe: Recipe }
   | { kind: "done"; recipe: Recipe }
   | { kind: "error"; recipe: Recipe; message: string };
 
@@ -48,11 +48,9 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
 
   const startOrder = useCallback(
     async (recipe: Recipe) => {
-      const dispatch = makeDispatcher(conn);
+      setOrder({ kind: "running", recipe });
       try {
-        await runOrder(recipe, dispatch, ({ index, total, step }) => {
-          setOrder({ kind: "running", recipe, step, index, total });
-        });
+        await makeCocktail(conn, recipe.id);
         setOrder({ kind: "done", recipe });
       } catch (err) {
         setOrder({
@@ -143,19 +141,15 @@ function DrinkGrid({
 function OrderProgress({
   order,
 }: {
-  order: { recipe: Recipe; step: RecipeStep; index: number; total: number };
+  order: { recipe: Recipe };
 }) {
   return (
-    <section className="fixed inset-x-0 bottom-0 bg-black text-white px-6 py-5 flex items-center justify-between gap-6">
-      <div className="flex flex-col gap-1">
-        <strong className="text-sm uppercase tracking-wide text-gray-400">
-          Making {order.recipe.name}
-        </strong>
-        <span className="text-lg">{stepLabel(order.step)}</span>
+    <section className="fixed inset-x-0 bottom-0 bg-black text-white px-6 py-5 flex items-center gap-4">
+      <span className="inline-block h-3 w-3 rounded-full bg-white animate-pulse" />
+      <div className="flex flex-col">
+        <strong className="text-sm uppercase tracking-wide text-gray-400">Making</strong>
+        <span className="text-lg">{order.recipe.name}</span>
       </div>
-      <span className="text-sm text-gray-400">
-        Step {order.index + 1} of {order.total}
-      </span>
     </section>
   );
 }

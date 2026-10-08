@@ -2,37 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
-import { getRecipes, updateRecipes } from "./lib/viamClient";
-import type { Recipe, RecipeStep } from "./lib/recipes";
+import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
+import type { Pour, Recipe } from "./lib/recipes";
+import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
-
-const VERB_OPTIONS: { verb: string; label: string }[] = [
-  { verb: "pour_into_shaker", label: "Pour ingredient into shaker" },
-  { verb: "dispense_ice", label: "Dispense ice" },
-  { verb: "mix", label: "Mix" },
-  { verb: "strain_shaker", label: "Strain shaker" },
-  { verb: "pour_from_shaker", label: "Pour from shaker" },
-  { verb: "rotate_shakers", label: "Rotate shakers (reset)" },
-];
-
-function emptyStep(verb: string): RecipeStep {
-  switch (verb) {
-    case "pour_into_shaker":
-      return { verb, bottle: "", oz: 1 };
-    case "dispense_ice":
-      return { verb, station: "ice-station", dwell_ms: 3000 };
-    case "mix":
-      return { verb, station: "mixer", dwell_ms: 10000 };
-    case "strain_shaker":
-      return { verb, source: "ice-station", strain_flow: "strain-flow", drain_dwell_ms: 4000, dump_dwell_ms: 2000 };
-    case "pour_from_shaker":
-      return { verb, station: "serving-glass-center", pour_ms: 5000 };
-    case "rotate_shakers":
-      return { verb, strain_flow: "strain-flow" };
-    default:
-      return { verb };
-  }
-}
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -40,13 +13,17 @@ function slugify(name: string): string {
 
 export function RecipesPage({ conn }: { conn: ViamConnection }) {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
+  const [inventory, setInventory] = useState<Inventory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ index: number | null; recipe: Recipe } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    getRecipes(conn)
-      .then(setRecipes)
+    Promise.all([getRecipes(conn), getInventory(conn)])
+      .then(([r, i]) => {
+        setRecipes(r);
+        setInventory(i);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, [conn]);
 
@@ -81,9 +58,10 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
 
   function onDelete(index: number) {
     if (!recipes) return;
-    const next = recipes.filter((_, i) => i !== index);
-    save(next);
+    save(recipes.filter((_, i) => i !== index));
   }
+
+  const ingredientNames = inventory ? Object.keys(inventory.ingredients).sort() : [];
 
   return (
     <>
@@ -94,7 +72,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
           <button
             type="button"
             onClick={() =>
-              setEditing({ index: null, recipe: { id: "", name: "", steps: [] } })
+              setEditing({ index: null, recipe: { id: "", name: "", pours: [] } })
             }
             className="h-11 px-5 rounded-lg bg-black text-white font-medium"
           >
@@ -118,7 +96,9 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
                 <div>
                   <h2 className="text-lg font-semibold">{recipe.name || recipe.id || "(unnamed)"}</h2>
                   <p className="text-sm text-gray-600 mt-0.5">
-                    {recipe.steps.length} step{recipe.steps.length === 1 ? "" : "s"}
+                    {recipe.pours.length === 0
+                      ? "no pours"
+                      : recipe.pours.map((p) => `${p.oz} oz ${p.ingredient}`).join(" · ")}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -149,6 +129,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
       {editing && (
         <RecipeEditor
           initial={editing.recipe}
+          ingredientNames={ingredientNames}
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={onSaveEditing}
@@ -160,11 +141,13 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
 
 function RecipeEditor({
   initial,
+  ingredientNames,
   busy,
   onClose,
   onSave,
 }: {
   initial: Recipe;
+  ingredientNames: string[];
   busy: boolean;
   onClose: () => void;
   onSave: (recipe: Recipe) => void;
@@ -172,29 +155,19 @@ function RecipeEditor({
   const [name, setName] = useState(initial.name);
   const [id, setId] = useState(initial.id);
   const [idTouched, setIdTouched] = useState(initial.id !== "");
-  const [steps, setSteps] = useState<RecipeStep[]>(initial.steps);
-  const [newVerb, setNewVerb] = useState("pour_into_shaker");
+  const [pours, setPours] = useState<Pour[]>(initial.pours);
 
-  function updateStep(i: number, patch: Partial<RecipeStep>) {
-    setSteps((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  function updatePour(i: number, patch: Partial<Pour>) {
+    setPours((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
   }
 
-  function removeStep(i: number) {
-    setSteps((prev) => prev.filter((_, idx) => idx !== i));
+  function removePour(i: number) {
+    setPours((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  function moveStep(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= steps.length) return;
-    setSteps((prev) => {
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-  }
-
-  function addStep() {
-    setSteps((prev) => [...prev, emptyStep(newVerb)]);
+  function addPour() {
+    const defaultIngredient = ingredientNames[0] ?? "";
+    setPours((prev) => [...prev, { ingredient: defaultIngredient, oz: 1 }]);
   }
 
   function onSubmit() {
@@ -208,12 +181,12 @@ function RecipeEditor({
       alert("Recipe id is required");
       return;
     }
-    onSave({ id: effectiveId, name: trimmedName, steps });
+    onSave({ id: effectiveId, name: trimmedName, pours });
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 z-20 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
         <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold">{initial.id ? "Edit recipe" : "New recipe"}</h2>
           <button
@@ -253,72 +226,67 @@ function RecipeEditor({
           </section>
 
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-gray-700">Steps</h3>
-            {steps.length === 0 ? (
-              <p className="text-sm text-gray-500">No steps yet. Add one below.</p>
+            <h3 className="text-sm font-medium text-gray-700">Ingredients</h3>
+            {pours.length === 0 ? (
+              <p className="text-sm text-gray-500">No ingredients yet. Add one below.</p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {steps.map((step, i) => (
-                  <li key={i} className="border border-gray-200 rounded-lg p-4 flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-800">
-                        {i + 1}. {VERB_OPTIONS.find((v) => v.verb === step.verb)?.label ?? step.verb}
-                      </span>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => moveStep(i, -1)}
-                          disabled={i === 0}
-                          className="h-7 w-7 rounded border border-gray-300 text-sm disabled:opacity-30"
-                          aria-label="Move up"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveStep(i, 1)}
-                          disabled={i === steps.length - 1}
-                          className="h-7 w-7 rounded border border-gray-300 text-sm disabled:opacity-30"
-                          aria-label="Move down"
-                        >
-                          ↓
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeStep(i)}
-                          className="h-7 w-7 rounded border border-gray-300 text-sm text-red-600"
-                          aria-label="Remove"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    <StepFields step={step} onChange={(patch) => updateStep(i, patch)} />
+              <ul className="flex flex-col gap-2">
+                {pours.map((pour, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    {ingredientNames.length > 0 ? (
+                      <select
+                        value={pour.ingredient}
+                        onChange={(e) => updatePour(i, { ingredient: e.target.value })}
+                        className="flex-1 h-10 border border-gray-300 rounded-lg px-3 text-sm"
+                      >
+                        {!ingredientNames.includes(pour.ingredient) && pour.ingredient !== "" && (
+                          <option value={pour.ingredient}>{pour.ingredient} (unknown)</option>
+                        )}
+                        {pour.ingredient === "" && <option value="">Pick an ingredient…</option>}
+                        {ingredientNames.map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={pour.ingredient}
+                        onChange={(e) => updatePour(i, { ingredient: e.target.value })}
+                        placeholder="ingredient"
+                        className="flex-1 h-10 border border-gray-300 rounded-lg px-3 text-sm"
+                      />
+                    )}
+                    <input
+                      type="number"
+                      value={pour.oz}
+                      onChange={(e) => updatePour(i, { oz: Number(e.target.value) })}
+                      step={0.25}
+                      min={0}
+                      className="w-24 h-10 border border-gray-300 rounded-lg px-3 text-sm"
+                    />
+                    <span className="text-sm text-gray-500">oz</span>
+                    <button
+                      type="button"
+                      onClick={() => removePour(i)}
+                      className="h-10 w-10 rounded border border-gray-300 text-red-600"
+                      aria-label="Remove"
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
 
-            <div className="flex gap-2">
-              <select
-                value={newVerb}
-                onChange={(e) => setNewVerb(e.target.value)}
-                className="flex-1 h-11 border border-gray-300 rounded-lg px-3"
-              >
-                {VERB_OPTIONS.map((v) => (
-                  <option key={v.verb} value={v.verb}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={addStep}
-                className="h-11 px-5 rounded-lg border border-gray-300 font-medium hover:bg-gray-50"
-              >
-                Add step
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={addPour}
+              className="self-start h-10 px-4 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50"
+            >
+              Add ingredient
+            </button>
           </section>
         </div>
 
@@ -341,111 +309,5 @@ function RecipeEditor({
         </footer>
       </div>
     </div>
-  );
-}
-
-function StepFields({
-  step,
-  onChange,
-}: {
-  step: RecipeStep;
-  onChange: (patch: Partial<RecipeStep>) => void;
-}) {
-  switch (step.verb) {
-    case "pour_into_shaker":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Bottle" value={step.bottle ?? ""} onChange={(v) => onChange({ bottle: v })} placeholder="vodka" />
-          <NumberField label="Ounces" value={step.oz ?? 0} onChange={(v) => onChange({ oz: v })} step={0.25} />
-        </div>
-      );
-    case "dispense_ice":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Station" value={step.station ?? ""} onChange={(v) => onChange({ station: v })} placeholder="ice-station" />
-          <NumberField label="Dwell (ms)" value={step.dwell_ms ?? 0} onChange={(v) => onChange({ dwell_ms: v })} step={500} />
-        </div>
-      );
-    case "mix":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Station" value={step.station ?? ""} onChange={(v) => onChange({ station: v })} placeholder="mixer" />
-          <NumberField label="Dwell (ms)" value={step.dwell_ms ?? 0} onChange={(v) => onChange({ dwell_ms: v })} step={1000} />
-        </div>
-      );
-    case "strain_shaker":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Source" value={step.source ?? ""} onChange={(v) => onChange({ source: v })} placeholder="ice-station" />
-          <TextField label="Strain flow" value={step.strain_flow ?? ""} onChange={(v) => onChange({ strain_flow: v })} placeholder="strain-flow" />
-          <NumberField label="Drain dwell (ms)" value={step.drain_dwell_ms ?? 0} onChange={(v) => onChange({ drain_dwell_ms: v })} step={500} />
-          <NumberField label="Dump dwell (ms)" value={step.dump_dwell_ms ?? 0} onChange={(v) => onChange({ dump_dwell_ms: v })} step={500} />
-        </div>
-      );
-    case "pour_from_shaker":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Station" value={step.station ?? ""} onChange={(v) => onChange({ station: v })} placeholder="serving-glass-center" />
-          <NumberField label="Pour (ms)" value={step.pour_ms ?? 0} onChange={(v) => onChange({ pour_ms: v })} step={500} />
-        </div>
-      );
-    case "rotate_shakers":
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="Strain flow" value={step.strain_flow ?? ""} onChange={(v) => onChange({ strain_flow: v })} placeholder="strain-flow" />
-        </div>
-      );
-    default:
-      return <p className="text-sm text-gray-500">Unknown step type.</p>;
-  }
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-gray-600">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-10 border border-gray-300 rounded-lg px-3 text-sm"
-      />
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  step,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  step: number;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-gray-600">{label}</span>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        step={step}
-        className="h-10 border border-gray-300 rounded-lg px-3 text-sm"
-      />
-    </label>
   );
 }
