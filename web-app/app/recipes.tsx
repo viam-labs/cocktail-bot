@@ -7,14 +7,11 @@ import type { Pour, Recipe } from "./lib/recipes";
 import { DRINK_IMAGE_SLUGS } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
+import { titleCase as cap } from "./lib/display";
 import styles from "./recipes.module.css";
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-}
-
-function cap(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function fmtOz(v: number): string {
@@ -273,7 +270,7 @@ function RecipeEditor({
               <option value="">None (grey tile)</option>
               {DRINK_IMAGE_SLUGS.map((slug) => (
                 <option key={slug} value={slug}>
-                  {cap(slug.replace(/-/g, " "))}
+                  {cap(slug)}
                 </option>
               ))}
             </select>

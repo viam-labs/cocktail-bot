@@ -198,6 +198,19 @@ export async function updateInventoryItem(
   });
 }
 
+export async function deleteInventoryItem(
+  conn: ViamConnection,
+  ingredient: string,
+): Promise<{ ingredient: string; deleted: boolean }> {
+  if (conn.isDev) {
+    delete DEV_INVENTORY.ingredients[ingredient];
+    return { ingredient, deleted: true };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    delete_inventory_item: { ingredient },
+  });
+}
+
 export async function updateRecipes(
   conn: ViamConnection,
   recipes: Recipe[],

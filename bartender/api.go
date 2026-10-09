@@ -67,13 +67,16 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["update_inventory_item"]; ok {
 		return b.handleUpdateInventoryItem(raw)
 	}
+	if raw, ok := cmd["delete_inventory_item"]; ok {
+		return b.handleDeleteInventoryItem(raw)
+	}
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
 	}
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, delete_inventory_item, update_recipes, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -513,6 +516,24 @@ func (b *bartender) handleUpdateInventoryItem(raw any) (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{"ingredient": ingredient, "in_stock": inStock}, nil
+}
+
+func (b *bartender) handleDeleteInventoryItem(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("delete_inventory_item: expected object with 'ingredient', got %T", raw)
+	}
+	ingredient, _ := m["ingredient"].(string)
+	if ingredient == "" {
+		return nil, fmt.Errorf("delete_inventory_item: 'ingredient' is required")
+	}
+	if err := b.dataStore.DeleteInventoryItem(ingredient); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "deleted": true}, nil
 }
 
 func parseUpdateInventoryItem(raw any) (string, bool, error) {
