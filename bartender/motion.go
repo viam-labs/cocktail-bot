@@ -272,6 +272,7 @@ func (b *bartender) mixerProtectorAllowed() []AllowedCollision {
 	}
 	return []AllowedCollision{
 		{Frame1: "claws-middle", Frame2: obstacle},
+		{Frame1: b.cfg.GripperName + ":claws", Frame2: obstacle},
 		{Frame1: heldObjectFrameName, Frame2: obstacle},
 	}
 }
@@ -283,6 +284,7 @@ func (b *bartender) bottlesProtectorAllowed() []AllowedCollision {
 	}
 	return []AllowedCollision{
 		{Frame1: "claws-middle", Frame2: obstacle},
+		{Frame1: b.cfg.GripperName + ":claws", Frame2: obstacle},
 		{Frame1: heldObjectFrameName, Frame2: obstacle},
 	}
 }
