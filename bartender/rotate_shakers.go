@@ -32,8 +32,8 @@ func (b *bartender) rotateShakers(ctx context.Context, strainFlow string) error 
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker from shaker-b: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, flowSw, poseShakerBHover, shakerBAllow...); err != nil {
-		return fmt.Errorf("carry up to shaker-b-hover: %w", err)
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseShakerBLift, shakerBAllow...); err != nil {
+		return fmt.Errorf("linear-lift at shaker-b: %w", err)
 	}
 
 	if _, err := b.carryHeldLevel(ctx, flowSw, poseShakerACarryHover, shakerAAllow...); err != nil {
