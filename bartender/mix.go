@@ -21,9 +21,6 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	}
 	shakerAllow := b.pickupAllowedCollisions("shaker")
 
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("start-home: %w", err)
-	}
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseShakerHomeHover); err != nil {
 		return fmt.Errorf("shaker-hover: %w", err)
 	}
