@@ -6,6 +6,7 @@ import (
 	"github.com/viam-labs/cocktail-bot/maintenancesensor"
 	"github.com/viam-labs/cocktail-bot/ordersensor"
 	"github.com/viam-labs/cocktail-bot/poseswitcher"
+	"github.com/viam-labs/cocktail-bot/pourswitch"
 
 	"go.viam.com/rdk/components/sensor"
 	toggleswitch "go.viam.com/rdk/components/switch"
@@ -22,5 +23,6 @@ func main() {
 		resource.APIModel{API: sensor.API, Model: maintenancesensor.Model},
 		resource.APIModel{API: vision.API, Model: glassfinder.Model},
 		resource.APIModel{API: toggleswitch.API, Model: poseswitcher.Model},
+		resource.APIModel{API: toggleswitch.API, Model: pourswitch.Model},
 	)
 }

@@ -3,8 +3,11 @@ package bartender
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/golang/geo/r3"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
 )
@@ -73,7 +76,16 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
+	if raw, ok := cmd["pour_about_lip"]; ok {
+		return b.handlePourAboutLip(ctx, raw)
+	}
+	if _, ok := cmd["upright_about_lip"]; ok {
+		return b.handleUprightAboutLip(ctx)
+	}
+	if _, ok := cmd["get_lip_pour"]; ok {
+		return b.handleGetLipPour(), nil
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail, pour_about_lip, upright_about_lip, get_lip_pour")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -742,4 +754,115 @@ func parseExecuteAction(raw any) (string, error) {
 	default:
 		return "", fmt.Errorf("execute_action: expected string or object with 'pose', got %T", raw)
 	}
+}
+
+func (b *bartender) handlePourAboutLip(ctx context.Context, raw any) (map[string]any, error) {
+	req, err := parsePourAboutLip(raw)
+	if err != nil {
+		return nil, err
+	}
+	if b.queue.State().IsBusy {
+		return nil, errors.New("pour_about_lip: an order is running")
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.pourAboutLip(ctx, req); err != nil {
+		return nil, fmt.Errorf("pour_about_lip: %w", err)
+	}
+	return map[string]any{
+		"tilt_degs":   req.tiltDegs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func (b *bartender) handleUprightAboutLip(ctx context.Context) (map[string]any, error) {
+	if b.queue.State().IsBusy {
+		return nil, errors.New("upright_about_lip: an order is running")
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.uprightAboutLip(ctx); err != nil {
+		return nil, fmt.Errorf("upright_about_lip: %w", err)
+	}
+	return map[string]any{"duration_ms": time.Since(start).Milliseconds()}, nil
+}
+
+// TryLock so a switch polling GetPosition mid-pour answers immediately; a pour in flight counts as tilted.
+func (b *bartender) handleGetLipPour() map[string]any {
+	if !b.lipPourMu.TryLock() {
+		return map[string]any{"tilted": true}
+	}
+	defer b.lipPourMu.Unlock()
+	return map[string]any{"tilted": b.lipPour != nil}
+}
+
+func parsePourAboutLip(raw any) (pourAboutLipReq, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return pourAboutLipReq{}, fmt.Errorf("pour_about_lip: expected object with 'lip_mm' and 'rim_center_mm', got %T", raw)
+	}
+	lip, err := vecField(m, "lip_mm")
+	if err != nil {
+		return pourAboutLipReq{}, fmt.Errorf("pour_about_lip: %w", err)
+	}
+	rim, err := vecField(m, "rim_center_mm")
+	if err != nil {
+		return pourAboutLipReq{}, fmt.Errorf("pour_about_lip: %w", err)
+	}
+	req := pourAboutLipReq{lipMM: lip, rimCenterMM: rim, tiltDegs: defaultLipTiltDegs, stepDegs: defaultLipStepDegs}
+	if v, ok := m["pre_pour_pose"]; ok {
+		if req.prePourPose, ok = v.(string); !ok {
+			return pourAboutLipReq{}, errors.New("pour_about_lip: 'pre_pour_pose' must be a string")
+		}
+	}
+	for name, dst := range map[string]*float64{
+		"tilt_degs":         &req.tiltDegs,
+		"step_degs":         &req.stepDegs,
+		"vel_degs_per_sec":  &req.velDegsPerSec,
+		"acc_degs_per_sec2": &req.accDegsPerSec2,
+	} {
+		v, ok := m[name]
+		if !ok {
+			continue
+		}
+		f, ok := v.(float64)
+		if !ok {
+			return pourAboutLipReq{}, fmt.Errorf("pour_about_lip: '%s' must be a number", name)
+		}
+		*dst = f
+	}
+	if req.tiltDegs <= 0 || req.tiltDegs > 180 {
+		return pourAboutLipReq{}, errors.New("pour_about_lip: 'tilt_degs' must be in (0, 180]")
+	}
+	if req.stepDegs <= 0 || req.stepDegs > req.tiltDegs {
+		return pourAboutLipReq{}, errors.New("pour_about_lip: 'step_degs' must be in (0, tilt_degs]")
+	}
+	if req.velDegsPerSec < 0 || req.accDegsPerSec2 < 0 {
+		return pourAboutLipReq{}, errors.New("pour_about_lip: 'vel_degs_per_sec' and 'acc_degs_per_sec2' must be >= 0")
+	}
+	return req, nil
+}
+
+func vecField(m map[string]any, name string) (r3.Vector, error) {
+	v, ok := m[name].(map[string]any)
+	if !ok {
+		return r3.Vector{}, fmt.Errorf("'%s' is required as {x, y, z}", name)
+	}
+	var out r3.Vector
+	for axis, dst := range map[string]*float64{"x": &out.X, "y": &out.Y, "z": &out.Z} {
+		raw, ok := v[axis]
+		if !ok {
+			continue
+		}
+		f, ok := raw.(float64)
+		if !ok {
+			return r3.Vector{}, fmt.Errorf("'%s.%s' must be a number", name, axis)
+		}
+		*dst = f
+	}
+	return out, nil
 }

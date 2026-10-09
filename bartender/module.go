@@ -50,6 +50,9 @@ type bartender struct {
 	cancelMu   sync.Mutex
 	cancelFunc context.CancelFunc
 
+	lipPourMu sync.Mutex
+	lipPour   *lipPour
+
 	status statusTracker
 }
 
