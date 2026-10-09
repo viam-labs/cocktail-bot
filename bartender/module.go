@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
@@ -45,6 +46,44 @@ type bartender struct {
 	glassFinder   vision.Service
 	queueStop     chan struct{}
 	dataStore     *dataStore
+
+	cancelMu   sync.Mutex
+	cancelFunc context.CancelFunc
+}
+
+// withCancel wraps ctx so that a concurrent "cancel" DoCommand can abort it.
+// The returned cleanup must be deferred; cancelling an already-finished run is
+// a no-op. Only one run can be active at a time — a second withCancel cancels
+// any prior run, keeping the arm from executing two trajectories at once.
+func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	b.cancelMu.Lock()
+	if b.cancelFunc != nil {
+		b.cancelFunc()
+	}
+	b.cancelFunc = cancel
+	b.cancelMu.Unlock()
+	return ctx, func() {
+		b.cancelMu.Lock()
+		if b.cancelFunc != nil {
+			b.cancelFunc = nil
+		}
+		b.cancelMu.Unlock()
+		cancel()
+	}
+}
+
+// cancelRunning fires the stored cancel func, if any. Returns whether anything
+// was running.
+func (b *bartender) cancelRunning() bool {
+	b.cancelMu.Lock()
+	defer b.cancelMu.Unlock()
+	if b.cancelFunc == nil {
+		return false
+	}
+	b.cancelFunc()
+	b.cancelFunc = nil
+	return true
 }
 
 func newBartender(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (resource.Resource, error) {

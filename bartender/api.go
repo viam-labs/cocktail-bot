@@ -16,6 +16,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if _, ok := cmd["get_queue"]; ok {
 		return b.handleGetQueue()
 	}
+	if _, ok := cmd["cancel"]; ok {
+		return b.handleCancel()
+	}
 	if raw, ok := cmd["execute_action"]; ok {
 		return b.handleExecuteAction(ctx, raw)
 	}
@@ -67,7 +70,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -94,12 +97,23 @@ func (b *bartender) handleGetQueue() (map[string]any, error) {
 	}, nil
 }
 
+// handleCancel aborts whatever verb is running by cancelling its context. The
+// arm stops wherever it is; held/gripper state is left untouched, so the
+// operator can inspect, intervene, and re-run from a known state. If nothing
+// is running, returns {cancelled: false}.
+func (b *bartender) handleCancel() (map[string]any, error) {
+	cancelled := b.cancelRunning()
+	return map[string]any{"cancelled": cancelled}, nil
+}
+
 func (b *bartender) handleExecuteAction(ctx context.Context, raw any) (map[string]any, error) {
 	pose, err := parseExecuteAction(raw)
 	if err != nil {
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	duration, err := b.moveArmToPose(ctx, pose)
 	if err != nil {
 		return nil, err
@@ -116,6 +130,8 @@ func (b *bartender) handlePickupPourReturn(ctx context.Context, raw any) (map[st
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.pickupPourReturn(ctx, bottle, pourMs); err != nil {
 		return nil, err
@@ -133,6 +149,8 @@ func (b *bartender) handlePourIntoGlasses(ctx context.Context, raw any) (map[str
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.pourIntoGlasses(ctx, req); err != nil {
 		return nil, err
@@ -158,6 +176,8 @@ func foundGlassResponse(g foundGlass) map[string]any {
 
 func (b *bartender) handleFindGlass(ctx context.Context) (map[string]any, error) {
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	glasses, err := b.findGlasses(ctx)
 	if err != nil {
 		return nil, err
@@ -179,6 +199,8 @@ func (b *bartender) handleFindAndPour(ctx context.Context, raw any) (map[string]
 		return nil, fmt.Errorf("find_and_pour: %w", err)
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	glass, err := b.findAndPour(ctx, bottle, pourMs, mouthOffsetMM)
 	if err != nil {
@@ -222,6 +244,8 @@ func (b *bartender) handleDispenseIce(ctx context.Context, raw any) (map[string]
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.dispenseIce(ctx, station, dwellMs); err != nil {
 		return nil, err
@@ -263,6 +287,8 @@ func (b *bartender) handleMix(ctx context.Context, raw any) (map[string]any, err
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.mix(ctx, station, dwellMs); err != nil {
 		return nil, err
@@ -304,6 +330,8 @@ func (b *bartender) handlePourFromShaker(ctx context.Context, raw any) (map[stri
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.pourFromShaker(ctx, station, pourMs); err != nil {
 		return nil, err
@@ -321,6 +349,8 @@ func (b *bartender) handleFindAndPourFromShaker(ctx context.Context, raw any) (m
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	poured, skipped, err := b.findAndPourFromShaker(ctx, pourMs)
 	if err != nil {
@@ -395,6 +425,8 @@ func (b *bartender) handlePourIntoShaker(ctx context.Context, raw any) (map[stri
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.pourIntoShaker(ctx, bottle, oz); err != nil {
 		return nil, err
@@ -514,6 +546,8 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.strainShaker(ctx, req); err != nil {
 		return nil, err
@@ -583,6 +617,8 @@ func (b *bartender) handleRotateShakers(ctx context.Context, raw any) (map[strin
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.rotateShakers(ctx, strainFlow); err != nil {
 		return nil, err
@@ -611,6 +647,8 @@ func (b *bartender) handleMakeCocktail(ctx context.Context, raw any) (map[string
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
 	start := time.Now()
 	if err := b.makeCocktail(ctx, drinkID, recipe); err != nil {
 		return nil, err
