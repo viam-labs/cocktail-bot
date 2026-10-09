@@ -65,6 +65,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if _, ok := cmd["get_inventory"]; ok {
 		return b.handleGetInventory()
 	}
+	if _, ok := cmd["get_bottles"]; ok {
+		return b.handleGetBottles()
+	}
 	if raw, ok := cmd["update_inventory_item"]; ok {
 		return b.handleUpdateInventoryItem(raw)
 	}
@@ -77,7 +80,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, delete_inventory_item, update_recipes, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -506,6 +509,14 @@ func (b *bartender) handleGetRecipes() (map[string]any, error) {
 		return nil, errDataStoreNotConfigured
 	}
 	return map[string]any{"recipes": b.dataStore.Recipes()}, nil
+}
+
+func (b *bartender) handleGetBottles() (map[string]any, error) {
+	names := make([]any, 0, len(b.cfg.BottlePourerOz))
+	for name := range b.cfg.BottlePourerOz {
+		names = append(names, name)
+	}
+	return map[string]any{"bottles": names}, nil
 }
 
 func (b *bartender) handleGetInventory() (map[string]any, error) {

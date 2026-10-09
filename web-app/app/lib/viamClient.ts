@@ -175,6 +175,12 @@ export async function getStatus(conn: ViamConnection): Promise<OrderStatus> {
   return doCommand<OrderStatus>(conn, BARTENDER_SERVICE_NAME, { get_status: true });
 }
 
+export async function getBottles(conn: ViamConnection): Promise<string[]> {
+  if (conn.isDev) return ["vodka", "coffee-liquor", "espresso"];
+  const resp = await doCommand<{ bottles: string[] }>(conn, BARTENDER_SERVICE_NAME, { get_bottles: true });
+  return (resp.bottles ?? []).slice().sort();
+}
+
 export async function getInventory(conn: ViamConnection): Promise<Inventory> {
   if (conn.isDev) return structuredClone(DEV_INVENTORY);
   const resp = await doCommand<{ inventory: Inventory }>(

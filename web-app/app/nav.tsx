@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import styles from "./nav.module.css";
 
 type View = "kiosk" | "inventory" | "recipes" | "admin";
 
@@ -23,23 +24,18 @@ export function Nav({ current }: { current: View }) {
   };
 
   return (
-    <nav className="border-b border-gray-200 bg-white sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto flex items-center gap-1 px-4 h-14">
-        <span className="text-sm font-semibold tracking-tight mr-6">Cocktails</span>
-        {TABS.map((tab) => {
-          const active = tab.view === current;
-          return (
-            <a
-              key={tab.view}
-              href={href(tab.view)}
-              className={`px-4 h-10 flex items-center rounded-lg text-sm font-medium ${
-                active ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              {tab.label}
-            </a>
-          );
-        })}
+    <nav className={styles.nav}>
+      <a href="?" className={styles.brand}>Cocktails</a>
+      <div className={styles.links}>
+        {TABS.map((tab) => (
+          <a
+            key={tab.view}
+            href={href(tab.view)}
+            className={`${styles.link} ${tab.view === current ? styles.on : ""}`}
+          >
+            {tab.label}
+          </a>
+        ))}
       </div>
     </nav>
   );
