@@ -651,9 +651,9 @@ func (b *bartender) handleMakeCocktail(ctx context.Context, raw any) (map[string
 	defer done()
 	start := time.Now()
 	runErr := b.makeCocktail(ctx, drinkID, recipe)
-	name := recipe.Name
-	if name == "" {
-		name = drinkID
+	name := drinkID
+	if recipe != nil && recipe.Name != "" {
+		name = recipe.Name
 	}
 	slackPost(context.Background(), b.logger, b.slackWebhookURL(), formatOrderAlert(name, time.Since(start), runErr, ""))
 	if runErr != nil {
