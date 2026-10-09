@@ -47,9 +47,6 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
 	name := bottleSw.Name().ShortName()
 	allowed := b.pickupAllowedCollisions(name)
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("start-home: %w", err)
-	}
 	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
 	}
@@ -87,9 +84,6 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	b.detachHeld()
 	if _, err := b.linearMoveToPose(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("linear-retreat %s: %w", name, err)
-	}
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("end-home: %w", err)
 	}
 	return nil
 }

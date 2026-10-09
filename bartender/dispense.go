@@ -123,8 +123,5 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-retreat from shaker: %w", err)
 	}
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("end-home: %w", err)
-	}
 	return nil
 }
