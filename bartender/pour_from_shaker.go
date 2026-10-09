@@ -2,6 +2,7 @@ package bartender
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,33 +33,11 @@ func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string
 // pourFromShakerAt runs the pour_from_shaker sequence with the given serve-approach and serve-tilt poses,
 // so callers can move the serve point (e.g. to a glass found by vision).
 func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, tilt *poseData) error {
+	if b.heldGeomFrame == nil {
+		return errors.New("pour_from_shaker: shaker must already be in the gripper (call strain_shaker first in a chain)")
+	}
 	station := sw.Name().ShortName()
 	shakerAllow := b.pickupAllowedCollisions("shaker")
-
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("start-home: %w", err)
-	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseShakerHomeHover); err != nil {
-		return fmt.Errorf("shaker-hover: %w", err)
-	}
-	if err := b.gripper.Open(ctx, nil); err != nil {
-		return fmt.Errorf("open gripper before shaker grab: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-to shaker grab: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-lift shaker before closing: %w", err)
-	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
-		return fmt.Errorf("close gripper on shaker: %w", err)
-	}
-	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
-		return fmt.Errorf("attach held shaker: %w", err)
-	}
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
-		return fmt.Errorf("carry to shaker carry-hover: %w", err)
-	}
 
 	if _, err := b.carryHeldLevelToResolved(ctx, approach, station+":"+poseServeApproach+":carry"); err != nil {
 		return fmt.Errorf("carry to serve-approach: %w", err)
