@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
-import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
+import { getBottles, getRecipes, updateRecipes } from "./lib/viamClient";
 import type { Pour, Recipe } from "./lib/recipes";
 import { DRINK_IMAGE_SLUGS } from "./lib/recipes";
-import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
 import { titleCase as cap } from "./lib/display";
 import styles from "./recipes.module.css";
@@ -20,16 +19,16 @@ function fmtOz(v: number): string {
 
 export function RecipesPage({ conn }: { conn: ViamConnection }) {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [bottles, setBottles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ index: number | null; recipe: Recipe } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    Promise.all([getRecipes(conn), getInventory(conn)])
-      .then(([r, i]) => {
+    Promise.all([getRecipes(conn), getBottles(conn)])
+      .then(([r, b]) => {
         setRecipes(r);
-        setInventory(i);
+        setBottles(b);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, [conn]);
@@ -68,7 +67,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
     save(recipes.filter((_, i) => i !== index));
   }
 
-  const ingredientNames = inventory ? Object.keys(inventory.ingredients).sort() : [];
+  const ingredientNames = bottles;
 
   return (
     <>
