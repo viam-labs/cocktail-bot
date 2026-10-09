@@ -100,20 +100,11 @@ func (b *bartender) handleGetQueue() (map[string]any, error) {
 	}, nil
 }
 
-// handleCancel aborts whatever verb is running by cancelling its context. The
-// arm stops wherever it is; held/gripper state is left untouched, so the
-// operator can inspect, intervene, and re-run from a known state. If nothing
-// is running, returns {cancelled: false}.
 func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	return map[string]any{"cancelled": cancelled}, nil
 }
 
-// handleGetStatus returns the live "what is the bartender doing right now?"
-// state plus the step history for the current run. The webapp kiosk polls
-// this during an order to render phase + elapsed; dashboards can replay
-// step_history to see where time was spent. Shape mirrors beanjamin's Status
-// so downstream tooling can be shared.
 func (b *bartender) handleGetStatus() (map[string]any, error) {
 	snap := b.status.snapshot()
 	resp := map[string]any{
@@ -689,7 +680,19 @@ func (b *bartender) handleMakeCocktail(ctx context.Context, raw any) (map[string
 	if recipe != nil && recipe.Name != "" {
 		name = recipe.Name
 	}
-	slackPost(context.Background(), b.logger, b.slackWebhookURL(), formatOrderAlert(name, time.Since(start), runErr, ""))
+	phase := ""
+	if snap := b.status.snapshot(); len(snap.history) > 0 {
+		phase = snap.history[len(snap.history)-1].Step
+	}
+	alert := orderAlert{
+		drink:             name,
+		phase:             phase,
+		duration:          time.Since(start),
+		err:               runErr,
+		operatorCancelled: isOperatorCancel(runErr),
+		machineID:         b.slackMachineID(),
+	}
+	slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
 	if runErr != nil {
 		return nil, runErr
 	}

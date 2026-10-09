@@ -5,14 +5,6 @@ import (
 	"time"
 )
 
-// statusTracker holds the live "what is the bartender doing right now?" state
-// plus a transition log for the current run. begin brackets a run; setPhase
-// records a transition. snapshot returns both the current state and the full
-// history so a polling client (kiosk) can render step + elapsed and an audit
-// view can replay what happened.
-//
-// Independent of the FIFO order queue — the kiosk's make_cocktail path doesn't
-// go through that queue, but still wants observability.
 type statusTracker struct {
 	mu      sync.Mutex
 	busy    bool

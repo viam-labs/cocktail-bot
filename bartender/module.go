@@ -53,10 +53,6 @@ type bartender struct {
 	status statusTracker
 }
 
-// withCancel wraps ctx so that a concurrent "cancel" DoCommand can abort it.
-// The returned cleanup must be deferred; cancelling an already-finished run is
-// a no-op. Only one run can be active at a time — a second withCancel cancels
-// any prior run, keeping the arm from executing two trajectories at once.
 func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancelMu.Lock()
@@ -75,8 +71,6 @@ func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
 	}
 }
 
-// cancelRunning fires the stored cancel func, if any. Returns whether anything
-// was running.
 func (b *bartender) cancelRunning() bool {
 	b.cancelMu.Lock()
 	defer b.cancelMu.Unlock()

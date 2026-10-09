@@ -47,6 +47,8 @@ type Config struct {
 	RecipeDefaults       *RecipeDefaults    `json:"recipe_defaults,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
+	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
+	MachineID string `json:"machine_id,omitempty"`
 }
 
 type RecipeDefaults struct {
