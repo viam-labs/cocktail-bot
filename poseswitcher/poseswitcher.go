@@ -41,11 +41,13 @@ type Config struct {
 }
 
 type PoseConf struct {
-	PoseName    string         `json:"pose_name"`
-	PoseValue   *commonpb.Pose `json:"pose_value,omitempty"`
-	Baseline    string         `json:"baseline,omitempty"`
-	Translation *Translation   `json:"translation,omitempty"`
-	Orientation *Orientation   `json:"orientation,omitempty"`
+	PoseName       string         `json:"pose_name"`
+	PoseValue      *commonpb.Pose `json:"pose_value,omitempty"`
+	Baseline       string         `json:"baseline,omitempty"`
+	Translation    *Translation   `json:"translation,omitempty"`
+	Orientation    *Orientation   `json:"orientation,omitempty"`
+	VelDegsPerSec  float64        `json:"vel_degs_per_sec,omitempty"`
+	AccDegsPerSec2 float64        `json:"acc_degs_per_sec2,omitempty"`
 }
 
 type Translation struct {
@@ -64,9 +66,11 @@ type Orientation struct {
 
 // poseValues holds the resolved absolute coordinates for a pose.
 type poseValues struct {
-	X, Y, Z    float64
-	OX, OY, OZ float64
-	Theta      float64
+	X, Y, Z        float64
+	OX, OY, OZ     float64
+	Theta          float64
+	VelDegsPerSec  float64
+	AccDegsPerSec2 float64
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -251,6 +255,8 @@ func resolvePoses(poses []PoseConf) []poseValues {
 
 			resolved[i] = base
 		}
+		resolved[i].VelDegsPerSec = p.VelDegsPerSec
+		resolved[i].AccDegsPerSec2 = p.AccDegsPerSec2
 		done[i] = true
 	}
 
@@ -308,7 +314,7 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 		for i, pn := range s.poseNames {
 			if pn == name {
 				rp := s.resolvedPoses[i]
-				return map[string]any{
+				resp := map[string]any{
 					"x":               rp.X,
 					"y":               rp.Y,
 					"z":               rp.Z,
@@ -318,7 +324,14 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 					"theta":           rp.Theta,
 					"reference_frame": s.cfg.ReferenceFrame,
 					"component_name":  s.cfg.ComponentName,
-				}, nil
+				}
+				if rp.VelDegsPerSec > 0 {
+					resp["vel_degs_per_sec"] = rp.VelDegsPerSec
+				}
+				if rp.AccDegsPerSec2 > 0 {
+					resp["acc_degs_per_sec2"] = rp.AccDegsPerSec2
+				}
+				return resp, nil
 			}
 		}
 		err := fmt.Errorf("unknown pose name %q", name)
