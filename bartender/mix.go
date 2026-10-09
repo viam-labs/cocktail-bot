@@ -78,25 +78,5 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseMixerHover); err != nil {
 		return fmt.Errorf("untilt at mixer-hover: %w", err)
 	}
-
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
-		return fmt.Errorf("carry back to shaker carry-hover: %w", err)
-	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-descend to shaker lift: %w", err)
-	}
-	if err := b.gripper.Open(ctx, nil); err != nil {
-		return fmt.Errorf("release shaker grip at lift: %w", err)
-	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
-	}
-	b.detachHeld()
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-retreat from shaker: %w", err)
-	}
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("end-home: %w", err)
-	}
 	return nil
 }
