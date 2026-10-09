@@ -7,7 +7,15 @@ import (
 	"time"
 )
 
-const pourIntoShakerDwell = 500 * time.Millisecond
+const defaultPourIntoShakerDwellMs = 500
+
+func (b *bartender) pourIntoShakerDwell() time.Duration {
+	ms := b.cfg.PourIntoShakerDwellMs
+	if ms <= 0 {
+		ms = defaultPourIntoShakerDwellMs
+	}
+	return time.Duration(ms) * time.Millisecond
+}
 
 func (b *bartender) pourIntoShaker(ctx context.Context, bottleSwitchName string, oz float64) error {
 	bottleSw, err := b.findSwitch(bottleSwitchName)
@@ -35,7 +43,7 @@ func (b *bartender) pourIntoShaker(ctx context.Context, bottleSwitchName string,
 		if _, err := b.moveArmToPoseWithOpts(ctx, posePourTilt, pourOpts); err != nil {
 			return fmt.Errorf("pour-tilt (pour %d/%d): %w", i+1, pours, err)
 		}
-		if err := sleepCtx(ctx, pourIntoShakerDwell); err != nil {
+		if err := sleepCtx(ctx, b.pourIntoShakerDwell()); err != nil {
 			return fmt.Errorf("pour dwell: %w", err)
 		}
 		if _, err := b.moveArmToPoseWithOpts(ctx, posePourApproach, pourOpts); err != nil {
