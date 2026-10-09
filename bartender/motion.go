@@ -198,13 +198,14 @@ func (b *bartender) moveArmToPoseWithOpts(ctx context.Context, poseName string, 
 	return b.moveToResolvedPose(ctx, pd, poseName, nil, opts)
 }
 
-func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
 		return 0, err
 	}
 	label := sw.Name().ShortName() + ":" + poseName
-	return b.moveToResolvedPose(ctx, pd, label, nil, nil)
+	constraints := b.withAllowedCollisions(nil, allowed)
+	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
 // AllowedCollision names a pair of frames whose collision the planner should
@@ -255,6 +256,17 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 // configured — the move then plans with no override.
 func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
 	obstacle := b.cfg.PickupObstacles[key]
+	if obstacle == "" {
+		return nil
+	}
+	return []AllowedCollision{
+		{Frame1: "claws-middle", Frame2: obstacle},
+		{Frame1: heldObjectFrameName, Frame2: obstacle},
+	}
+}
+
+func (b *bartender) mixerProtectorAllowed() []AllowedCollision {
+	obstacle := b.cfg.MixerProtectorObstacle
 	if obstacle == "" {
 		return nil
 	}
