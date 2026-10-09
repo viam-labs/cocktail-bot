@@ -12,6 +12,7 @@ const (
 	poseMixerTiltInsert = "mixer-tilt-insert"
 	poseMixerInsert     = "mixer-insert"
 	poseMixerLift       = "mixer-lift"
+	poseMixerLower      = "mixer-lower"
 )
 
 func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs int) error {
@@ -59,8 +60,14 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 		return fmt.Errorf("linear-lift inside mixer: %w", err)
 	}
 
-	if err := sleepCtx(ctx, time.Duration(dwellMs)*time.Millisecond); err != nil {
-		return fmt.Errorf("mixer dwell: %w", err)
+	deadline := time.Now().Add(time.Duration(dwellMs) * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := b.linearCarryToPose(ctx, sw, poseMixerLower); err != nil {
+			return fmt.Errorf("linear-bob down to mixer-lower: %w", err)
+		}
+		if _, err := b.linearCarryToPose(ctx, sw, poseMixerLift); err != nil {
+			return fmt.Errorf("linear-bob up to mixer-lift: %w", err)
+		}
 	}
 
 	if _, err := b.linearCarryToPose(ctx, sw, poseMixerInsert); err != nil {
