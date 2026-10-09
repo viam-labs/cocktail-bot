@@ -6,11 +6,10 @@ import (
 	"fmt"
 )
 
-// makeCocktail walks a recipe end-to-end: for each pour, pours the configured
-// ounces of the ingredient into the shaker; then runs the fixed suffix of
-// dispense_ice → mix → strain → serve → rotate using the stations and dwell
-// times from Config.RecipeDefaults. Fails fast with the phase and underlying
-// error; the arm stays wherever it ended up and the operator recovers manually.
+// makeCocktail walks a recipe end-to-end: dispenses ice first so the alcohol
+// chills on contact, then pours each ingredient on top, then runs the fixed
+// suffix of mix → strain → serve → rotate using the stations and dwell times
+// from Config.RecipeDefaults.
 func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Recipe) error {
 	if recipe == nil {
 		if drinkID == "" {
@@ -44,6 +43,10 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 	b.status.begin(displayName)
 	defer b.status.end()
 
+	b.status.setPhase("Dispensing ice")
+	if err := b.dispenseIce(ctx, d.IceStation, d.IceDwellMs); err != nil {
+		return fmt.Errorf("dispense ice: %w", err)
+	}
 	for i, pour := range recipe.Pours {
 		if pour.Ingredient == "" {
 			return fmt.Errorf("pour %d: ingredient is required", i+1)
@@ -52,10 +55,6 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		if err := b.pourIntoShaker(ctx, pour.Ingredient, pour.Oz); err != nil {
 			return fmt.Errorf("pour %d (%s): %w", i+1, pour.Ingredient, err)
 		}
-	}
-	b.status.setPhase("Dispensing ice")
-	if err := b.dispenseIce(ctx, d.IceStation, d.IceDwellMs); err != nil {
-		return fmt.Errorf("dispense ice: %w", err)
 	}
 	b.status.setPhase("Mixing")
 	if err := b.mix(ctx, d.MixerStation, d.MixDwellMs); err != nil {
