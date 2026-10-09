@@ -13,10 +13,6 @@ func (b *bartender) rotateShakers(ctx context.Context, strainFlow string) error 
 	shakerAAllow := b.pickupAllowedCollisions("shaker-a")
 	shakerBAllow := b.pickupAllowedCollisions("shaker-b")
 
-	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
-		return fmt.Errorf("start-home: %w", err)
-	}
-
 	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseShakerBHover); err != nil {
 		return fmt.Errorf("shaker-b-hover: %w", err)
 	}
