@@ -7,12 +7,17 @@ import { Kiosk } from "./kiosk";
 import { Admin } from "./admin";
 import { InventoryPage } from "./inventory";
 import { RecipesPage } from "./recipes";
+import { Dashboard } from "./dashboard";
 
 function PageInner() {
   const params = useSearchParams();
   const partId = params.get("partId") ?? "";
   const view = params.get("view") ?? "";
   const { conn, connected, error } = useViamConnection(partId);
+
+  if (!partId) {
+    return <Dashboard />;
+  }
 
   if (error) {
     return (
@@ -27,9 +32,7 @@ function PageInner() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
         <h1 className="text-4xl font-semibold tracking-tight">Cocktails</h1>
-        <p className="text-gray-600">
-          {partId ? "Dialing…" : "Pass ?partId=<machine-part-id> in the URL to connect."}
-        </p>
+        <p className="text-gray-600">Dialing…</p>
       </main>
     );
   }
