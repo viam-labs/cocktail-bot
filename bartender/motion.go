@@ -30,9 +30,11 @@ func orderIDFromCtx(ctx context.Context) string {
 }
 
 type poseData struct {
-	pose          spatialmath.Pose
-	refFrame      string
-	componentName string
+	pose           spatialmath.Pose
+	refFrame       string
+	componentName  string
+	velDegsPerSec  float64
+	accDegsPerSec2 float64
 }
 
 // DoCommand contract on the switcher: get_pose_by_name → {x, y, z, o_x, o_y, o_z, theta, reference_frame, component_name}.
@@ -53,13 +55,17 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		refFrame = referenceframe.World
 	}
 	componentName, _ := resp["component_name"].(string)
+	vel, _ := resp["vel_degs_per_sec"].(float64)
+	acc, _ := resp["acc_degs_per_sec2"].(float64)
 	return &poseData{
 		pose: spatialmath.NewPose(
 			r3.Vector{X: x, Y: y, Z: z},
 			&spatialmath.OrientationVectorDegrees{OX: oX, OY: oY, OZ: oZ, Theta: theta},
 		),
-		refFrame:      refFrame,
-		componentName: componentName,
+		refFrame:       refFrame,
+		componentName:  componentName,
+		velDegsPerSec:  vel,
+		accDegsPerSec2: acc,
 	}, nil
 }
 
@@ -135,6 +141,9 @@ func (b *bartender) savePlan(ctx context.Context, req *armplanning.PlanRequest, 
 }
 
 func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
+	if opts == nil {
+		opts = moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	}
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
@@ -317,6 +326,9 @@ func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, 
 // orientation constraint bounds the shaker's own long axis rather than the
 // gripper's tool axis. Falls back to moveToResolvedPose when nothing is held.
 func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
+	if opts == nil {
+		opts = moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	}
 	if b.heldGeomFrame == nil {
 		return b.moveToResolvedPose(ctx, pd, label, constraints, opts)
 	}
