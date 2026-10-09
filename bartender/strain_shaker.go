@@ -86,6 +86,9 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterALift, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to filter-a-lift: %w", err)
 	}
+	if err := sleepCtx(ctx, 500*time.Millisecond); err != nil {
+		return fmt.Errorf("settle before filter grab: %w", err)
+	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on filter: %w", err)
 	}
