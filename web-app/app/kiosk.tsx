@@ -162,6 +162,26 @@ function fmtElapsed(ms: number): string {
   return `${m}m ${String(s).padStart(2, "0")}s`;
 }
 
+function fmtSecs(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+type TimelineEntry = { step: string; durationMs: number; current: boolean };
+
+function buildTimeline(
+  history: { step: string; started_at: string }[] | undefined,
+  now: number,
+): TimelineEntry[] {
+  if (!history || history.length === 0) return [];
+  return history.map((entry, i) => {
+    const startedAt = new Date(entry.started_at).getTime();
+    const endsAt = i < history.length - 1 ? new Date(history[i + 1].started_at).getTime() : now;
+    return { step: entry.step, durationMs: Math.max(0, endsAt - startedAt), current: i === history.length - 1 };
+  });
+}
+
 function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection }) {
   const [status, setStatus] = useState<OrderStatus | null>(null);
   const [now, setNow] = useState<number>(0);
@@ -187,7 +207,7 @@ function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection 
 
   const started = status?.started_at ? new Date(status.started_at).getTime() : null;
   const elapsedMs = started ? Math.max(0, now - started) : status?.elapsed_ms ?? 0;
-  const phase = status?.current_step || "Starting up";
+  const timeline = buildTimeline(status?.step_history, now);
 
   return (
     <div className={styles.scrim}>
@@ -195,8 +215,19 @@ function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection 
         <h3>
           <span className={styles.spinner} /> Making {recipe.name}
         </h3>
-        <p>{phase}</p>
         <p className={styles.elapsed}>{fmtElapsed(elapsedMs)}</p>
+        {timeline.length === 0 ? (
+          <p>Starting up</p>
+        ) : (
+          <ul className={styles.timeline}>
+            {timeline.map((entry, i) => (
+              <li key={i} className={entry.current ? styles.timelineCurrent : undefined}>
+                <span>{entry.step}</span>
+                <span className={styles.timelineDur}>{fmtSecs(entry.durationMs)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

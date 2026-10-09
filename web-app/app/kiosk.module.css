@@ -215,6 +215,30 @@
   font-variant-numeric: tabular-nums;
   margin-top: 8px;
 }
+.timeline {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.timeline li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--smoke);
+  font-size: 15px;
+}
+.timelineCurrent {
+  background: var(--tile);
+  color: var(--ink);
+  font-weight: 600;
+}
+.timelineDur {
+  font-variant-numeric: tabular-nums;
+}
 @keyframes pulse {
   0%,
   100% {
