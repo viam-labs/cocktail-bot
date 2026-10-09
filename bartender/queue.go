@@ -41,7 +41,16 @@ func (b *bartender) safeExecuteOrder(o order.Order) {
 		}
 		end := time.Now()
 		b.publishReading(o, start, end, execErr, failedStep)
-		slackPost(context.Background(), b.logger, b.slackWebhookURL(), formatOrderAlert(o.Drink, end.Sub(start), execErr, failedStep))
+		alert := orderAlert{
+			drink:             o.Drink,
+			orderID:           o.ID,
+			phase:             failedStep,
+			duration:          end.Sub(start),
+			err:               execErr,
+			operatorCancelled: isOperatorCancel(execErr),
+			machineID:         b.slackMachineID(),
+		}
+		slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
 	}()
 	ctx := ctxWithOrderID(context.Background(), o.ID)
 	ctx, done := b.withCancel(ctx)
