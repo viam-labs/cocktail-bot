@@ -46,8 +46,8 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 // Ends holding the bottle at its carry-hover pose.
 func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
 	name := bottleSw.Name().ShortName()
-	allowed := b.pickupAllowedCollisions(name)
-	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover); err != nil {
+	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
 	}
 	if err := b.gripper.Open(ctx, nil); err != nil {
@@ -71,7 +71,7 @@ func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Swit
 // Starts from anywhere with the bottle held upright; ends empty-handed at home.
 func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
 	name := bottleSw.Name().ShortName()
-	allowed := b.pickupAllowedCollisions(name)
+	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
 	}
