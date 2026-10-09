@@ -45,6 +45,8 @@ type Config struct {
 	DataDir              string             `json:"data_dir,omitempty"`
 	PickupObstacles      map[string]string  `json:"pickup_obstacles,omitempty"`
 	RecipeDefaults       *RecipeDefaults    `json:"recipe_defaults,omitempty"`
+	// Incoming webhook URL for order outcome alerts; empty disables.
+	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 }
 
 type RecipeDefaults struct {
