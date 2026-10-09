@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
-import { getInventory, updateInventoryItem } from "./lib/viamClient";
+import { getInventory, updateInventoryItem, deleteInventoryItem } from "./lib/viamClient";
 import type { Inventory } from "./lib/inventory";
 import { Nav } from "./nav";
+import { titleCase } from "./lib/display";
 import styles from "./inventory.module.css";
-
-function cap(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
 
 export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
@@ -32,6 +29,20 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     setError(null);
     try {
       await updateInventoryItem(conn, ingredient, inStock);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(ingredient: string) {
+    if (!confirm(`Delete "${titleCase(ingredient)}" from inventory?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteInventoryItem(conn, ingredient);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -97,8 +108,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
             <p className={styles.empty}>No ingredients yet. Add one above.</p>
           ) : (
             <>
-              <StockSection title="In stock" count={inStock.length} items={inStock} inStock busy={busy} onToggle={toggle} />
-              <StockSection title="Out of stock" count={outOfStock.length} items={outOfStock} inStock={false} busy={busy} onToggle={toggle} />
+              <StockSection title="In stock" count={inStock.length} items={inStock} inStock busy={busy} onToggle={toggle} onDelete={remove} />
+              <StockSection title="Out of stock" count={outOfStock.length} items={outOfStock} inStock={false} busy={busy} onToggle={toggle} onDelete={remove} />
             </>
           )}
         </main>
@@ -114,6 +125,7 @@ function StockSection({
   inStock,
   busy,
   onToggle,
+  onDelete,
 }: {
   title: string;
   count: number;
@@ -121,6 +133,7 @@ function StockSection({
   inStock: boolean;
   busy: boolean;
   onToggle: (name: string, next: boolean) => void;
+  onDelete: (name: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -137,15 +150,27 @@ function StockSection({
               style={{ background: inStock ? "var(--ok)" : "var(--smoke)" }}
               aria-hidden
             />
-            <span className={styles.name}>{cap(name)}</span>
-            <button
-              type="button"
-              className={styles.btn}
-              onClick={() => onToggle(name, !inStock)}
-              disabled={busy}
-            >
-              Mark {inStock ? "out of stock" : "in stock"}
-            </button>
+            <span className={styles.name}>{titleCase(name)}</span>
+            <div className={styles.rowBtns}>
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={() => onToggle(name, !inStock)}
+                disabled={busy}
+              >
+                Mark {inStock ? "out of stock" : "in stock"}
+              </button>
+              <button
+                type="button"
+                className={styles.btnIcon}
+                onClick={() => onDelete(name)}
+                disabled={busy}
+                aria-label={`Delete ${name}`}
+                title="Delete"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ))}
       </div>

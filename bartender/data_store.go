@@ -153,6 +153,16 @@ func (ds *dataStore) UpdateInventoryItem(ingredient string, inStock bool) error 
 	return ds.persistInventoryLocked()
 }
 
+func (ds *dataStore) DeleteInventoryItem(ingredient string) error {
+	if ingredient == "" {
+		return errors.New("ingredient is required")
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	delete(ds.inventory.Ingredients, ingredient)
+	return ds.persistInventoryLocked()
+}
+
 func (ds *dataStore) persistInventoryLocked() error {
 	bytes, err := json.MarshalIndent(ds.inventory, "", "  ")
 	if err != nil {

@@ -132,6 +132,34 @@
   justify-self: center;
 }
 
+.rowBtns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btnIcon {
+  height: 36px;
+  width: 36px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--smoke);
+  font: inherit;
+  font-size: 16px;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btnIcon:hover:not(:disabled) {
+  background: var(--tile);
+  color: var(--bad);
+}
+.btnIcon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .btn {
   height: 36px;
   padding: 0 14px;
