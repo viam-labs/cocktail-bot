@@ -40,11 +40,12 @@ type Config struct {
 	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
 	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 	// Detections whose centroids are closer than this in x, y count as one glass (default 50).
-	GlassMinSeparationMM float64            `json:"glass_min_separation_mm,omitempty"`
-	BottlePourerOz       map[string]float64 `json:"bottle_pourer_oz,omitempty"`
-	DataDir              string             `json:"data_dir,omitempty"`
-	PickupObstacles      map[string]string  `json:"pickup_obstacles,omitempty"`
-	RecipeDefaults       *RecipeDefaults    `json:"recipe_defaults,omitempty"`
+	GlassMinSeparationMM  float64            `json:"glass_min_separation_mm,omitempty"`
+	BottlePourerOz        map[string]float64 `json:"bottle_pourer_oz,omitempty"`
+	DataDir               string             `json:"data_dir,omitempty"`
+	PickupObstacles       map[string]string  `json:"pickup_obstacles,omitempty"`
+	RecipeDefaults        *RecipeDefaults    `json:"recipe_defaults,omitempty"`
+	PourIntoShakerDwellMs int                `json:"pour_into_shaker_dwell_ms,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
