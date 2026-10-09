@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -131,6 +132,16 @@ func (b *bartender) handleGetStatus() (map[string]any, error) {
 		}
 	}
 	resp["step_history"] = history
+	if snap.lastOutcome != nil {
+		out := map[string]any{
+			"drink":    snap.lastOutcome.Drink,
+			"ended_at": snap.lastOutcome.EndedAt.UTC().Format(time.RFC3339),
+		}
+		if snap.lastOutcome.Err != nil {
+			out["error"] = snap.lastOutcome.Err.Error()
+		}
+		resp["last_outcome"] = out
+	}
 	return resp, nil
 }
 
@@ -687,39 +698,65 @@ func parseRotateShakers(raw any) (string, error) {
 	return strainFlow, nil
 }
 
-func (b *bartender) handleMakeCocktail(ctx context.Context, raw any) (map[string]any, error) {
+func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]any, error) {
 	drinkID, recipe, err := parseMakeCocktail(raw)
 	if err != nil {
 		return nil, err
 	}
-	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
-	defer done()
+	if recipe == nil {
+		if drinkID == "" {
+			return nil, errors.New("make_cocktail: either drink_id or recipe is required")
+		}
+		if b.dataStore == nil {
+			return nil, errDataStoreNotConfigured
+		}
+		for _, r := range b.dataStore.Recipes() {
+			if r.ID == drinkID {
+				rc := r
+				recipe = &rc
+				break
+			}
+		}
+		if recipe == nil {
+			return nil, fmt.Errorf("make_cocktail: recipe %q not found", drinkID)
+		}
+	}
+	if b.cfg.RecipeDefaults == nil {
+		return nil, errors.New("make_cocktail: recipe_defaults not configured on bartender service")
+	}
+
+	name := recipe.Name
+	if name == "" {
+		name = drinkID
+	}
+	b.status.begin(name)
 	start := time.Now()
-	runErr := b.makeCocktail(ctx, drinkID, recipe)
-	name := drinkID
-	if recipe != nil && recipe.Name != "" {
-		name = recipe.Name
-	}
-	phase := ""
-	if snap := b.status.snapshot(); len(snap.history) > 0 {
-		phase = snap.history[len(snap.history)-1].Step
-	}
-	alert := orderAlert{
-		drink:             name,
-		phase:             phase,
-		duration:          time.Since(start),
-		err:               runErr,
-		operatorCancelled: isOperatorCancel(runErr),
-		machineID:         b.slackMachineID(),
-	}
-	slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
-	if runErr != nil {
-		return nil, runErr
-	}
+	runCtx := ctxWithOrderID(context.Background(), "manual-"+start.UTC().Format("20060102_150405"))
+	runCtx, done := b.withCancel(runCtx)
+
+	go func() {
+		defer done()
+		runErr := b.makeCocktail(runCtx, drinkID, recipe)
+		phase := ""
+		if snap := b.status.snapshot(); len(snap.history) > 0 {
+			phase = snap.history[len(snap.history)-1].Step
+		}
+		b.status.finish(runErr)
+		alert := orderAlert{
+			drink:             name,
+			phase:             phase,
+			duration:          time.Since(start),
+			err:               runErr,
+			operatorCancelled: isOperatorCancel(runErr),
+			machineID:         b.slackMachineID(),
+		}
+		slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
+	}()
+
 	return map[string]any{
-		"drink_id":    drinkID,
-		"duration_ms": time.Since(start).Milliseconds(),
+		"drink_id":   drinkID,
+		"drink":      name,
+		"started_at": start.UTC().Format(time.RFC3339),
 	}, nil
 }
 

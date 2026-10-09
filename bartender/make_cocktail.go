@@ -36,13 +36,6 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 	if d.ShakerSource == "" || d.IceStation == "" || d.MixerStation == "" || d.StrainFlow == "" || d.ServeStation == "" {
 		return errors.New("make_cocktail: recipe_defaults is missing one of shaker_source, ice_station, mixer_station, strain_flow, serve_station")
 	}
-	displayName := recipe.Name
-	if displayName == "" {
-		displayName = recipe.ID
-	}
-	b.status.begin(displayName)
-	defer b.status.end()
-
 	b.status.setPhase("Dispensing ice")
 	if err := b.dispenseIce(ctx, d.IceStation, d.IceDwellMs); err != nil {
 		return fmt.Errorf("dispense ice: %w", err)

@@ -167,6 +167,7 @@ export interface OrderStatus {
   started_at?: string;
   elapsed_ms?: number;
   step_history?: { step: string; started_at: string }[];
+  last_outcome?: { drink: string; ended_at: string; error?: string };
 }
 
 export async function getStatus(conn: ViamConnection): Promise<OrderStatus> {
@@ -268,18 +269,25 @@ export async function pourFromShaker(
   });
 }
 
-export async function makeCocktail(
-  conn: ViamConnection,
-  drinkId: string,
-): Promise<{ duration_ms: number }> {
+export async function makeCocktail(conn: ViamConnection, drinkId: string): Promise<void> {
   if (conn.isDev) {
     const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
-    // Pours plus the fixed suffix (ice, mix, strain, serve, rotate = 5 phases).
     const phases = (recipe?.pours.length ?? 0) + 5;
     await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * phases));
-    return { duration_ms: DEV_VERB_DELAY_MS * phases };
+    return;
   }
-  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+  const resp = await doCommand<{ started_at: string }>(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { drink_id: drinkId },
   });
+  const firedAt = new Date(resp.started_at).getTime();
+  while (true) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const status = await getStatus(conn);
+    if (status.is_busy) continue;
+    const outcome = status.last_outcome;
+    if (outcome && new Date(outcome.ended_at).getTime() >= firedAt) {
+      if (outcome.error) throw new Error(outcome.error);
+      return;
+    }
+  }
 }
