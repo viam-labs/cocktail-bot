@@ -19,8 +19,10 @@ import styles from "./kiosk.module.css";
 type OrderState =
   | { kind: "idle" }
   | { kind: "running"; recipe: Recipe }
-  | { kind: "done"; recipe: Recipe }
+  | { kind: "done"; recipe: Recipe; at: number }
   | { kind: "error"; recipe: Recipe; message: string };
+
+const READY_CARD_MS = 60_000;
 
 export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: boolean }) {
   const [machineName, setMachineName] = useState<string>("");
@@ -54,7 +56,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
       setOrder({ kind: "running", recipe });
       try {
         await makeCocktail(conn, recipe.id);
-        setOrder({ kind: "done", recipe });
+        setOrder({ kind: "done", recipe, at: Date.now() });
       } catch (err) {
         setOrder({
           kind: "error",
@@ -66,7 +68,15 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     [conn],
   );
 
-  const resetOrder = useCallback(() => setOrder({ kind: "idle" }), []);
+  const dismissError = useCallback(() => setOrder({ kind: "idle" }), []);
+
+  // Auto-fade the "ready" state after READY_CARD_MS so the sidebar returns to idle.
+  useEffect(() => {
+    if (order.kind !== "done") return;
+    const remaining = Math.max(0, READY_CARD_MS - (Date.now() - order.at));
+    const t = window.setTimeout(() => setOrder({ kind: "idle" }), remaining);
+    return () => window.clearTimeout(t);
+  }, [order]);
 
   const visible = recipes ? recipes.filter((r) => r.on_menu !== false) : [];
 
@@ -75,34 +85,38 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
       <Nav current="kiosk" />
       <div className={styles.scope}>
         <main className={styles.main}>
-          <h1 className={styles.title}>Cocktails</h1>
+          <h1 className={styles.title}>What can we make you?</h1>
           <p className={`${styles.sub} ${connected ? styles.ok : styles.warn}`}>
             {connected ? "Connected" : "Reconnecting"} to {machineName || conn.hostname}
             {conn.isDev && " (dev mock)"}
           </p>
 
-          {loadError ? (
-            <p className={styles.sub}>Could not load menu: {loadError}</p>
-          ) : !recipes || !inventory ? (
-            <p className={styles.loading}>Loading menu…</p>
-          ) : recipes.length === 0 ? (
-            <p className={styles.loading}>No recipes configured.</p>
-          ) : visible.length === 0 ? (
-            <p className={styles.loading}>No drinks on the menu right now.</p>
-          ) : (
-            <DrinkGrid
-              recipes={visible}
-              inventory={inventory}
-              disabled={order.kind === "running"}
-              onOrder={startOrder}
-            />
-          )}
+          <div className={styles.kBody}>
+            <div className={styles.menuWrap}>
+              {loadError ? (
+                <p className={styles.sub}>Could not load menu: {loadError}</p>
+              ) : !recipes || !inventory ? (
+                <p className={styles.loading}>Loading menu…</p>
+              ) : recipes.length === 0 ? (
+                <p className={styles.loading}>No recipes configured.</p>
+              ) : visible.length === 0 ? (
+                <p className={styles.loading}>No drinks on the menu right now.</p>
+              ) : (
+                <DrinkGrid
+                  recipes={visible}
+                  inventory={inventory}
+                  disabled={order.kind === "running"}
+                  onOrder={startOrder}
+                />
+              )}
+            </div>
+
+            <KioskQueue conn={conn} order={order} />
+          </div>
         </main>
 
-        {order.kind === "running" && <OrderProgress recipe={order.recipe} conn={conn} />}
-        {order.kind === "done" && <OrderDone recipe={order.recipe} onDismiss={resetOrder} />}
         {order.kind === "error" && (
-          <OrderError recipe={order.recipe} message={order.message} onDismiss={resetOrder} />
+          <OrderError recipe={order.recipe} message={order.message} onDismiss={dismissError} />
         )}
       </div>
     </>
@@ -155,10 +169,18 @@ function DrinkGrid({
   );
 }
 
-function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection }) {
+function KioskQueue({
+  conn,
+  order,
+}: {
+  conn: ViamConnection;
+  order: OrderState;
+}) {
   const [status, setStatus] = useState<OrderStatus | null>(null);
+  const pollActive = order.kind === "running";
 
   useEffect(() => {
+    if (!pollActive) return;
     let cancelled = false;
     const poll = () => {
       getStatus(conn)
@@ -168,51 +190,37 @@ function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection 
         .catch(() => {});
     };
     poll();
-    const statusId = window.setInterval(poll, 1000);
+    const id = window.setInterval(poll, 1000);
     return () => {
       cancelled = true;
-      window.clearInterval(statusId);
+      window.clearInterval(id);
     };
-  }, [conn]);
+  }, [conn, pollActive]);
 
-  const steps = status?.step_history ?? [];
-  const currentIdx = steps.length - 1;
+  const currentPhaseForRunning = pollActive ? status?.current_step : undefined;
 
   return (
-    <div className={styles.scrim}>
-      <div className={styles.sheet}>
-        <h3>
-          <span className={styles.spinner} /> Making {recipe.name}
-        </h3>
-        {steps.length === 0 ? (
-          <p>Starting up</p>
-        ) : (
-          <ul className={styles.timeline}>
-            {steps.map((entry, i) => (
-              <li key={i} className={i === currentIdx ? styles.timelineCurrent : undefined}>
-                <span>{entry.step}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
+    <aside className={styles.kq} aria-label="Queue">
+      <h2>In line</h2>
 
-function OrderDone({ recipe, onDismiss }: { recipe: Recipe; onDismiss: () => void }) {
-  return (
-    <div className={styles.scrim}>
-      <div className={styles.sheet}>
-        <h3>{recipe.name} is ready</h3>
-        <p>Enjoy.</p>
-        <div className={styles.btns}>
-          <button type="button" className={`${styles.btn} ${styles.btnMain}`} onClick={onDismiss}>
-            Done
-          </button>
+      {order.kind === "done" && (
+        <div className={styles.kqReady} role="status">
+          {order.recipe.name} is ready
         </div>
-      </div>
-    </div>
+      )}
+
+      {order.kind === "running" ? (
+        <div className={styles.rows}>
+          <div className={styles.kqRow}>
+            <span className={styles.kqName}>{order.recipe.name}</span>
+            <span className={styles.kqTag}>Making now</span>
+          </div>
+          {currentPhaseForRunning && <p className={styles.kqNote}>{currentPhaseForRunning}</p>}
+        </div>
+      ) : (
+        order.kind !== "done" && <p className={styles.kqNote}>Nobody in line.</p>
+      )}
+    </aside>
   );
 }
 

@@ -4,6 +4,7 @@
   --smoke: #6e6e73;
   --hair: #e8e8ed;
   --verm: #a3202c;
+  --blush: #fbedee;
   --tile: #f5f5f7;
   --ok: #1e8e3e;
   --bad: #c5221f;
@@ -25,6 +26,7 @@
     --smoke: #a1a1a6;
     --hair: #2c2c2e;
     --verm: #e5525e;
+    --blush: #2b1316;
     --tile: #1c1c1e;
     --ok: #34c759;
     --bad: #ff453a;
@@ -60,13 +62,74 @@
   color: var(--smoke);
 }
 
+.kBody {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 48px;
+  align-items: start;
+}
+.menuWrap {
+  min-width: 0;
+}
 .menu {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 24px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.kq {
+  border-left: 1px solid var(--hair);
+  padding-left: 40px;
+  min-height: 380px;
+}
+.kq h2 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0 0 16px;
+}
+.kqReady {
+  background: var(--blush);
+  color: var(--verm);
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+.kqNote {
+  color: var(--smoke);
+  margin: 0 0 16px;
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+.kqRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 56px;
+  font-size: 20px;
+  border-top: 1px solid var(--hair);
+  padding: 0 4px;
+}
+.kqRow:first-child {
+  border-top: 0;
+}
+.kqName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kqTag {
+  font-size: 15px;
+  color: var(--verm);
+  font-weight: 600;
 }
 
 .drink {
@@ -133,6 +196,14 @@
   .title {
     font-size: 36px;
   }
+  .kBody {
+    grid-template-columns: 1fr;
+  }
+  .kq {
+    border-left: 0;
+    padding-left: 0;
+    min-height: 0;
+  }
 }
 
 .scrim {
@@ -198,45 +269,4 @@
 .btnMain {
   background: var(--verm);
   color: #fff;
-}
-.spinner {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: pulse 1.2s ease-in-out infinite;
-}
-.timeline {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.timeline li {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 8px;
-  color: var(--smoke);
-  font-size: 15px;
-}
-.timelineCurrent {
-  background: var(--tile);
-  color: var(--ink);
-  font-weight: 600;
-}
-.timelineDur {
-  font-variant-numeric: tabular-nums;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
 }
