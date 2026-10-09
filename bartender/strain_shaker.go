@@ -17,7 +17,6 @@ const (
 	poseShakerBHover      = "shaker-b-hover"
 	poseShakerBHoverAbove = "shaker-b-hover-above"
 	poseShakerBPlace      = "shaker-b-place"
-	poseShakerBLift       = "shaker-b-lift"
 	poseShakerBDescend    = "shaker-b-descend"
 	poseFilterALift       = "filter-a-lift"
 	poseFilterAHoverAbove = "filter-a-hover-above"
