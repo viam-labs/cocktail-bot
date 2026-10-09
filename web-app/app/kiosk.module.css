@@ -207,6 +207,14 @@
   background: currentColor;
   animation: pulse 1.2s ease-in-out infinite;
 }
+.elapsed {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 8px;
+}
 @keyframes pulse {
   0%,
   100% {

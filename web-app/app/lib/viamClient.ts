@@ -160,6 +160,20 @@ export async function getRecipes(conn: ViamConnection): Promise<Recipe[]> {
   return resp.recipes ?? [];
 }
 
+export interface OrderStatus {
+  is_busy: boolean;
+  drink?: string;
+  current_step?: string;
+  started_at?: string;
+  elapsed_ms?: number;
+  step_history?: { step: string; started_at: string }[];
+}
+
+export async function getStatus(conn: ViamConnection): Promise<OrderStatus> {
+  if (conn.isDev) return { is_busy: false };
+  return doCommand<OrderStatus>(conn, BARTENDER_SERVICE_NAME, { get_status: true });
+}
+
 export async function getInventory(conn: ViamConnection): Promise<Inventory> {
   if (conn.isDev) return structuredClone(DEV_INVENTORY);
   const resp = await doCommand<{ inventory: Inventory }>(

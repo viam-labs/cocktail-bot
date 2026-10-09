@@ -19,6 +19,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if _, ok := cmd["cancel"]; ok {
 		return b.handleCancel()
 	}
+	if _, ok := cmd["get_status"]; ok {
+		return b.handleGetStatus()
+	}
 	if raw, ok := cmd["execute_action"]; ok {
 		return b.handleExecuteAction(ctx, raw)
 	}
@@ -70,7 +73,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_inventory, update_inventory_item, update_recipes, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -104,6 +107,37 @@ func (b *bartender) handleGetQueue() (map[string]any, error) {
 func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	return map[string]any{"cancelled": cancelled}, nil
+}
+
+// handleGetStatus returns the live "what is the bartender doing right now?"
+// state plus the step history for the current run. The webapp kiosk polls
+// this during an order to render phase + elapsed; dashboards can replay
+// step_history to see where time was spent. Shape mirrors beanjamin's Status
+// so downstream tooling can be shared.
+func (b *bartender) handleGetStatus() (map[string]any, error) {
+	snap := b.status.snapshot()
+	resp := map[string]any{
+		"is_busy":      snap.busy,
+		"count":        float64(b.queue.State().Count),
+		"current_step": "",
+	}
+	if snap.busy {
+		resp["drink"] = snap.drink
+		resp["started_at"] = snap.started.UTC().Format(time.RFC3339)
+		resp["elapsed_ms"] = time.Since(snap.started).Milliseconds()
+		if len(snap.history) > 0 {
+			resp["current_step"] = snap.history[len(snap.history)-1].Step
+		}
+	}
+	history := make([]any, len(snap.history))
+	for i, e := range snap.history {
+		history[i] = map[string]any{
+			"step":       e.Step,
+			"started_at": e.StartedAt.UTC().Format(time.RFC3339),
+		}
+	}
+	resp["step_history"] = history
+	return resp, nil
 }
 
 func (b *bartender) handleExecuteAction(ctx context.Context, raw any) (map[string]any, error) {

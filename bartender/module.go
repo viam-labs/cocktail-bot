@@ -49,6 +49,8 @@ type bartender struct {
 
 	cancelMu   sync.Mutex
 	cancelFunc context.CancelFunc
+
+	status statusTracker
 }
 
 // withCancel wraps ctx so that a concurrent "cancel" DoCommand can abort it.

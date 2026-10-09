@@ -6,8 +6,10 @@ import {
   getInventory,
   getRecipes,
   getMachineName,
+  getStatus,
   makeCocktail,
 } from "./lib/viamClient";
+import type { OrderStatus } from "./lib/viamClient";
 import type { Recipe } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
@@ -97,7 +99,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
           )}
         </main>
 
-        {order.kind === "running" && <OrderProgress recipe={order.recipe} />}
+        {order.kind === "running" && <OrderProgress recipe={order.recipe} conn={conn} />}
         {order.kind === "done" && <OrderDone recipe={order.recipe} onDismiss={resetOrder} />}
         {order.kind === "error" && (
           <OrderError recipe={order.recipe} message={order.message} onDismiss={resetOrder} />
@@ -153,14 +155,48 @@ function DrinkGrid({
   );
 }
 
-function OrderProgress({ recipe }: { recipe: Recipe }) {
+function fmtElapsed(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
+function OrderProgress({ recipe, conn }: { recipe: Recipe; conn: ViamConnection }) {
+  const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [now, setNow] = useState<number>(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      getStatus(conn)
+        .then((s) => {
+          if (!cancelled) setStatus(s);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const statusId = window.setInterval(poll, 1000);
+    const tickId = window.setInterval(() => setNow(Date.now()), 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(statusId);
+      window.clearInterval(tickId);
+    };
+  }, [conn]);
+
+  const started = status?.started_at ? new Date(status.started_at).getTime() : null;
+  const elapsedMs = started ? Math.max(0, now - started) : status?.elapsed_ms ?? 0;
+  const phase = status?.current_step || "Starting up";
+
   return (
     <div className={styles.scrim}>
       <div className={styles.sheet}>
         <h3>
-          <span className={styles.spinner} /> Making {recipe.name}…
+          <span className={styles.spinner} /> Making {recipe.name}
         </h3>
-        <p>Hold tight — this takes a minute or two.</p>
+        <p>{phase}</p>
+        <p className={styles.elapsed}>{fmtElapsed(elapsedMs)}</p>
       </div>
     </div>
   );
