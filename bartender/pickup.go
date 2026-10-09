@@ -12,6 +12,7 @@ const (
 	poseHome         = "home"
 	poseHover        = "hover"
 	poseCarryHover   = "carry-hover"
+	poseLift         = "lift"
 	poseGrab         = "grab"
 	posePourApproach = "pour-approach"
 	posePourTilt     = "pour-tilt"
@@ -62,8 +63,11 @@ func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	if err := b.attachHeld(ctx, b.cfg.HeldBottleGeometry); err != nil {
 		return fmt.Errorf("attach held bottle: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
+	if _, err := b.linearCarryToPose(ctx, bottleSw, poseLift, allowed...); err != nil {
 		return fmt.Errorf("linear-lift %s: %w", name, err)
+	}
+	if _, err := b.linearCarryToPose(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
+		return fmt.Errorf("carry-hover %s: %w", name, err)
 	}
 	return nil
 }
@@ -74,6 +78,9 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
+	}
+	if _, err := b.linearCarryToPose(ctx, bottleSw, poseLift, allowed...); err != nil {
+		return fmt.Errorf("linear-over %s: %w", name, err)
 	}
 	if _, err := b.linearCarryToPose(ctx, bottleSw, poseGrab, allowed...); err != nil {
 		return fmt.Errorf("linear-return %s: %w", name, err)
