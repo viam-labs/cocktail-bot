@@ -69,7 +69,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
 
   const items = inventory ? Object.entries(inventory.ingredients).sort(([a], [b]) => a.localeCompare(b)) : [];
   const inStock = items.filter(([, s]) => s.in_stock);
-  const outOfStock = items.filter(([, s]) => !s.in_stock);
+  const outOfStock = items.filter(([, s]) => !s.in_stock && s.slot);
+  const noSlot = items.filter(([, s]) => !s.slot);
 
   return (
     <>
@@ -110,6 +111,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
             <>
               <StockSection title="In stock" count={inStock.length} items={inStock} inStock busy={busy} onToggle={toggle} onDelete={remove} />
               <StockSection title="Out of stock" count={outOfStock.length} items={outOfStock} inStock={false} busy={busy} onToggle={toggle} onDelete={remove} />
+              <StockSection title="No slot" count={noSlot.length} items={noSlot} inStock={false} busy={busy} onToggle={toggle} onDelete={remove} />
             </>
           )}
         </main>
@@ -129,7 +131,7 @@ function StockSection({
 }: {
   title: string;
   count: number;
-  items: [string, { in_stock: boolean }][];
+  items: [string, { in_stock: boolean; slot?: string }][];
   inStock: boolean;
   busy: boolean;
   onToggle: (name: string, next: boolean) => void;
@@ -143,7 +145,7 @@ function StockSection({
         <span className={styles.sectionCount}>{count}</span>
       </h2>
       <div className={styles.rows}>
-        {items.map(([name]) => (
+        {items.map(([name, stock]) => (
           <div key={name} className={styles.row}>
             <span
               className={styles.dot}
@@ -151,12 +153,14 @@ function StockSection({
               aria-hidden
             />
             <span className={styles.name}>{titleCase(name)}</span>
+            <span className={styles.slot}>{stock.slot ?? "No slot"}</span>
             <div className={styles.rowBtns}>
               <button
                 type="button"
                 className={styles.btn}
                 onClick={() => onToggle(name, !inStock)}
-                disabled={busy}
+                disabled={busy || !stock.slot}
+                title={stock.slot ? "" : "Assign a slot in bartender config before marking in stock"}
               >
                 Mark {inStock ? "out of stock" : "in stock"}
               </button>

@@ -110,7 +110,7 @@
 }
 .row {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 24px 1fr auto auto;
   gap: 16px;
   align-items: center;
   min-height: 56px;
@@ -123,6 +123,11 @@
 }
 .name {
   font-size: 18px;
+}
+.slot {
+  font-size: 13px;
+  color: var(--smoke);
+  font-variant-numeric: tabular-nums;
 }
 .dot {
   width: 10px;

@@ -7,6 +7,7 @@ export interface Inventory {
 
 export interface IngredientStock {
   in_stock: boolean;
+  slot?: string;
 }
 
 export function isAvailable(recipe: Recipe, inventory: Inventory): boolean {
