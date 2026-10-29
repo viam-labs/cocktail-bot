@@ -189,6 +189,11 @@ func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSys
 			return nil, nil, fmt.Errorf("attach held geometry frame to %q: %w", parent.Name(), err)
 		}
 	}
+	if b.parkedGeomFrame != nil {
+		if err := fs.AddFrame(b.parkedGeomFrame, fs.World()); err != nil {
+			return nil, nil, fmt.Errorf("attach parked geometry frame to world: %w", err)
+		}
+	}
 	armInputs, err := b.arm.CurrentInputs(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get arm inputs: %w", err)
