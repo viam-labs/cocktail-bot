@@ -90,6 +90,22 @@ func TestValidate(t *testing.T) {
 			wantErr: "require \"baseline\"",
 		},
 		{
+			name: "negative circle_radius_mm",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{{PoseName: "a", PoseValue: basePose, CircleRadiusMm: -1}},
+			},
+			wantErr: "circle_radius_mm",
+		},
+		{
+			name: "circle_points_per_rev below 4",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{{PoseName: "a", PoseValue: basePose, CirclePointsPerRev: 3}},
+			},
+			wantErr: "circle_points_per_rev",
+		},
+		{
 			name: "baseline not found",
 			cfg: Config{
 				ComponentName: "arm", Motion: "builtin",
@@ -240,6 +256,13 @@ func TestResolvePoses(t *testing.T) {
 			{PoseName: "a", PoseValue: basePose},
 		})
 		assertPoseEqual(t, resolved[0], poseValues{X: 100, Y: 200, Z: 300, OZ: 1, Theta: 45})
+	})
+
+	t.Run("circle params", func(t *testing.T) {
+		resolved := resolvePoses([]PoseConf{
+			{PoseName: "a", PoseValue: basePose, CircleRadiusMm: 15, CirclePointsPerRev: 12},
+		})
+		assertPoseEqual(t, resolved[0], poseValues{X: 100, Y: 200, Z: 300, OZ: 1, Theta: 45, CircleRadiusMm: 15, CirclePointsPerRev: 12})
 	})
 
 	t.Run("baseline with translation", func(t *testing.T) {
