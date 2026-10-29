@@ -65,6 +65,8 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `serve_station` | string | Required | Default `serving_station` for the serve step. |  |
 | `ice_dwell_ms` | int | Optional | Dwell at the ice lever. | 0 |
 | `mix_dwell_ms` | int | Optional | Mixing bob duration. | 0 |
+| `stir_station` | string | Optional | Switch holding `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. | `stir` |
+| `stir_dwell_ms` | int | Optional | How long a `stir` step circles. | `mix_dwell_ms` |
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
 | `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
 | `strain_dump_ms` | int | Optional | Dump dwell over garbage. | 0 |
@@ -116,6 +118,8 @@ Runs a full recipe end-to-end. Async: returns `{started_at}` immediately; watch 
 ```json
 {"make_cocktail": {"drink_id": "espresso_martini"}}
 ```
+
+A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. The spoon is assumed to already be in the gripper, and a recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
 
 Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 

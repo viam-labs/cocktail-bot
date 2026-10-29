@@ -9,6 +9,8 @@ import (
 const (
 	poseStirHover  = "stir-hover"
 	poseStirInsert = "stir-insert"
+
+	defaultStirStation = "stir"
 )
 
 // stir expects the spoon already in the gripper and leaves it there.

@@ -38,3 +38,14 @@ func TestParseStir(t *testing.T) {
 		})
 	}
 }
+
+func TestRecipeDefaultsStir(t *testing.T) {
+	d := &RecipeDefaults{MixDwellMs: 6000}
+	test.That(t, d.stirStation(), test.ShouldEqual, "stir")
+	test.That(t, d.stirDwellMs(), test.ShouldEqual, 6000)
+
+	d.StirStation = "stir-2"
+	d.StirDwellMs = 20000
+	test.That(t, d.stirStation(), test.ShouldEqual, "stir-2")
+	test.That(t, d.stirDwellMs(), test.ShouldEqual, 20000)
+}
