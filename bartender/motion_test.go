@@ -60,6 +60,28 @@ func TestArmAndGripperVsHeldAllowedKeepsLowerArmChecked(t *testing.T) {
 	}
 }
 
+func TestPickupAllowedCollisionsCoversGripperClaws(t *testing.T) {
+	b := &bartender{cfg: &Config{
+		ArmName:         "arm-1",
+		GripperName:     "gripper-1",
+		PickupObstacles: map[string]string{"slot-b-top-front": "slot-b-top-front-bottle"},
+	}}
+	allowed := map[string]bool{}
+	for _, a := range b.pickupAllowedCollisions("slot-b-top-front") {
+		test.That(t, a.Frame2, test.ShouldEqual, "slot-b-top-front-bottle")
+		allowed[a.Frame1] = true
+	}
+	for _, f := range []string{"claws-middle", "gripper-1:claws", heldObjectFrameName} {
+		test.That(t, allowed[f], test.ShouldBeTrue)
+	}
+	test.That(t, allowed["gripper-1:case-gripper"], test.ShouldBeFalse)
+}
+
+func TestPickupAllowedCollisionsNilWithoutObstacle(t *testing.T) {
+	b := &bartender{cfg: &Config{GripperName: "gripper-1"}}
+	test.That(t, b.pickupAllowedCollisions("slot-b-top-front"), test.ShouldBeNil)
+}
+
 func TestComputeCircularPoses(t *testing.T) {
 	center := spatialmath.NewPose(
 		r3.Vector{X: 100, Y: 200, Z: 300},
