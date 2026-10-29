@@ -350,9 +350,9 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 
 // pickupAllowedCollisions returns the frame pairs whose collision should be
 // skipped while the gripper is in or around the obstacle modeling the object
-// at pickup location `key` (lookup via Config.PickupObstacles). Allows the two
-// gripper-attached collision bodies and the held-object frame to overlap the
-// obstacle, so the pickup, release, and lift-away moves can plan through what
+// at pickup location `key` (lookup via Config.PickupObstacles). Allows the
+// claws-middle body, the gripper driver's own claws geometry, and the
+// held-object frame to overlap the obstacle, so the pickup, release, and lift-away moves can plan through what
 // would otherwise be the obstacle's volume. Returns nil when no obstacle is
 // configured — the move then plans with no override.
 func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
@@ -362,6 +362,7 @@ func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
 	}
 	return []AllowedCollision{
 		{Frame1: "claws-middle", Frame2: obstacle},
+		{Frame1: b.cfg.GripperName + ":claws", Frame2: obstacle},
 		{Frame1: heldObjectFrameName, Frame2: obstacle},
 	}
 }
