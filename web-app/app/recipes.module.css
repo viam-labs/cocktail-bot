@@ -472,6 +472,12 @@
   flex-direction: column;
   z-index: 2;
 }
+.addStepMenuUp {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
+}
 .addStepItem {
   background: transparent;
   border: 0;
