@@ -66,6 +66,8 @@ type RecipeDefaults struct {
 	ServeStation  string `json:"serve_station,omitempty"`
 	IceDwellMs    int    `json:"ice_dwell_ms,omitempty"`
 	MixDwellMs    int    `json:"mix_dwell_ms,omitempty"`
+	StirStation   string `json:"stir_station,omitempty"`
+	StirDwellMs   int    `json:"stir_dwell_ms,omitempty"`
 	ServeMs       int    `json:"serve_ms,omitempty"`
 	StrainDrainMs int    `json:"strain_drain_ms,omitempty"`
 	StrainDumpMs  int    `json:"strain_dump_ms,omitempty"`
@@ -209,4 +211,18 @@ func (c *Config) glassSearchSettleMs() int {
 		return defaultGlassSearchSettleMs
 	}
 	return c.GlassSearchSettleMs
+}
+
+func (d *RecipeDefaults) stirStation() string {
+	if d.StirStation == "" {
+		return defaultStirStation
+	}
+	return d.StirStation
+}
+
+func (d *RecipeDefaults) stirDwellMs() int {
+	if d.StirDwellMs == 0 {
+		return d.MixDwellMs
+	}
+	return d.StirDwellMs
 }

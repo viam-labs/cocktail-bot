@@ -39,6 +39,7 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 	// shaker and the shaker gets served at the end.
 	usesShaker := false
 	mixed := false
+	stirred := false
 	strained := false
 	for _, s := range steps {
 		switch s.Kind {
@@ -46,7 +47,11 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 			usesShaker = true
 		}
 		if s.Kind == "mix" {
-			mixed = true
+			if s.MixMode == "stir" {
+				stirred = true
+			} else {
+				mixed = true
+			}
 		}
 		if s.Kind == "strain" {
 			strained = true
@@ -85,12 +90,19 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 			if mode == "" {
 				mode = "shake"
 			}
-			if mode != "shake" {
+			switch mode {
+			case "shake":
+				b.status.setPhase("Shaking")
+				if err := b.mix(ctx, d.MixerStation, d.MixDwellMs); err != nil {
+					return fmt.Errorf("step %d shake: %w", i+1, err)
+				}
+			case "stir":
+				b.status.setPhase("Stirring")
+				if err := b.stir(ctx, d.stirStation(), d.stirDwellMs()); err != nil {
+					return fmt.Errorf("step %d stir: %w", i+1, err)
+				}
+			default:
 				return fmt.Errorf("step %d mix mode %q is not yet supported", i+1, mode)
-			}
-			b.status.setPhase("Shaking")
-			if err := b.mix(ctx, d.MixerStation, d.MixDwellMs); err != nil {
-				return fmt.Errorf("step %d shake: %w", i+1, err)
 			}
 		case "strain":
 			b.status.setPhase("Straining")
@@ -107,7 +119,9 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		}
 	}
 
-	if usesShaker {
+	// stir leaves the spoon in the gripper and nothing puts it back yet, so a stirred drink
+	// stays in the shaker instead of going through shaker pickup and serve.
+	if usesShaker && !stirred {
 		// strain leaves shaker-A held and mix ends still holding the shaker
 		// above the mixer, so in both cases pourFromShaker gets a shaker
 		// already in the gripper. Only when neither ran is the shaker still

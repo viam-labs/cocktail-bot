@@ -39,12 +39,16 @@ type poseData struct {
 	orientationToleranceDegs        float64
 	noSpillOrientationToleranceDegs float64
 	allowedObstacles                []string
+	circleRadiusMm                  float64
+	circlePointsPerRev              int
 }
 
 const (
 	defaultLineToleranceMm                 = 1.0
 	defaultLinearOrientationToleranceDegs  = 5.0
 	defaultNoSpillOrientationToleranceDegs = 15.0
+	defaultCircleRadiusMm                  = 10.0
+	defaultCirclePointsPerRev              = 8
 )
 
 func (pd *poseData) linearLineToleranceMm() float64 {
@@ -66,6 +70,20 @@ func (pd *poseData) noSpillToleranceDegs() float64 {
 		return pd.noSpillOrientationToleranceDegs
 	}
 	return defaultNoSpillOrientationToleranceDegs
+}
+
+func (pd *poseData) circleRadius() float64 {
+	if pd.circleRadiusMm > 0 {
+		return pd.circleRadiusMm
+	}
+	return defaultCircleRadiusMm
+}
+
+func (pd *poseData) circlePoints() int {
+	if pd.circlePointsPerRev > 0 {
+		return pd.circlePointsPerRev
+	}
+	return defaultCirclePointsPerRev
 }
 
 // DoCommand contract on the switcher: get_pose_by_name → {x, y, z, o_x, o_y, o_z, theta, reference_frame, component_name}.
@@ -91,6 +109,14 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 	lineTol, _ := resp["line_tolerance_mm"].(float64)
 	oriTol, _ := resp["orientation_tolerance_degs"].(float64)
 	noSpillTol, _ := resp["no_spill_orientation_tolerance_degs"].(float64)
+	circleRadius, _ := resp["circle_radius_mm"].(float64)
+	var circlePoints int
+	switch v := resp["circle_points_per_rev"].(type) {
+	case float64:
+		circlePoints = int(v)
+	case int:
+		circlePoints = v
+	}
 	var allowedObstacles []string
 	if raw, ok := resp["allowed_obstacles"].([]any); ok {
 		for _, v := range raw {
@@ -112,6 +138,8 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		orientationToleranceDegs:        oriTol,
 		noSpillOrientationToleranceDegs: noSpillTol,
 		allowedObstacles:                allowedObstacles,
+		circleRadiusMm:                  circleRadius,
+		circlePointsPerRev:              circlePoints,
 	}, nil
 }
 
@@ -533,6 +561,89 @@ func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, la
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
+}
+
+// computeCircularPoses returns pointsPerRev poses evenly spaced on a circle in the XY plane of
+// center's frame, holding center's orientation. The closing 360° point is omitted.
+func computeCircularPoses(center spatialmath.Pose, radiusMM float64, pointsPerRev int) []spatialmath.Pose {
+	poses := make([]spatialmath.Pose, pointsPerRev)
+	for i := range pointsPerRev {
+		angle := 2 * math.Pi * float64(i) / float64(pointsPerRev)
+		offset := r3.Vector{X: radiusMM * math.Cos(angle), Y: radiusMM * math.Sin(angle)}
+		poses[i] = spatialmath.NewPose(center.Point().Add(offset), center.Orientation())
+	}
+	return poses
+}
+
+// circleAroundPose plans one horizontal revolution around poseName once, then replays it until
+// duration elapses. The arm is expected to already be at poseName; the pose sets the circle's size.
+func (b *bartender) circleAroundPose(ctx context.Context, sw toggleswitch.Switch, poseName string, duration time.Duration, allowed ...AllowedCollision) error {
+	if duration <= 0 {
+		return nil
+	}
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return err
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":circle"
+	constraints := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{{
+			LineToleranceMm:          pd.linearLineToleranceMm(),
+			OrientationToleranceDegs: pd.linearOrientationToleranceDegs(),
+		}},
+	}
+	constraints = b.withAllowedCollisions(constraints, allowed)
+	constraints = b.withAllowedCollisions(constraints, b.poseAllowedCollisions(pd))
+	constraints = b.withAllowedCollisions(constraints, b.armAndGripperVsHeldAllowed())
+
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return err
+	}
+	// Circle in world so it stays horizontal whatever frame the pose was saved in.
+	centerTF, err := fs.Transform(fsInputs.ToLinearInputs(), referenceframe.NewPoseInFrame(pd.refFrame, pd.pose), referenceframe.World)
+	if err != nil {
+		return fmt.Errorf("transform circle center to world: %w", err)
+	}
+	componentName := pd.componentName
+	if componentName == "" {
+		componentName = b.cfg.ArmName
+	}
+	waypoints := computeCircularPoses(centerTF.(*referenceframe.PoseInFrame).Pose(), pd.circleRadius(), pd.circlePoints())
+	goals := make([]*armplanning.PlanState, 0, len(waypoints)+1)
+	for _, p := range waypoints {
+		goals = append(goals, armplanning.NewPlanState(
+			referenceframe.FrameSystemPoses{componentName: referenceframe.NewPoseInFrame(referenceframe.World, p)},
+			nil,
+		))
+	}
+	// Ending on the start joints makes the trajectory a closed loop, so each replay begins where the last one ended.
+	goals = append(goals, armplanning.NewPlanState(nil, fsInputs))
+
+	plan, err := b.planMotion(ctx, &armplanning.PlanRequest{
+		FrameSystem: fs,
+		StartState:  armplanning.NewPlanState(nil, fsInputs),
+		Goals:       goals,
+		Constraints: constraints,
+	}, label)
+	if err != nil {
+		return err
+	}
+	positions, err := plan.Trajectory().GetFrameInputs(b.cfg.ArmName)
+	if err != nil {
+		return fmt.Errorf("extract trajectory: %w", err)
+	}
+	opts := moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	deadline := time.Now().Add(duration)
+	for rev := 1; time.Now().Before(deadline); rev++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("cancelled during %s: %w", label, err)
+		}
+		if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+			return fmt.Errorf("execute %s revolution %d: %w", label, rev, err)
+		}
+	}
+	return nil
 }
 
 // Saved poses may be expressed in any frame; shifting them by a world offset needs them in world first.

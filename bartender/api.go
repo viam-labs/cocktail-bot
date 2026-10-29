@@ -50,6 +50,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["mix"]; ok {
 		return b.handleMix(ctx, raw)
 	}
+	if raw, ok := cmd["stir"]; ok {
+		return b.handleStir(ctx, raw)
+	}
 	if raw, ok := cmd["find_and_pour_from_shaker"]; ok {
 		return b.handleFindAndPourFromShaker(ctx, raw)
 	}
@@ -110,7 +113,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -470,6 +473,49 @@ func parseMix(raw any) (string, int, error) {
 	}
 	if dwellMs < 0 {
 		return "", 0, fmt.Errorf("mix: 'dwell_ms' must be >= 0")
+	}
+	return station, dwellMs, nil
+}
+
+func (b *bartender) handleStir(ctx context.Context, raw any) (map[string]any, error) {
+	station, dwellMs, err := parseStir(raw)
+	if err != nil {
+		return nil, err
+	}
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.stir(ctx, station, dwellMs); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"station":     station,
+		"dwell_ms":    dwellMs,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseStir(raw any) (string, int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("stir: expected object with 'station' and 'dwell_ms', got %T", raw)
+	}
+	station, _ := m["station"].(string)
+	if station == "" {
+		return "", 0, fmt.Errorf("stir: 'station' is required")
+	}
+	var dwellMs int
+	switch v := m["dwell_ms"].(type) {
+	case float64:
+		dwellMs = int(v)
+	case int:
+		dwellMs = v
+	default:
+		return "", 0, fmt.Errorf("stir: 'dwell_ms' must be a number")
+	}
+	if dwellMs < 0 {
+		return "", 0, fmt.Errorf("stir: 'dwell_ms' must be >= 0")
 	}
 	return station, dwellMs, nil
 }
