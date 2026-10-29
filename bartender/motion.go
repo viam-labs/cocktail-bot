@@ -418,24 +418,20 @@ func (b *bartender) poseAllowedCollisions(pd *poseData) []AllowedCollision {
 }
 
 // armAndGripperVsHeldAllowed returns the frame pairs the planner should skip
-// when something is in the gripper. The held-object capsule is a conservative
-// volume attached to the gripper and may spuriously overlap the arm or gripper
-// bodies in some joint configurations, even though the real object cannot (the
-// arm is literally holding it). Returns nil when nothing is held.
+// when something is in the gripper: only the bodies the held object is clamped
+// against (gripper and wrist link), which the capsule overlaps by construction.
+// The rest of the arm stays checked — a long bottle can physically swing into
+// the base or lower links. Returns nil when nothing is held.
 func (b *bartender) armAndGripperVsHeldAllowed() []AllowedCollision {
 	if b.heldGeomFrame == nil {
 		return nil
 	}
-	out := make([]AllowedCollision, 0, 3+len(armLinkSuffixes))
-	out = append(out,
-		AllowedCollision{Frame1: "claws-middle", Frame2: heldObjectFrameName},
-		AllowedCollision{Frame1: b.cfg.GripperName + ":claws", Frame2: heldObjectFrameName},
-		AllowedCollision{Frame1: b.cfg.GripperName + ":case-gripper", Frame2: heldObjectFrameName},
-	)
-	for _, suffix := range armLinkSuffixes {
-		out = append(out, AllowedCollision{Frame1: b.cfg.ArmName + ":" + suffix, Frame2: heldObjectFrameName})
+	return []AllowedCollision{
+		{Frame1: "claws-middle", Frame2: heldObjectFrameName},
+		{Frame1: b.cfg.GripperName + ":claws", Frame2: heldObjectFrameName},
+		{Frame1: b.cfg.GripperName + ":case-gripper", Frame2: heldObjectFrameName},
+		{Frame1: b.cfg.ArmName + ":link6", Frame2: heldObjectFrameName},
 	}
-	return out
 }
 
 // Straight-line through space; the empty-handed grab/release paths that risk
