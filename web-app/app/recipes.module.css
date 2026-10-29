@@ -460,9 +460,9 @@
 }
 .addStepMenu {
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   left: 0;
-  margin-top: 6px;
+  margin-bottom: 6px;
   min-width: 180px;
   background: var(--paper);
   border: 1px solid var(--hair);
