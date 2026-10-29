@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -441,17 +441,32 @@ function StepBody({
 
 function AddStepMenu({ onPick }: { onPick: (kind: RecipeStep["kind"], mode?: MixMode) => void }) {
   const [open, setOpen] = useState(false);
+  const [openUp, setOpenUp] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (open && !openUp && menuRef.current && menuRef.current.getBoundingClientRect().bottom > window.innerHeight) {
+      setOpenUp(true);
+    }
+  }, [open, openUp]);
+  function toggle() {
+    setOpenUp(false);
+    setOpen((v) => !v);
+  }
   function pick(kind: RecipeStep["kind"], mode?: MixMode) {
     onPick(kind, mode);
     setOpen(false);
   }
   return (
     <div className={styles.addStep}>
-      <button type="button" className={styles.btn} onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={styles.btn} onClick={toggle}>
         + Add step
       </button>
       {open && (
-        <div className={styles.addStepMenu} role="menu">
+        <div
+          ref={menuRef}
+          className={`${styles.addStepMenu} ${openUp ? styles.addStepMenuUp : ""}`}
+          role="menu"
+        >
           <button type="button" className={styles.addStepItem} onClick={() => pick("pour")}>
             Pour
           </button>

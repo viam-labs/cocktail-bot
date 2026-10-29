@@ -460,9 +460,9 @@
 }
 .addStepMenu {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 0;
-  margin-bottom: 6px;
+  margin-top: 6px;
   min-width: 180px;
   background: var(--paper);
   border: 1px solid var(--hair);
@@ -471,6 +471,12 @@
   display: flex;
   flex-direction: column;
   z-index: 2;
+}
+.addStepMenuUp {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
 }
 .addStepItem {
   background: transparent;
