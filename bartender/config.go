@@ -19,6 +19,7 @@ type Config struct {
 	PoseSwitcherNames     []string            `json:"pose_switcher_names"`
 	HeldBottleGeometry    *HeldObjectGeometry `json:"held_bottle_geometry,omitempty"`
 	HeldShakerGeometry    *HeldObjectGeometry `json:"held_shaker_geometry,omitempty"`
+	HeldStirrerGeometry   *HeldObjectGeometry `json:"held_stirrer_geometry,omitempty"`
 	OrderSensorName       string              `json:"order_sensor_name,omitempty"`
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
 	PourVelDegsPerSec     float64             `json:"pour_vel_degs_per_sec,omitempty"`
@@ -88,6 +89,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 	if err := c.HeldShakerGeometry.Validate(path + ".held_shaker_geometry"); err != nil {
+		return nil, nil, err
+	}
+	if err := c.HeldStirrerGeometry.Validate(path + ".held_stirrer_geometry"); err != nil {
 		return nil, nil, err
 	}
 	if c.PourVelDegsPerSec < 0 {
