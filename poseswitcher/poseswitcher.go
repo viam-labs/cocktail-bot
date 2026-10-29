@@ -54,6 +54,7 @@ type PoseConf struct {
 	AllowedObstacles                []string       `json:"allowed_obstacles,omitempty"`
 	CircleRadiusMm                  float64        `json:"circle_radius_mm,omitempty"`
 	CirclePointsPerRev              int            `json:"circle_points_per_rev,omitempty"`
+	BlockedBy                       string         `json:"blocked_by,omitempty"`
 }
 
 type Translation struct {
@@ -83,6 +84,7 @@ type poseValues struct {
 	AllowedObstacles                []string
 	CircleRadiusMm                  float64
 	CirclePointsPerRev              int
+	BlockedBy                       string
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -283,6 +285,7 @@ func resolvePoses(poses []PoseConf) []poseValues {
 		if len(p.AllowedObstacles) > 0 {
 			resolved[i].AllowedObstacles = append([]string(nil), p.AllowedObstacles...)
 		}
+		resolved[i].BlockedBy = p.BlockedBy
 		done[i] = true
 	}
 
@@ -378,6 +381,9 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 						obstacles[i] = o
 					}
 					resp["allowed_obstacles"] = obstacles
+				}
+				if rp.BlockedBy != "" {
+					resp["blocked_by"] = rp.BlockedBy
 				}
 				return resp, nil
 			}

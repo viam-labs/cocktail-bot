@@ -41,6 +41,7 @@ type poseData struct {
 	allowedObstacles                []string
 	circleRadiusMm                  float64
 	circlePointsPerRev              int
+	blockedBy                       string
 }
 
 const (
@@ -125,6 +126,7 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 			}
 		}
 	}
+	blockedBy, _ := resp["blocked_by"].(string)
 	return &poseData{
 		pose: spatialmath.NewPose(
 			r3.Vector{X: x, Y: y, Z: z},
@@ -140,6 +142,7 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		allowedObstacles:                allowedObstacles,
 		circleRadiusMm:                  circleRadius,
 		circlePointsPerRev:              circlePoints,
+		blockedBy:                       blockedBy,
 	}, nil
 }
 

@@ -46,8 +46,28 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 
 // Ends holding the bottle at its carry-hover pose.
 func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
+	blockerName, err := b.blockerForTarget(ctx, bottleSw)
+	if err != nil {
+		return err
+	}
+	var extraAllowed []AllowedCollision
+	if blockerName != "" {
+		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
+			extraAllowed = append(extraAllowed, AllowedCollision{Frame1: heldObjectFrameName, Frame2: obs})
+		}
+		if b.slotOccupied(blockerName) {
+			if err := b.shuffleBlockerToParking(ctx, blockerName); err != nil {
+				return fmt.Errorf("shuffle blocker aside: %w", err)
+			}
+		}
+	}
+	return b.pickupBottleAt(ctx, bottleSw, extraAllowed)
+}
+
+func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
 	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
+	allowed = append(allowed, extra...)
 	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
 	}
@@ -153,8 +173,34 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 
 // Starts from anywhere with the bottle held upright; ends empty-handed at home.
 func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
+	blockerName, err := b.blockerForTarget(ctx, bottleSw)
+	if err != nil {
+		return err
+	}
+	var extraAllowed []AllowedCollision
+	if blockerName != "" {
+		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
+			extraAllowed = append(extraAllowed, AllowedCollision{Frame1: heldObjectFrameName, Frame2: obs})
+		}
+	}
+	if err := b.returnBottleAt(ctx, bottleSw, extraAllowed); err != nil {
+		return err
+	}
+	if blockerName != "" && b.cfg.ParkingSwitchName != "" {
+		parkingSw, err := b.findSwitch(b.cfg.ParkingSwitchName)
+		if err == nil {
+			if err := b.shuffleBlockerFromParking(ctx, parkingSw, blockerName); err != nil {
+				return fmt.Errorf("retrieve blocker from parking: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
 	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
+	allowed = append(allowed, extra...)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
 	}
@@ -169,6 +215,62 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	}
 	if _, err := b.linearMoveToPose(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("linear-retreat %s: %w", name, err)
+	}
+	return nil
+}
+
+// blockerForTarget returns the slot name declared via blocked_by on the
+// target's hover pose, or empty when the target has no blocker.
+func (b *bartender) blockerForTarget(ctx context.Context, bottleSw toggleswitch.Switch) (string, error) {
+	pd, err := fetchPose(ctx, bottleSw, poseHover)
+	if err != nil {
+		return "", fmt.Errorf("fetch hover for blocker lookup: %w", err)
+	}
+	return pd.blockedBy, nil
+}
+
+func (b *bartender) slotOccupied(slotName string) bool {
+	if b.dataStore == nil {
+		return false
+	}
+	_, ok := b.dataStore.SlotAssignments()[slotName]
+	return ok
+}
+
+func (b *bartender) shuffleBlockerToParking(ctx context.Context, blockerName string) error {
+	if b.cfg.ParkingSwitchName == "" {
+		return fmt.Errorf("blocker %q is in the way but parking_switch_name is unset", blockerName)
+	}
+	if b.slotOccupied(b.cfg.ParkingSwitchName) {
+		return fmt.Errorf("parking slot %q has an assigned bottle; clear it first", b.cfg.ParkingSwitchName)
+	}
+	blockerSw, err := b.findSwitch(blockerName)
+	if err != nil {
+		return fmt.Errorf("find blocker switch %q: %w", blockerName, err)
+	}
+	parkingSw, err := b.findSwitch(b.cfg.ParkingSwitchName)
+	if err != nil {
+		return fmt.Errorf("find parking switch %q: %w", b.cfg.ParkingSwitchName, err)
+	}
+	if err := b.pickupBottleAt(ctx, blockerSw, nil); err != nil {
+		return fmt.Errorf("pickup blocker %s: %w", blockerName, err)
+	}
+	if err := b.returnBottleAt(ctx, parkingSw, nil); err != nil {
+		return fmt.Errorf("park blocker at %s: %w", b.cfg.ParkingSwitchName, err)
+	}
+	return nil
+}
+
+func (b *bartender) shuffleBlockerFromParking(ctx context.Context, parkingSw toggleswitch.Switch, blockerName string) error {
+	blockerSw, err := b.findSwitch(blockerName)
+	if err != nil {
+		return fmt.Errorf("find blocker switch %q: %w", blockerName, err)
+	}
+	if err := b.pickupBottleAt(ctx, parkingSw, nil); err != nil {
+		return fmt.Errorf("pickup blocker from parking: %w", err)
+	}
+	if err := b.returnBottleAt(ctx, blockerSw, nil); err != nil {
+		return fmt.Errorf("return blocker to %s: %w", blockerName, err)
 	}
 	return nil
 }
