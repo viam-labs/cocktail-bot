@@ -15,7 +15,8 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `pose_switcher_names` | []string | Required | Every pose-switcher component the bartender resolves poses on. |  |
 | `held_bottle_geometry` | object | Optional | Cylinder attached to the gripper while a bottle is held. See below. |  |
 | `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while the shaker is held. See below. |  |
-| `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`. |  |
+| `held_stirrer_geometry` | object | Optional | Cylinder attached to the gripper while the stirrer is held, from gripper close to gripper open in `stir`. See below. |  |
+| `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`, `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
 | `bottle_pourer_oz` | object | Optional | Map of bottle switch name → oz delivered per pour-tilt. Each recipe pour oz must be an integer multiple of this. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
 | `serving_station` | string | Optional | Switch holding the shaker and serve poses used by `find_and_pour_from_shaker`. | `serving-glass-center` |
@@ -41,7 +42,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
 | `machine_id` | string | Optional | Viam machine id; when set, failure alerts deep-link to app.viam.com machine logs. |  |
 
-##### `held_bottle_geometry` and `held_shaker_geometry`
+##### `held_bottle_geometry`, `held_shaker_geometry` and `held_stirrer_geometry`
 
 Capsule attached as a child of the gripper frame while the object is held.
 
@@ -65,7 +66,7 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `serve_station` | string | Required | Default `serving_station` for the serve step. |  |
 | `ice_dwell_ms` | int | Optional | Dwell at the ice lever. | 0 |
 | `mix_dwell_ms` | int | Optional | Mixing bob duration. | 0 |
-| `stir_station` | string | Optional | Switch holding `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. | `stir` |
+| `stir_station` | string | Optional | Switch holding `stir-storage-hover` / `stir-storage-place` / `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. | `stir` |
 | `stir_dwell_ms` | int | Optional | How long a `stir` step circles. | `mix_dwell_ms` |
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
 | `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
@@ -119,7 +120,7 @@ Runs a full recipe end-to-end. Async: returns `{started_at}` immediately; watch 
 {"make_cocktail": {"drink_id": "espresso_martini"}}
 ```
 
-A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. The spoon is assumed to already be in the gripper, and a recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
+A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. A recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
 
 Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 
@@ -150,7 +151,7 @@ Current queue state.
 | `dispense_ice` | `{"station": "ice-station", "dwell_ms": 3000}` |
 | `pour_into_shaker` | `{"bottle": "vodka", "oz": 1.5}` |
 | `mix` | `{"station": "mixer", "dwell_ms": 10000}` |
-| `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — spoon must already be in the gripper. `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover`. Leaves the spoon in the gripper. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
+| `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — `stir-storage-hover` → open → linear down to `stir-storage-place` → close (stirrer held) → linear up to `stir-storage-hover` → `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover` → `stir-storage-hover` → linear down to `stir-storage-place` → open (stirrer released) → linear up to `stir-storage-hover`. `stir-storage-hover` must be high enough that the held stirrer clears its storage. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
 | `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
 | `rotate_shakers` | `{"strain_flow": "strain-flow"}` |

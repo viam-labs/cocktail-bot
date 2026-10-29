@@ -119,8 +119,7 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		}
 	}
 
-	// stir leaves the spoon in the gripper and nothing puts it back yet, so a stirred drink
-	// stays in the shaker instead of going through shaker pickup and serve.
+	// A stirred drink stays in the shaker instead of going through shaker pickup and serve.
 	if usesShaker && !stirred {
 		// strain leaves shaker-A held and mix ends still holding the shaker
 		// above the mixer, so in both cases pourFromShaker gets a shaker

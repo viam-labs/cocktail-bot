@@ -39,6 +39,18 @@ func TestParseStir(t *testing.T) {
 	}
 }
 
+func TestConfigValidateHeldStirrerGeometry(t *testing.T) {
+	cfg := &Config{ArmName: "arm", GripperName: "gripper", PoseSwitcherNames: []string{"stir"}}
+	cfg.HeldStirrerGeometry = &HeldObjectGeometry{Type: "cylinder", RadiusMM: 30, LengthMM: 267, ZOffsetMM: 111.5}
+	_, _, err := cfg.Validate("svc")
+	test.That(t, err, test.ShouldBeNil)
+
+	cfg.HeldStirrerGeometry = &HeldObjectGeometry{Type: "box", RadiusMM: 30, LengthMM: 267}
+	_, _, err = cfg.Validate("svc")
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "held_stirrer_geometry")
+}
+
 func TestRecipeDefaultsStir(t *testing.T) {
 	d := &RecipeDefaults{MixDwellMs: 6000}
 	test.That(t, d.stirStation(), test.ShouldEqual, "stir")
