@@ -53,7 +53,7 @@ func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	var extraAllowed []AllowedCollision
 	if blockerName != "" {
 		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
-			extraAllowed = append(extraAllowed, AllowedCollision{Frame1: heldObjectFrameName, Frame2: obs})
+			extraAllowed = append(extraAllowed, b.gripperAllowedVsObstacle(obs)...)
 		}
 		if b.slotOccupied(blockerName) {
 			if err := b.shuffleBlockerToParking(ctx, blockerName); err != nil {
@@ -180,7 +180,7 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	var extraAllowed []AllowedCollision
 	if blockerName != "" {
 		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
-			extraAllowed = append(extraAllowed, AllowedCollision{Frame1: heldObjectFrameName, Frame2: obs})
+			extraAllowed = append(extraAllowed, b.gripperAllowedVsObstacle(obs)...)
 		}
 	}
 	if err := b.returnBottleAt(ctx, bottleSw, extraAllowed); err != nil {
