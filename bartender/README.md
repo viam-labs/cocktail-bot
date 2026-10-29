@@ -146,6 +146,7 @@ Current queue state.
 | `dispense_ice` | `{"station": "ice-station", "dwell_ms": 3000}` |
 | `pour_into_shaker` | `{"bottle": "vodka", "oz": 1.5}` |
 | `mix` | `{"station": "mixer", "dwell_ms": 10000}` |
+| `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — spoon must already be in the gripper. `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover`. Leaves the spoon in the gripper. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
 | `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
 | `rotate_shakers` | `{"strain_flow": "strain-flow"}` |

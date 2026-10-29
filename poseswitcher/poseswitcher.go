@@ -52,6 +52,8 @@ type PoseConf struct {
 	OrientationToleranceDegs        float64        `json:"orientation_tolerance_degs,omitempty"`
 	NoSpillOrientationToleranceDegs float64        `json:"no_spill_orientation_tolerance_degs,omitempty"`
 	AllowedObstacles                []string       `json:"allowed_obstacles,omitempty"`
+	CircleRadiusMm                  float64        `json:"circle_radius_mm,omitempty"`
+	CirclePointsPerRev              int            `json:"circle_points_per_rev,omitempty"`
 }
 
 type Translation struct {
@@ -79,6 +81,8 @@ type poseValues struct {
 	OrientationToleranceDegs        float64
 	NoSpillOrientationToleranceDegs float64
 	AllowedObstacles                []string
+	CircleRadiusMm                  float64
+	CirclePointsPerRev              int
 }
 
 func (cfg *Config) Validate(path string) ([]string, []string, error) {
@@ -121,6 +125,12 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 
 		if !hasBaseline && (p.Translation != nil || p.Orientation != nil) {
 			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"translation\" and \"orientation\" require \"baseline\"", path, i, p.PoseName)
+		}
+		if p.CircleRadiusMm < 0 {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"circle_radius_mm\" must be > 0 if set", path, i, p.PoseName)
+		}
+		if p.CirclePointsPerRev != 0 && p.CirclePointsPerRev < 4 {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"circle_points_per_rev\" must be >= 4 if set", path, i, p.PoseName)
 		}
 
 		if hasBaseline {
@@ -268,6 +278,8 @@ func resolvePoses(poses []PoseConf) []poseValues {
 		resolved[i].LineToleranceMm = p.LineToleranceMm
 		resolved[i].OrientationToleranceDegs = p.OrientationToleranceDegs
 		resolved[i].NoSpillOrientationToleranceDegs = p.NoSpillOrientationToleranceDegs
+		resolved[i].CircleRadiusMm = p.CircleRadiusMm
+		resolved[i].CirclePointsPerRev = p.CirclePointsPerRev
 		if len(p.AllowedObstacles) > 0 {
 			resolved[i].AllowedObstacles = append([]string(nil), p.AllowedObstacles...)
 		}
@@ -353,6 +365,12 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 				}
 				if rp.NoSpillOrientationToleranceDegs > 0 {
 					resp["no_spill_orientation_tolerance_degs"] = rp.NoSpillOrientationToleranceDegs
+				}
+				if rp.CircleRadiusMm > 0 {
+					resp["circle_radius_mm"] = rp.CircleRadiusMm
+				}
+				if rp.CirclePointsPerRev > 0 {
+					resp["circle_points_per_rev"] = rp.CirclePointsPerRev
 				}
 				if len(rp.AllowedObstacles) > 0 {
 					obstacles := make([]any, len(rp.AllowedObstacles))
