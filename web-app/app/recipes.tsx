@@ -15,7 +15,7 @@ import type { ViamConnection } from "./lib/viamClient";
 import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
 import type { Recipe } from "./lib/recipes";
 import { COMMON_RECIPE_SECTIONS, COMMON_RECIPE_TAGS, DRINK_IMAGE_SLUGS, recipePours, stepsFor } from "./lib/recipes";
-import type { RecipeStep } from "./lib/recipes";
+import type { MixMode, RecipeStep } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
 import { Nav } from "./nav";
@@ -434,15 +434,15 @@ function StepBody({
     return <span className={styles.stepLabel}>Crushed ice → shaker</span>;
   }
   if (step.kind === "mix") {
-    return <span className={styles.stepLabel}>Shake</span>;
+    return <span className={styles.stepLabel}>{step.mode === "stir" ? "Stir" : "Shake"}</span>;
   }
   return <span className={styles.stepLabel}>Strain</span>;
 }
 
-function AddStepMenu({ onPick }: { onPick: (kind: RecipeStep["kind"]) => void }) {
+function AddStepMenu({ onPick }: { onPick: (kind: RecipeStep["kind"], mode?: MixMode) => void }) {
   const [open, setOpen] = useState(false);
-  function pick(kind: RecipeStep["kind"]) {
-    onPick(kind);
+  function pick(kind: RecipeStep["kind"], mode?: MixMode) {
+    onPick(kind, mode);
     setOpen(false);
   }
   return (
@@ -458,8 +458,11 @@ function AddStepMenu({ onPick }: { onPick: (kind: RecipeStep["kind"]) => void })
           <button type="button" className={styles.addStepItem} onClick={() => pick("ice")}>
             Crushed ice
           </button>
-          <button type="button" className={styles.addStepItem} onClick={() => pick("mix")}>
+          <button type="button" className={styles.addStepItem} onClick={() => pick("mix", "shake")}>
             Shake
+          </button>
+          <button type="button" className={styles.addStepItem} onClick={() => pick("mix", "stir")}>
+            Stir
           </button>
           <button type="button" className={styles.addStepItem} onClick={() => pick("strain")}>
             Strain
@@ -534,14 +537,14 @@ function RecipeEditor({
     setSteps((prev) => prev.filter((x) => x.id !== id));
   }
 
-  function addStep(kind: RecipeStep["kind"]) {
+  function addStep(kind: RecipeStep["kind"], mode: MixMode = "shake") {
     const step: RecipeStep =
       kind === "pour"
         ? { kind: "pour", ingredient: ingredientNames[0] ?? "", oz: 1 }
         : kind === "ice"
         ? { kind: "ice", type: "crushed" }
         : kind === "mix"
-        ? { kind: "mix", mode: "shake" }
+        ? { kind: "mix", mode }
         : { kind: "strain" };
     setSteps((prev) => [...prev, { id: crypto.randomUUID(), step }]);
   }
