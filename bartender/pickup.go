@@ -258,6 +258,13 @@ func (b *bartender) shuffleBlockerToParking(ctx context.Context, blockerName str
 	if err := b.returnBottleAt(ctx, parkingSw, nil); err != nil {
 		return fmt.Errorf("park blocker at %s: %w", b.cfg.ParkingSwitchName, err)
 	}
+	parkingGrab, err := fetchPose(ctx, parkingSw, poseGrab)
+	if err != nil {
+		return fmt.Errorf("fetch parking grab pose: %w", err)
+	}
+	if err := b.attachParked(parkingGrab.pose); err != nil {
+		return fmt.Errorf("attach parked-bottle geometry: %w", err)
+	}
 	return nil
 }
 
@@ -266,6 +273,7 @@ func (b *bartender) shuffleBlockerFromParking(ctx context.Context, parkingSw tog
 	if err != nil {
 		return fmt.Errorf("find blocker switch %q: %w", blockerName, err)
 	}
+	b.detachParked()
 	if err := b.pickupBottleAt(ctx, parkingSw, nil); err != nil {
 		return fmt.Errorf("pickup blocker from parking: %w", err)
 	}

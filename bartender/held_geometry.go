@@ -31,6 +31,7 @@ func (g *HeldObjectGeometry) Validate(path string) error {
 }
 
 const heldObjectFrameName = "held-object"
+const parkedObjectFrameName = "parked-object"
 
 const gripPointFrameName = "grip-point"
 
@@ -86,6 +87,34 @@ func (b *bartender) attachHeld(ctx context.Context, g *HeldObjectGeometry) error
 // Idempotent so release paths don't branch on held-state.
 func (b *bartender) detachHeld() {
 	b.heldGeomFrame = nil
+}
+
+func (b *bartender) attachParked(gripperReleasePose spatialmath.Pose) error {
+	g := b.cfg.HeldBottleGeometry
+	if g == nil {
+		return nil
+	}
+	if b.parkedGeomFrame != nil {
+		return errors.New("attachParked: parked geometry already set; detach first")
+	}
+	localPose := spatialmath.NewPose(
+		r3.Vector{X: 0, Y: 0, Z: -g.ZOffsetMM},
+		&spatialmath.OrientationVectorDegrees{OZ: 1},
+	)
+	geom, err := spatialmath.NewCapsule(localPose, g.RadiusMM, g.LengthMM, parkedObjectFrameName)
+	if err != nil {
+		return fmt.Errorf("build parked-bottle geometry: %w", err)
+	}
+	frame, err := referenceframe.NewStaticFrameWithGeometry(parkedObjectFrameName, gripperReleasePose, geom)
+	if err != nil {
+		return err
+	}
+	b.parkedGeomFrame = frame
+	return nil
+}
+
+func (b *bartender) detachParked() {
+	b.parkedGeomFrame = nil
 }
 
 // gripperOpen opens the gripper and detaches the held-object geometry — opening

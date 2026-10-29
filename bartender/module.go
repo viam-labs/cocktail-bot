@@ -33,20 +33,21 @@ func init() {
 type bartender struct {
 	resource.Named
 	resource.AlwaysRebuild
-	logger        logging.Logger
-	cfg           *Config
-	arm           arm.Arm
-	gripper       gripper.Gripper
-	fsSvc         framesystem.Service
-	poseSwitches  []toggleswitch.Switch
-	heldGeomFrame referenceframe.Frame
-	filesaver     *filesaver.Saver
-	queue         *order.Queue
-	orderSink     orderSensorSink
-	glassFinder   vision.Service
-	mixerPower    toggleswitch.Switch
-	queueStop     chan struct{}
-	dataStore     *dataStore
+	logger          logging.Logger
+	cfg             *Config
+	arm             arm.Arm
+	gripper         gripper.Gripper
+	fsSvc           framesystem.Service
+	poseSwitches    []toggleswitch.Switch
+	heldGeomFrame   referenceframe.Frame
+	parkedGeomFrame referenceframe.Frame
+	filesaver       *filesaver.Saver
+	queue           *order.Queue
+	orderSink       orderSensorSink
+	glassFinder     vision.Service
+	mixerPower      toggleswitch.Switch
+	queueStop       chan struct{}
+	dataStore       *dataStore
 
 	cancelMu   sync.Mutex
 	cancelFunc context.CancelFunc
