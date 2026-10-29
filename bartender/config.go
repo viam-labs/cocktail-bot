@@ -40,15 +40,18 @@ type Config struct {
 	GlassSearchPanDeg   []float64 `json:"glass_search_pan_deg,omitempty"`
 	GlassSearchSettleMs int       `json:"glass_search_settle_ms,omitempty"`
 	// Detections whose centroids are closer than this in x, y count as one glass (default 50).
-	GlassMinSeparationMM     float64           `json:"glass_min_separation_mm,omitempty"`
-	DataDir                  string            `json:"data_dir,omitempty"`
-	PickupObstacles          map[string]string `json:"pickup_obstacles,omitempty"`
-	RecipeDefaults           *RecipeDefaults   `json:"recipe_defaults,omitempty"`
-	PourIntoShakerDwellMs    int               `json:"pour_into_shaker_dwell_ms,omitempty"`
-	MixerProtectorObstacle   string            `json:"mixer_protector_obstacle,omitempty"`
-	BottlesProtectorObstacle string            `json:"bottles_protector_obstacle,omitempty"`
-	IceProtectorObstacle     string            `json:"ice_protector_obstacle,omitempty"`
-	SlotNames                []string          `json:"slot_names,omitempty"`
+	GlassMinSeparationMM   float64           `json:"glass_min_separation_mm,omitempty"`
+	DataDir                string            `json:"data_dir,omitempty"`
+	PickupObstacles        map[string]string `json:"pickup_obstacles,omitempty"`
+	RecipeDefaults         *RecipeDefaults   `json:"recipe_defaults,omitempty"`
+	PourIntoShakerDwellMs  int               `json:"pour_into_shaker_dwell_ms,omitempty"`
+	MixerProtectorObstacle string            `json:"mixer_protector_obstacle,omitempty"`
+	// Switch powering the mixer (e.g. a smart plug); mix turns it on only while the shaker is
+	// seated. Empty leaves the mixer to be switched by hand.
+	MixerPowerSwitchName     string   `json:"mixer_power_switch_name,omitempty"`
+	BottlesProtectorObstacle string   `json:"bottles_protector_obstacle,omitempty"`
+	IceProtectorObstacle     string   `json:"ice_protector_obstacle,omitempty"`
+	SlotNames                []string `json:"slot_names,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
@@ -137,6 +140,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 			return nil, nil, errors.New(path + ": pose_switcher_names contains an empty entry")
 		}
 		deps = append(deps, toggleswitch.Named(name).String())
+	}
+	if c.MixerPowerSwitchName != "" {
+		deps = append(deps, toggleswitch.Named(c.MixerPowerSwitchName).String())
 	}
 
 	var optional []string

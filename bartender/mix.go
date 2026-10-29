@@ -61,6 +61,8 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 		return fmt.Errorf("linear-lift inside mixer: %w", err)
 	}
 
+	stopMixer := b.startMixer(ctx)
+	defer stopMixer()
 	deadline := time.Now().Add(time.Duration(dwellMs) * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if _, err := b.linearCarryToPose(ctx, sw, poseMixerLower, mixerAllow...); err != nil {
@@ -70,6 +72,7 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 			return fmt.Errorf("linear-bob up to mixer-lift: %w", err)
 		}
 	}
+	stopMixer()
 
 	if _, err := b.linearCarryToPose(ctx, sw, poseMixerInsert, mixerAllow...); err != nil {
 		return fmt.Errorf("linear-descend from mixer-lift: %w", err)

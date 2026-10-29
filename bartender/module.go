@@ -44,6 +44,7 @@ type bartender struct {
 	queue         *order.Queue
 	orderSink     orderSensorSink
 	glassFinder   vision.Service
+	mixerPower    toggleswitch.Switch
 	queueStop     chan struct{}
 	dataStore     *dataStore
 
@@ -149,6 +150,14 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		}
 	}
 
+	if cfg.MixerPowerSwitchName != "" {
+		sw, err := toggleswitch.FromProvider(deps, cfg.MixerPowerSwitchName)
+		if err != nil {
+			return nil, fmt.Errorf("mixer power switch %q: %w", cfg.MixerPowerSwitchName, err)
+		}
+		b.mixerPower = sw
+	}
+
 	if dir := cfg.dataDir(); dir != "" {
 		ds, err := newDataStore(dir)
 		if err != nil {
@@ -163,7 +172,11 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 	return b, nil
 }
 
-func (b *bartender) Close(_ context.Context) error {
+func (b *bartender) Close(ctx context.Context) error {
+	b.cancelRunning()
 	close(b.queueStop)
+	if err := b.setMixerPower(ctx, false); err != nil {
+		b.logger.Warnf("power off mixer %q on close: %v", b.cfg.MixerPowerSwitchName, err)
+	}
 	return b.filesaver.Close()
 }
