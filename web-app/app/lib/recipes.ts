@@ -64,6 +64,7 @@ export const DRINK_IMAGE_SLUGS = [
   "boulevardier",
   "burn-through",
   "cherry-limeade",
+  "cosmopolitan",
   "daiquiri",
   "draculas-blood",
   "elderflower-martini",
