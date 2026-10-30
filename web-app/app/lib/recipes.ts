@@ -6,12 +6,41 @@ export interface Recipe {
   image?: string;
   section?: string;
   tag?: string;
+  base_spirit?: BaseSpirit | "";
+  flavors?: Flavor[];
   sort_order?: number;
   pours?: Pour[];
   crushed_ice?: boolean;
   shake?: boolean;
   strain?: boolean;
 }
+
+export const BASE_SPIRITS = [
+  "Vodka",
+  "Gin",
+  "Tequila & Mezcal",
+  "Rum",
+  "Whiskey",
+  "Wine",
+  "Liqueurs",
+  "No alcohol",
+] as const;
+export type BaseSpirit = (typeof BASE_SPIRITS)[number];
+
+export const FLAVORS = [
+  "Fruity",
+  "Sour",
+  "Sweet",
+  "Strong",
+  "Bitter",
+  "Coffee",
+  "Smoky",
+  "Floral",
+  "Refreshing",
+] as const;
+export type Flavor = (typeof FLAVORS)[number];
+
+export const MAX_FLAVORS_PER_RECIPE = 2;
 
 export type RecipeStep =
   | { kind: "pour"; ingredient: string; oz: number }

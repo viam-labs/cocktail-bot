@@ -14,7 +14,17 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ViamConnection } from "./lib/viamClient";
 import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
 import type { Recipe } from "./lib/recipes";
-import { COMMON_RECIPE_SECTIONS, COMMON_RECIPE_TAGS, DRINK_IMAGE_SLUGS, recipePours, stepsFor } from "./lib/recipes";
+import {
+  BASE_SPIRITS,
+  COMMON_RECIPE_SECTIONS,
+  COMMON_RECIPE_TAGS,
+  DRINK_IMAGE_SLUGS,
+  FLAVORS,
+  MAX_FLAVORS_PER_RECIPE,
+  recipePours,
+  stepsFor,
+} from "./lib/recipes";
+import type { BaseSpirit, Flavor } from "./lib/recipes";
 import type { MixMode, RecipeStep } from "./lib/recipes";
 import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
@@ -497,6 +507,10 @@ function RecipeEditor({
   const [image, setImage] = useState(initial.image ?? "");
   const [section, setSection] = useState(initial.section ?? "");
   const [tag, setTag] = useState(initial.tag ?? "");
+  const [baseSpirit, setBaseSpirit] = useState<string>(initial.base_spirit ?? "");
+  const [flavors, setFlavors] = useState<Flavor[]>(() =>
+    (initial.flavors ?? []).filter((f): f is Flavor => (FLAVORS as readonly string[]).includes(f)),
+  );
   const [sortOrder, setSortOrder] = useState<string>(
     initial.sort_order != null ? String(initial.sort_order) : "",
   );
@@ -582,6 +596,8 @@ function RecipeEditor({
     if (trimmedSection) next.section = trimmedSection;
     const trimmedTag = tag.trim();
     if (trimmedTag) next.tag = trimmedTag;
+    if (baseSpirit) next.base_spirit = baseSpirit as BaseSpirit;
+    if (flavors.length > 0) next.flavors = flavors;
     const parsedOrder = Number(sortOrder);
     if (sortOrder !== "" && Number.isFinite(parsedOrder)) next.sort_order = parsedOrder;
     onSave(next);
@@ -652,6 +668,52 @@ function RecipeEditor({
               </select>
             </label>
           </div>
+
+          <div className={styles.editorColumns}>
+            <label>
+              <span>Base spirit</span>
+              <select
+                className={styles.select}
+                value={baseSpirit}
+                onChange={(e) => setBaseSpirit(e.target.value)}
+              >
+                <option value="">— None —</option>
+                {BASE_SPIRITS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>
+              Flavors <span className={styles.muted}>(pick up to {MAX_FLAVORS_PER_RECIPE})</span>
+            </span>
+            <div className={styles.chipRow}>
+              {FLAVORS.map((f) => {
+                const active = flavors.includes(f);
+                const disabled = !active && flavors.length >= MAX_FLAVORS_PER_RECIPE;
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`${styles.chip} ${active ? styles.chipActive : ""}`.trim()}
+                    disabled={disabled}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setFlavors((prev) =>
+                        prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
+                      )
+                    }
+                  >
+                    {f}
+                  </button>
+                );
+              })}
+            </div>
+          </label>
 
           <label>
             <span>Illustration</span>

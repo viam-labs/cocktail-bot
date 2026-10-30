@@ -17,6 +17,8 @@ type Recipe struct {
 	Image      string       `json:"image,omitempty"`
 	Section    string       `json:"section,omitempty"`
 	Tag        string       `json:"tag,omitempty"`
+	BaseSpirit string       `json:"base_spirit,omitempty"`
+	Flavors    []string     `json:"flavors,omitempty"`
 	SortOrder  int          `json:"sort_order,omitempty"`
 	Pours      []Pour       `json:"pours,omitempty"`
 	CrushedIce *bool        `json:"crushed_ice,omitempty"`

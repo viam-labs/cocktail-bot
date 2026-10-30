@@ -392,6 +392,42 @@
 .switch[aria-checked="true"] .switchThumb {
   transform: translateX(18px);
 }
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.chip {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--tile);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.chip:hover:not(:disabled) {
+  background: var(--hair);
+}
+.chipActive {
+  background: var(--blush);
+  color: var(--verm);
+  border-color: var(--verm);
+}
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chipHint {
+  color: var(--smoke);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
 .editorColumns {
   display: grid;
   grid-template-columns: 1fr 1fr;
