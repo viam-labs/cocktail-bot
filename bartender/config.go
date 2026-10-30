@@ -18,6 +18,7 @@ type Config struct {
 	GripperName           string              `json:"gripper_name"`
 	PoseSwitcherNames     []string            `json:"pose_switcher_names"`
 	HeldBottleGeometry    *HeldObjectGeometry `json:"held_bottle_geometry,omitempty"`
+	ParkedBottleGeometry  *HeldObjectGeometry `json:"parked_bottle_geometry,omitempty"`
 	HeldShakerGeometry    *HeldObjectGeometry `json:"held_shaker_geometry,omitempty"`
 	HeldStirrerGeometry   *HeldObjectGeometry `json:"held_stirrer_geometry,omitempty"`
 	OrderSensorName       string              `json:"order_sensor_name,omitempty"`
@@ -88,6 +89,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		return nil, nil, errors.New(path + ": pose_switcher_names must list at least one switch")
 	}
 	if err := c.HeldBottleGeometry.Validate(path + ".held_bottle_geometry"); err != nil {
+		return nil, nil, err
+	}
+	if err := c.ParkedBottleGeometry.Validate(path + ".parked_bottle_geometry"); err != nil {
 		return nil, nil, err
 	}
 	if err := c.HeldShakerGeometry.Validate(path + ".held_shaker_geometry"); err != nil {

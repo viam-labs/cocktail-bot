@@ -90,7 +90,10 @@ func (b *bartender) detachHeld() {
 }
 
 func (b *bartender) attachParked(gripperReleasePose spatialmath.Pose) error {
-	g := b.cfg.HeldBottleGeometry
+	g := b.cfg.ParkedBottleGeometry
+	if g == nil {
+		g = b.cfg.HeldBottleGeometry
+	}
 	if g == nil {
 		return nil
 	}
