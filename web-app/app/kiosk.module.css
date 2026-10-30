@@ -680,3 +680,198 @@
   color: var(--smoke);
   font-variant-numeric: tabular-nums;
 }
+
+.filterBar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--hair);
+}
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.filterRowLabel {
+  color: var(--smoke);
+  font-size: 14px;
+  font-weight: 500;
+  padding-right: 4px;
+}
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--hair);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filterChip:hover:not(:disabled) {
+  border-color: var(--smoke);
+}
+.filterChipActive {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.filterChipCount {
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.filterFlavor {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 14px;
+  background: var(--tile);
+  border-color: transparent;
+}
+.filterFlavorActive {
+  background: var(--blush);
+  color: var(--verm);
+  border-color: var(--verm);
+}
+.filterClear {
+  background: transparent;
+  border: 0;
+  color: var(--smoke);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0 10px;
+  height: 34px;
+}
+.filterClear:hover {
+  color: var(--ink);
+}
+
+.filterHead {
+  margin: 0 0 18px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.filterHeadCount {
+  color: var(--smoke);
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.emptyState {
+  border: 1px dashed var(--hair);
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  color: var(--smoke);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.flavorPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+.flavorPill {
+  background: var(--tile);
+  color: var(--smoke);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* iPad: tighten padding, keep 2-col sidebar when room, otherwise collapse */
+@media (max-width: 1180px) {
+  .main {
+    padding: 36px 32px 24px;
+  }
+  .kioskHeader {
+    padding: 20px 32px 0;
+  }
+  .title {
+    font-size: 40px;
+  }
+  .menu {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .drink {
+    min-height: 230px;
+  }
+  .art {
+    height: 120px;
+  }
+}
+
+/* iPhone: force 2 cols at narrow widths, shrink chrome */
+@media (max-width: 600px) {
+  .main {
+    padding: 24px 16px 24px;
+  }
+  .kioskHeader {
+    padding: 16px 16px 0;
+  }
+  .title {
+    font-size: 30px;
+  }
+  .sub {
+    margin-bottom: 24px;
+  }
+  .filterBar {
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+  }
+  .filterChip {
+    height: 38px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+  .filterFlavor {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .menu {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .drink {
+    min-height: 0;
+    padding: 10px;
+    gap: 8px;
+    border-radius: 16px;
+  }
+  .art {
+    height: 110px;
+    padding: 8px;
+  }
+  .drink h3 {
+    font-size: 15px;
+  }
+  .ingLine {
+    font-size: 12px;
+  }
+  .flavorPill {
+    font-size: 11px;
+    padding: 1px 8px;
+  }
+  .filterHead {
+    font-size: 18px;
+  }
+}
