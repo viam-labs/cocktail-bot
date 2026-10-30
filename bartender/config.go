@@ -55,6 +55,7 @@ type Config struct {
 	SlotNames                []string `json:"slot_names,omitempty"`
 	ParkingSwitchName        string   `json:"parking_switch_name,omitempty"`
 	MixPrestagePose          string   `json:"mix_prestage_pose,omitempty"`
+	RotatePrestagePose       string   `json:"rotate_prestage_pose,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
