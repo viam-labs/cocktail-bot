@@ -39,19 +39,16 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 	// shaker and the shaker gets served at the end.
 	usesShaker := false
 	mixed := false
-	stirred := false
 	strained := false
 	for _, s := range steps {
 		switch s.Kind {
 		case "ice", "mix", "strain":
 			usesShaker = true
 		}
-		if s.Kind == "mix" {
-			if s.MixMode == "stir" {
-				stirred = true
-			} else {
-				mixed = true
-			}
+		// A stir leaves the shaker at shaker-home with the gripper empty, so
+		// only a shake counts as ending with the shaker held.
+		if s.Kind == "mix" && s.MixMode != "stir" {
+			mixed = true
 		}
 		if s.Kind == "strain" {
 			strained = true
@@ -107,10 +104,11 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		case "strain":
 			b.status.setPhase("Straining")
 			if err := b.strainShaker(ctx, strainShakerRequest{
-				source:       d.ShakerSource,
-				strainFlow:   d.StrainFlow,
-				drainDwellMs: d.StrainDrainMs,
-				dumpDwellMs:  d.StrainDumpMs,
+				source:            d.ShakerSource,
+				strainFlow:        d.StrainFlow,
+				shakerHomeStation: d.MixerStation,
+				drainDwellMs:      d.StrainDrainMs,
+				dumpDwellMs:       d.StrainDumpMs,
 			}); err != nil {
 				return fmt.Errorf("step %d strain: %w", i+1, err)
 			}
@@ -119,13 +117,13 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		}
 	}
 
-	// A stirred drink stays in the shaker instead of going through shaker pickup and serve.
-	if usesShaker && !stirred {
+	// Every drink made in the shaker gets served, including stirred ones.
+	if usesShaker {
 		// strain leaves shaker-A held and mix ends still holding the shaker
 		// above the mixer, so in both cases pourFromShaker gets a shaker
-		// already in the gripper. Only when neither ran is the shaker still
-		// sitting at shaker-home with contents, and only then do we go pick
-		// it up before serving.
+		// already in the gripper. Only when neither ran (ice-only or stirred
+		// drinks) is the shaker still sitting at shaker-home with contents,
+		// and only then do we go pick it up before serving.
 		if !mixed && !strained {
 			shakerSw, err := b.findSwitch(d.ShakerSource)
 			if err != nil {

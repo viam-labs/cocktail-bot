@@ -1018,6 +1018,9 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 	if err != nil {
 		return nil, err
 	}
+	if req.shakerHomeStation == "" && b.cfg.RecipeDefaults != nil {
+		req.shakerHomeStation = b.cfg.RecipeDefaults.MixerStation
+	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	ctx, done := b.withCancel(ctx)
 	defer done()
@@ -1055,11 +1058,13 @@ func parseStrainShaker(raw any) (strainShakerRequest, error) {
 	if err != nil {
 		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
 	}
+	shakerHomeStation, _ := m["shaker_home_station"].(string)
 	return strainShakerRequest{
-		source:       source,
-		strainFlow:   strainFlow,
-		drainDwellMs: drainDwellMs,
-		dumpDwellMs:  dumpDwellMs,
+		source:            source,
+		strainFlow:        strainFlow,
+		shakerHomeStation: shakerHomeStation,
+		drainDwellMs:      drainDwellMs,
+		dumpDwellMs:       dumpDwellMs,
 	}, nil
 }
 

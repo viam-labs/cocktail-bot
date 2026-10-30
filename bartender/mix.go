@@ -20,34 +20,10 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	if err != nil {
 		return err
 	}
-	shakerAllow := b.pickupAllowedCollisions("shaker")
 	mixerAllow := b.mixerProtectorAllowed()
 
-	if name := b.cfg.MixPrestagePose; name != "" {
-		if _, err := b.moveArmToJointGoalOnSwitch(ctx, sw, name); err != nil {
-			return fmt.Errorf("prestage before shaker pickup: %w", err)
-		}
-	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseShakerHomeHover); err != nil {
-		return fmt.Errorf("shaker-hover: %w", err)
-	}
-	if err := b.gripperOpen(ctx); err != nil {
-		return fmt.Errorf("open gripper before shaker grab: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-to shaker grab: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-lift shaker before closing: %w", err)
-	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
-		return fmt.Errorf("close gripper on shaker: %w", err)
-	}
-	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
-		return fmt.Errorf("attach held shaker: %w", err)
-	}
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
-		return fmt.Errorf("carry to shaker carry-hover: %w", err)
+	if err := b.grabShakerAtHome(ctx, sw); err != nil {
+		return err
 	}
 
 	if _, err := b.carryHeldLevel(ctx, sw, poseMixerHover, mixerAllow...); err != nil {
