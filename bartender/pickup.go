@@ -92,6 +92,41 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 	return nil
 }
 
+// grabShakerAtHome picks up the shaker from shaker-home using the
+// shaker-home-* poses on sw and leaves it held at shaker-home-carry-hover.
+// mix and strain_shaker share it so both grab the shaker the same way.
+func (b *bartender) grabShakerAtHome(ctx context.Context, sw toggleswitch.Switch) error {
+	shakerAllow := b.pickupAllowedCollisions("shaker")
+
+	if name := b.cfg.MixPrestagePose; name != "" {
+		if _, err := b.moveArmToJointGoalOnSwitch(ctx, sw, name); err != nil {
+			return fmt.Errorf("prestage before shaker pickup: %w", err)
+		}
+	}
+	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseShakerHomeHover); err != nil {
+		return fmt.Errorf("shaker-hover: %w", err)
+	}
+	if err := b.gripperOpen(ctx); err != nil {
+		return fmt.Errorf("open gripper before shaker grab: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-to shaker grab: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-lift shaker before closing: %w", err)
+	}
+	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		return fmt.Errorf("close gripper on shaker: %w", err)
+	}
+	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
+		return fmt.Errorf("attach held shaker: %w", err)
+	}
+	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
+		return fmt.Errorf("carry to shaker carry-hover: %w", err)
+	}
+	return nil
+}
+
 // Parks the arm at the carry-hover for the given shaker source with the shaker
 // gripped and the HeldObjectGeometry attached, so an operator can open the
 // simulation and visually confirm the capsule position relative to the gripper.

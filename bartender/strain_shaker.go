@@ -27,19 +27,35 @@ const (
 )
 
 type strainShakerRequest struct {
-	source       string
-	strainFlow   string
-	drainDwellMs int
-	dumpDwellMs  int
+	source     string
+	strainFlow string
+	// shakerHomeStation is the switch whose shaker-home-* poses are used to
+	// pick up the shaker when strain starts with an empty gripper (after a
+	// stir). Same station mix uses.
+	shakerHomeStation string
+	drainDwellMs      int
+	dumpDwellMs       int
 }
 
 func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) error {
-	if b.heldGeomFrame == nil {
-		return errors.New("strain_shaker: shaker must already be in the gripper (call dispense_ice/mix first in a chain)")
-	}
 	flowSw, err := b.findSwitch(req.strainFlow)
 	if err != nil {
 		return fmt.Errorf("strain_flow switch: %w", err)
+	}
+	// dispense_ice and mix end holding the shaker, but stir puts the stirrer
+	// back and leaves the gripper empty with the shaker at shaker-home. Grab
+	// it the same way mix does before straining.
+	if b.heldGeomFrame == nil {
+		if req.shakerHomeStation == "" {
+			return errors.New("strain_shaker: gripper is empty and no shaker_home_station to pick the shaker up from")
+		}
+		homeSw, err := b.findSwitch(req.shakerHomeStation)
+		if err != nil {
+			return fmt.Errorf("shaker home station switch %q: %w", req.shakerHomeStation, err)
+		}
+		if err := b.grabShakerAtHome(ctx, homeSw); err != nil {
+			return fmt.Errorf("pickup shaker before strain: %w", err)
+		}
 	}
 	shakerAAllow := b.pickupAllowedCollisions("shaker-a")
 	shakerBAllow := b.pickupAllowedCollisions("shaker-b")

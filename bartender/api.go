@@ -1055,11 +1055,13 @@ func parseStrainShaker(raw any) (strainShakerRequest, error) {
 	if err != nil {
 		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
 	}
+	shakerHomeStation, _ := m["shaker_home_station"].(string)
 	return strainShakerRequest{
-		source:       source,
-		strainFlow:   strainFlow,
-		drainDwellMs: drainDwellMs,
-		dumpDwellMs:  dumpDwellMs,
+		source:            source,
+		strainFlow:        strainFlow,
+		shakerHomeStation: shakerHomeStation,
+		drainDwellMs:      drainDwellMs,
+		dumpDwellMs:       dumpDwellMs,
 	}, nil
 }
 
