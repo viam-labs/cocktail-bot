@@ -1018,9 +1018,6 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 	if err != nil {
 		return nil, err
 	}
-	if req.shakerHomeStation == "" && b.cfg.RecipeDefaults != nil {
-		req.shakerHomeStation = b.cfg.RecipeDefaults.MixerStation
-	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	ctx, done := b.withCancel(ctx)
 	defer done()
