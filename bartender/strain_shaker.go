@@ -60,6 +60,11 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if _, err := b.carryHeldLevel(ctx, flowSw, poseShakerBHoverAbove, shakerBAllow...); err != nil {
 		return fmt.Errorf("carry A to shaker-b-hover-above: %w", err)
 	}
+	if name := b.cfg.ShakerBPlacePrestagePose; name != "" {
+		if err := b.moveArmToJointPoseOnSwitch(ctx, flowSw, name); err != nil {
+			return fmt.Errorf("prestage before shaker-b-place: %w", err)
+		}
+	}
 	if _, err := b.linearCarryToPose(ctx, flowSw, poseShakerBPlace, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend to shaker-b-place: %w", err)
 	}
