@@ -42,6 +42,7 @@ type poseData struct {
 	circleRadiusMm                  float64
 	circlePointsPerRev              int
 	blockedBy                       string
+	jointPositionsDegs              []float64
 }
 
 const (
@@ -127,6 +128,15 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		}
 	}
 	blockedBy, _ := resp["blocked_by"].(string)
+	var jointPositionsDegs []float64
+	if raw, ok := resp["joint_positions_degs"].([]any); ok {
+		jointPositionsDegs = make([]float64, 0, len(raw))
+		for _, v := range raw {
+			if f, ok := v.(float64); ok {
+				jointPositionsDegs = append(jointPositionsDegs, f)
+			}
+		}
+	}
 	return &poseData{
 		pose: spatialmath.NewPose(
 			r3.Vector{X: x, Y: y, Z: z},
@@ -143,6 +153,7 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		circleRadiusMm:                  circleRadius,
 		circlePointsPerRev:              circlePoints,
 		blockedBy:                       blockedBy,
+		jointPositionsDegs:              jointPositionsDegs,
 	}, nil
 }
 
@@ -307,6 +318,52 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	label := sw.Name().ShortName() + ":" + poseName
 	constraints := b.withAllowedCollisions(nil, allowed)
 	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+}
+
+// moveArmToJointGoalOnSwitch plans to a joint-position goal and executes.
+// Obstacles enforced, cbirrt enabled, no linear or no-spill constraint applied
+// — intended for empty-handed resets, not carries.
+func (b *bartender) moveArmToJointGoalOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	if len(pd.jointPositionsDegs) == 0 {
+		return 0, fmt.Errorf("pose %q on %q is not a joint-space pose (joint_positions_degs is empty)", poseName, sw.Name().ShortName())
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":joint-goal"
+	opts := moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	start := time.Now()
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	goalJoints := make([]referenceframe.Input, len(pd.jointPositionsDegs))
+	for i, d := range pd.jointPositionsDegs {
+		goalJoints[i] = d * math.Pi / 180.0
+	}
+	goalInputs := referenceframe.FrameSystemInputs{}
+	for k, v := range fsInputs {
+		goalInputs[k] = v
+	}
+	goalInputs[b.cfg.ArmName] = goalJoints
+	req := &armplanning.PlanRequest{
+		FrameSystem: fs,
+		StartState:  armplanning.NewPlanState(nil, fsInputs),
+		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, goalInputs)},
+	}
+	plan, err := b.planMotion(ctx, req, label)
+	if err != nil {
+		return 0, err
+	}
+	positions, err := plan.Trajectory().GetFrameInputs(b.cfg.ArmName)
+	if err != nil {
+		return 0, fmt.Errorf("extract trajectory: %w", err)
+	}
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+		return 0, fmt.Errorf("execute %s: %w", label, err)
+	}
+	return time.Since(start).Round(time.Millisecond), nil
 }
 
 // AllowedCollision names a pair of frames whose collision the planner should

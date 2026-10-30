@@ -59,15 +59,35 @@ func TestValidate(t *testing.T) {
 					{PoseName: "b", PoseValue: basePose, Baseline: "a"},
 				},
 			},
-			wantErr: "cannot have both",
+			wantErr: "must have exactly one",
 		},
 		{
-			name: "neither pose_value nor baseline",
+			name: "both pose_value and joint_positions_degs",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{
+					{PoseName: "a", PoseValue: basePose, JointPositionsDegs: []float64{0, 0, 0, 0, 0, 0}},
+				},
+			},
+			wantErr: "must have exactly one",
+		},
+		{
+			name: "no kind set",
 			cfg: Config{
 				ComponentName: "arm", Motion: "builtin",
 				Poses: []PoseConf{{PoseName: "a"}},
 			},
-			wantErr: "must have either",
+			wantErr: "must have one of",
+		},
+		{
+			name: "joint pose with translation",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{
+					{PoseName: "a", JointPositionsDegs: []float64{0, 0, 0, 0, 0, 0}, Translation: &Translation{X: 10}},
+				},
+			},
+			wantErr: "not valid on a joint-space pose",
 		},
 		{
 			name: "translation without baseline",
@@ -153,6 +173,13 @@ func TestValidate(t *testing.T) {
 			cfg: Config{
 				ComponentName: "arm", Motion: "builtin",
 				Poses: []PoseConf{{PoseName: "a", PoseValue: basePose}},
+			},
+		},
+		{
+			name: "valid joint pose",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{{PoseName: "a", JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}}},
 			},
 		},
 		{
@@ -256,6 +283,13 @@ func TestResolvePoses(t *testing.T) {
 			{PoseName: "a", PoseValue: basePose},
 		})
 		assertPoseEqual(t, resolved[0], poseValues{X: 100, Y: 200, Z: 300, OZ: 1, Theta: 45})
+	})
+
+	t.Run("joint pose", func(t *testing.T) {
+		resolved := resolvePoses([]PoseConf{
+			{PoseName: "a", JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}},
+		})
+		assertPoseEqual(t, resolved[0], poseValues{JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}})
 	})
 
 	t.Run("circle params", func(t *testing.T) {
