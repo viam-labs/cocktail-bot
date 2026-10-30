@@ -8,6 +8,7 @@ Viam module that drives a UFactory xArm to make cocktails end-to-end: ice → po
 - `viam:cocktail-bot:pose-switcher` (`rdk:component:switch`) — holds named poses (`hover`, `grab`, `carry-hover`, `pour-approach`, etc.) that the bartender resolves at runtime. Supports absolute poses and baseline-relative deltas with optional per-pose velocity/acceleration.
 - `viam:cocktail-bot:glass-finder` (`rdk:service:vision`) — locates glasses in 3D. Runs a 2D detector on the camera image, keeps the camera point cloud points that project inside each glass box, and returns them in the world frame.
 - `viam:cocktail-bot:order-sensor` (`rdk:component:sensor`) — one reading per order attempt, for Data Management.
+- [`viam:cocktail-bot:inventory-sensor`](inventorysensor/README.md) (`rdk:component:sensor`) — snapshots bartender inventory and slot assignments on change and hourly, for Data Management.
 - `viam:cocktail-bot:maintenance-sensor` (`rdk:component:sensor`) — reports whether the bartender is idle, so Viam's maintenance-allowed gate can block reconfigures mid-cocktail.
 
 ### `glass-finder` configuration
