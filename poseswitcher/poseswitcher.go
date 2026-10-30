@@ -43,6 +43,7 @@ type Config struct {
 type PoseConf struct {
 	PoseName                        string         `json:"pose_name"`
 	PoseValue                       *commonpb.Pose `json:"pose_value,omitempty"`
+	JointPositionsDegs              []float64      `json:"joint_positions_degs,omitempty"`
 	Baseline                        string         `json:"baseline,omitempty"`
 	Translation                     *Translation   `json:"translation,omitempty"`
 	Orientation                     *Orientation   `json:"orientation,omitempty"`
@@ -76,6 +77,7 @@ type poseValues struct {
 	X, Y, Z                         float64
 	OX, OY, OZ                      float64
 	Theta                           float64
+	JointPositionsDegs              []float64
 	VelDegsPerSec                   float64
 	AccDegsPerSec2                  float64
 	LineToleranceMm                 float64
@@ -117,14 +119,28 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	for i, p := range cfg.Poses {
 		hasPoseValue := p.PoseValue != nil
 		hasBaseline := p.Baseline != ""
+		hasJoints := len(p.JointPositionsDegs) > 0
 
-		if hasPoseValue && hasBaseline {
-			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) cannot have both \"pose_value\" and \"baseline\"", path, i, p.PoseName)
+		kinds := 0
+		if hasPoseValue {
+			kinds++
 		}
-		if !hasPoseValue && !hasBaseline {
-			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) must have either \"pose_value\" or \"baseline\"", path, i, p.PoseName)
+		if hasBaseline {
+			kinds++
+		}
+		if hasJoints {
+			kinds++
+		}
+		if kinds > 1 {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) must have exactly one of \"pose_value\", \"baseline\", or \"joint_positions_degs\"", path, i, p.PoseName)
+		}
+		if kinds == 0 {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) must have one of \"pose_value\", \"baseline\", or \"joint_positions_degs\"", path, i, p.PoseName)
 		}
 
+		if hasJoints && (p.Translation != nil || p.Orientation != nil) {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"translation\" and \"orientation\" are not valid on a joint-space pose", path, i, p.PoseName)
+		}
 		if !hasBaseline && (p.Translation != nil || p.Orientation != nil) {
 			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"translation\" and \"orientation\" require \"baseline\"", path, i, p.PoseName)
 		}
@@ -242,12 +258,17 @@ func resolvePoses(poses []PoseConf) []poseValues {
 			return
 		}
 		p := poses[i]
-		if p.PoseValue != nil {
+		switch {
+		case len(p.JointPositionsDegs) > 0:
+			resolved[i] = poseValues{
+				JointPositionsDegs: append([]float64(nil), p.JointPositionsDegs...),
+			}
+		case p.PoseValue != nil:
 			resolved[i] = poseValues{
 				X: p.PoseValue.X, Y: p.PoseValue.Y, Z: p.PoseValue.Z,
 				OX: p.PoseValue.OX, OY: p.PoseValue.OY, OZ: p.PoseValue.OZ, Theta: p.PoseValue.Theta,
 			}
-		} else {
+		default:
 			baseIdx := nameToIdx[p.Baseline]
 			resolve(baseIdx)
 			base := resolved[baseIdx]
@@ -314,6 +335,11 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 		defer cmdSpan.End()
 		for i, pn := range s.poseNames {
 			if pn == name {
+				if len(s.resolvedPoses[i].JointPositionsDegs) > 0 {
+					err := fmt.Errorf("pose %q is joint-space; execute it directly through the arm, not through the pose switcher", name)
+					s.logger.Warnw("DoCommand", "error", err)
+					return nil, err
+				}
 				if err := s.SetPosition(ctx, uint32(i), nil); err != nil {
 					s.logger.Errorw("DoCommand", "error", err)
 					return nil, err
@@ -344,15 +370,23 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 			if pn == name {
 				rp := s.resolvedPoses[i]
 				resp := map[string]any{
-					"x":               rp.X,
-					"y":               rp.Y,
-					"z":               rp.Z,
-					"o_x":             rp.OX,
-					"o_y":             rp.OY,
-					"o_z":             rp.OZ,
-					"theta":           rp.Theta,
 					"reference_frame": s.cfg.ReferenceFrame,
 					"component_name":  s.cfg.ComponentName,
+				}
+				if len(rp.JointPositionsDegs) > 0 {
+					joints := make([]any, len(rp.JointPositionsDegs))
+					for i, j := range rp.JointPositionsDegs {
+						joints[i] = j
+					}
+					resp["joint_positions_degs"] = joints
+				} else {
+					resp["x"] = rp.X
+					resp["y"] = rp.Y
+					resp["z"] = rp.Z
+					resp["o_x"] = rp.OX
+					resp["o_y"] = rp.OY
+					resp["o_z"] = rp.OZ
+					resp["theta"] = rp.Theta
 				}
 				if rp.VelDegsPerSec > 0 {
 					resp["vel_degs_per_sec"] = rp.VelDegsPerSec
