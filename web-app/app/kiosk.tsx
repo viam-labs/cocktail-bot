@@ -13,8 +13,8 @@ import {
   makeInlineOrder,
 } from "./lib/viamClient";
 import type { OrderStatus } from "./lib/viamClient";
-import type { Recipe, RecipeStep } from "./lib/recipes";
-import { recipePours } from "./lib/recipes";
+import type { BaseSpirit, Flavor, Recipe, RecipeStep } from "./lib/recipes";
+import { BASE_SPIRITS, FLAVORS, recipePours } from "./lib/recipes";
 import type { Inventory, WhiskeyProfile } from "./lib/inventory";
 import { isAvailable, WHISKEY_TRAITS } from "./lib/inventory";
 import type { PourMenu, PourServe, PourSize } from "./lib/pour_menus";
@@ -39,6 +39,27 @@ const WHISKEY_SLUG = "whiskey-neat";
 
 const READY_CARD_MS = 60_000;
 const MINUTES_PER_DRINK = 3;
+const FILTER_IDLE_RESET_MS = 30_000;
+
+function spiritForPourMenu(menu: PourMenu): BaseSpirit | null {
+  const c = menu.category.trim().toLowerCase();
+  if (c === "whiskey") return "Whiskey";
+  if (c === "wine") return "Wine";
+  return null;
+}
+
+function recipeMatchesFilters(
+  recipe: Recipe,
+  baseFilter: BaseSpirit | "",
+  flavorFilters: ReadonlySet<Flavor>,
+): boolean {
+  if (baseFilter && recipe.base_spirit !== baseFilter) return false;
+  if (flavorFilters.size > 0) {
+    const have = new Set((recipe.flavors ?? []) as Flavor[]);
+    for (const f of flavorFilters) if (!have.has(f)) return false;
+  }
+  return true;
+}
 
 function slugForMenu(menu: PourMenu): string {
   if (menu.illustration) return menu.illustration;
@@ -66,6 +87,28 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   const [confirming, setConfirming] = useState<{ recipe: Recipe; orderable: boolean } | null>(null);
   const [pourConfirming, setPourConfirming] = useState<PourEntry | null>(null);
   const [pourPreview, setPourPreview] = useState<PourEntry | null>(null);
+  const [baseFilter, setBaseFilter] = useState<BaseSpirit | "">("");
+  const [flavorFilters, setFlavorFilters] = useState<Set<Flavor>>(() => new Set());
+  const clearFilters = useCallback(() => {
+    setBaseFilter("");
+    setFlavorFilters(new Set());
+  }, []);
+  const toggleFlavor = useCallback((f: Flavor) => {
+    setFlavorFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f);
+      else next.add(f);
+      return next;
+    });
+  }, []);
+  const filtersActive = baseFilter !== "" || flavorFilters.size > 0;
+
+  // Reset filters after idle in kiosk mode (same 30s rule as the drink sheet)
+  useEffect(() => {
+    if (!kioskMode || !filtersActive) return;
+    const id = window.setTimeout(clearFilters, FILTER_IDLE_RESET_MS);
+    return () => window.clearTimeout(id);
+  }, [kioskMode, filtersActive, baseFilter, flavorFilters, clearFilters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,7 +186,10 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     return () => window.clearTimeout(t);
   }, [order]);
 
-  const visible = recipes ? recipes.filter((r) => r.on_menu !== false) : [];
+  const visible = useMemo(
+    () => (recipes ? recipes.filter((r) => r.on_menu !== false) : []),
+    [recipes],
+  );
 
   const allPours: PourEntry[] = useMemo(() => {
     if (!menus || !inventory) return [];
@@ -187,6 +233,52 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
 
   const pendingPours = allPours.filter((p) => !p.available);
 
+  const availableRecipes = useMemo(
+    () => (inventory ? visible.filter((r) => isAvailable(r, inventory)) : []),
+    [visible, inventory],
+  );
+  const availablePourEntries = useMemo(() => allPours.filter((p) => p.available), [allPours]);
+
+  // Spirit chip counts combine makeable cocktails (by base_spirit) with pour entries
+  // whose menu category maps to that spirit (Whiskey, Wine, etc).
+  const spiritCounts = useMemo<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    for (const r of availableRecipes) {
+      if (!r.base_spirit) continue;
+      counts[r.base_spirit] = (counts[r.base_spirit] ?? 0) + 1;
+    }
+    for (const entry of availablePourEntries) {
+      const s = spiritForPourMenu(entry.menu);
+      if (!s) continue;
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    return counts;
+  }, [availableRecipes, availablePourEntries]);
+  const totalCount = availableRecipes.length + availablePourEntries.length;
+
+  const filteredRecipes = useMemo(
+    () => availableRecipes.filter((r) => recipeMatchesFilters(r, baseFilter, flavorFilters)),
+    [availableRecipes, baseFilter, flavorFilters],
+  );
+  const filteredPourEntries = useMemo(() => {
+    if (flavorFilters.size > 0) return []; // pour entries have no flavor tags
+    if (!baseFilter) return availablePourEntries;
+    return availablePourEntries.filter((entry) => spiritForPourMenu(entry.menu) === baseFilter);
+  }, [availablePourEntries, baseFilter, flavorFilters]);
+
+  const filterBar =
+    recipes && inventory && menus && totalCount > 0 ? (
+      <FilterBar
+        baseFilter={baseFilter}
+        onBaseChange={setBaseFilter}
+        flavorFilters={flavorFilters}
+        onToggleFlavor={toggleFlavor}
+        onClear={clearFilters}
+        spiritCounts={spiritCounts}
+        totalCount={totalCount}
+      />
+    ) : null;
+
   const menu = loadError ? (
     <p className={styles.sub}>Could not load menu: {loadError}</p>
   ) : !recipes || !inventory || !menus ? (
@@ -195,6 +287,17 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     <p className={styles.loading}>No recipes configured.</p>
   ) : visible.length === 0 && pourSections.length === 0 ? (
     <p className={styles.loading}>No drinks on the menu right now.</p>
+  ) : filtersActive ? (
+    <FilteredView
+      baseFilter={baseFilter}
+      flavorFilters={flavorFilters}
+      recipes={filteredRecipes}
+      pourEntries={filteredPourEntries}
+      disabled={order.kind === "running"}
+      onPickRecipe={(recipe) => setConfirming({ recipe, orderable: true })}
+      onPickPour={(entry) => setPourConfirming(entry)}
+      onShowAll={clearFilters}
+    />
   ) : (
     <>
       {pourSections.map(({ menu: pm, entries }) => (
@@ -240,6 +343,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
             {conn.isDev && " · dev mock"}
           </p>
 
+          {filterBar}
           {kioskMode ? (
             menu
           ) : (
@@ -477,6 +581,7 @@ function DrinkCard({
   onPick: (recipe: Recipe, orderable: boolean) => void;
 }) {
   const ingredientLine = recipePours(recipe).map((p) => titleCase(p.ingredient)).join(" · ");
+  const flavors = (recipe.flavors ?? []).slice(0, 2);
   return (
     <button
       type="button"
@@ -490,7 +595,156 @@ function DrinkCard({
         {recipe.tag && <span className={styles.tagBadge}>{recipe.tag}</span>}
       </div>
       {ingredientLine && <p className={styles.ingLine}>{ingredientLine}</p>}
+      {flavors.length > 0 && (
+        <div className={styles.flavorPills}>
+          {flavors.map((f) => (
+            <span key={f} className={styles.flavorPill}>
+              {f}
+            </span>
+          ))}
+        </div>
+      )}
     </button>
+  );
+}
+
+function FilterBar({
+  baseFilter,
+  onBaseChange,
+  flavorFilters,
+  onToggleFlavor,
+  onClear,
+  spiritCounts,
+  totalCount,
+}: {
+  baseFilter: BaseSpirit | "";
+  onBaseChange: (b: BaseSpirit | "") => void;
+  flavorFilters: ReadonlySet<Flavor>;
+  onToggleFlavor: (f: Flavor) => void;
+  onClear: () => void;
+  spiritCounts: Record<string, number>;
+  totalCount: number;
+}) {
+  const anyActive = baseFilter !== "" || flavorFilters.size > 0;
+  return (
+    <div className={styles.filterBar}>
+      <div className={styles.filterRow}>
+        <button
+          type="button"
+          className={`${styles.filterChip} ${baseFilter === "" ? styles.filterChipActive : ""}`}
+          onClick={() => onBaseChange("")}
+          aria-pressed={baseFilter === ""}
+        >
+          All <span className={styles.filterChipCount}>{totalCount}</span>
+        </button>
+        {BASE_SPIRITS.map((s) => {
+          const count = spiritCounts[s] ?? 0;
+          if (count === 0) return null;
+          const active = baseFilter === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              className={`${styles.filterChip} ${active ? styles.filterChipActive : ""}`}
+              onClick={() => onBaseChange(active ? "" : s)}
+              aria-pressed={active}
+            >
+              {s} <span className={styles.filterChipCount}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className={styles.filterRow}>
+        <span className={styles.filterRowLabel}>Flavor</span>
+        {FLAVORS.map((f) => {
+          const active = flavorFilters.has(f);
+          return (
+            <button
+              key={f}
+              type="button"
+              className={`${styles.filterChip} ${styles.filterFlavor} ${active ? styles.filterFlavorActive : ""}`}
+              onClick={() => onToggleFlavor(f)}
+              aria-pressed={active}
+            >
+              {f}
+            </button>
+          );
+        })}
+        {anyActive && (
+          <button type="button" className={styles.filterClear} onClick={onClear}>
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilteredView({
+  baseFilter,
+  flavorFilters,
+  recipes,
+  pourEntries,
+  disabled,
+  onPickRecipe,
+  onPickPour,
+  onShowAll,
+}: {
+  baseFilter: BaseSpirit | "";
+  flavorFilters: ReadonlySet<Flavor>;
+  recipes: Recipe[];
+  pourEntries: PourEntry[];
+  disabled: boolean;
+  onPickRecipe: (recipe: Recipe) => void;
+  onPickPour: (entry: PourEntry) => void;
+  onShowAll: () => void;
+}) {
+  const headingParts: string[] = [];
+  if (baseFilter) headingParts.push(baseFilter);
+  for (const f of flavorFilters) headingParts.push(f);
+  const heading = headingParts.join(" · ") || "All drinks";
+  const total = recipes.length + pourEntries.length;
+  if (total === 0) {
+    return (
+      <>
+        <h2 className={styles.filterHead}>
+          {heading} <span className={styles.filterHeadCount}>0 drinks</span>
+        </h2>
+        <div className={styles.emptyState}>
+          <span>Nothing matches that combination.</span>
+          <button type="button" className={`${styles.btn} ${styles.btnMain}`} onClick={onShowAll}>
+            Show all drinks
+          </button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <h2 className={styles.filterHead}>
+        {heading}{" "}
+        <span className={styles.filterHeadCount}>
+          {total} {total === 1 ? "drink" : "drinks"}
+        </span>
+      </h2>
+      <ul className={styles.menu}>
+        {recipes.map((recipe) => (
+          <li key={recipe.id}>
+            <DrinkCard
+              recipe={recipe}
+              disabled={disabled}
+              orderable
+              onPick={() => onPickRecipe(recipe)}
+            />
+          </li>
+        ))}
+        {pourEntries.map((entry) => (
+          <li key={`${entry.menu.id}-${entry.ingredient}`}>
+            <BottleCard entry={entry} disabled={disabled} onPick={onPickPour} />
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
