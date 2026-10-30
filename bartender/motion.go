@@ -42,7 +42,6 @@ type poseData struct {
 	circleRadiusMm                  float64
 	circlePointsPerRev              int
 	blockedBy                       string
-	jointPositionsDegs              []float64
 }
 
 const (
@@ -128,15 +127,6 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		}
 	}
 	blockedBy, _ := resp["blocked_by"].(string)
-	var jointPositionsDegs []float64
-	if raw, ok := resp["joint_positions_degs"].([]any); ok {
-		jointPositionsDegs = make([]float64, 0, len(raw))
-		for _, v := range raw {
-			if f, ok := v.(float64); ok {
-				jointPositionsDegs = append(jointPositionsDegs, f)
-			}
-		}
-	}
 	return &poseData{
 		pose: spatialmath.NewPose(
 			r3.Vector{X: x, Y: y, Z: z},
@@ -153,7 +143,6 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		circleRadiusMm:                  circleRadius,
 		circlePointsPerRev:              circlePoints,
 		blockedBy:                       blockedBy,
-		jointPositionsDegs:              jointPositionsDegs,
 	}, nil
 }
 
@@ -318,27 +307,6 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	label := sw.Name().ShortName() + ":" + poseName
 	constraints := b.withAllowedCollisions(nil, allowed)
 	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
-}
-
-// Bypasses the planner, so the pose author owns path safety.
-func (b *bartender) moveArmToJointPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string) error {
-	pd, err := fetchPose(ctx, sw, poseName)
-	if err != nil {
-		return err
-	}
-	if len(pd.jointPositionsDegs) == 0 {
-		return fmt.Errorf("pose %q on %q is not a joint-space pose (joint_positions_degs is empty)", poseName, sw.Name().ShortName())
-	}
-	label := sw.Name().ShortName() + ":" + poseName + ":joints"
-	b.logger.Infof("plan %s: %d joint positions (degs)", label, len(pd.jointPositionsDegs))
-	inputs := make([]referenceframe.Input, len(pd.jointPositionsDegs))
-	for i, d := range pd.jointPositionsDegs {
-		inputs[i] = d * math.Pi / 180.0
-	}
-	if err := b.arm.MoveToJointPositions(ctx, inputs, nil); err != nil {
-		return fmt.Errorf("execute %s: %w", label, err)
-	}
-	return nil
 }
 
 // AllowedCollision names a pair of frames whose collision the planner should
