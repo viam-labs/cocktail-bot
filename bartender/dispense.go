@@ -69,8 +69,8 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 		return fmt.Errorf("linear-exit from deposit: %w", err)
 	}
 
-	if _, err := b.linearMoveToPose(ctx, sw, poseLeverHover, iceAllow...); err != nil {
-		return fmt.Errorf("linear-to lever hover: %w", err)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseLeverHover, iceAllow...); err != nil {
+		return fmt.Errorf("to lever hover: %w", err)
 	}
 	if _, err := b.linearMoveToPose(ctx, sw, poseLeverEngage, iceAllow...); err != nil {
 		return fmt.Errorf("linear-engage lever: %w", err)
@@ -88,8 +88,8 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 		return fmt.Errorf("linear-retreat from lever: %w", err)
 	}
 
-	if _, err := b.linearMoveToPose(ctx, sw, poseDepositExit, iceAllow...); err != nil {
-		return fmt.Errorf("linear-back to deposit-exit: %w", err)
+	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseDepositExit, iceAllow...); err != nil {
+		return fmt.Errorf("back to deposit-exit: %w", err)
 	}
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositDescend, iceAllow...); err != nil {
 		return fmt.Errorf("linear-to below shaker rim at deposit: %w", err)
