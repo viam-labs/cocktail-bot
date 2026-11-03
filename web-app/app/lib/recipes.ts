@@ -51,7 +51,7 @@ export type RecipeStep =
 export type IceType = "crushed" | "cubed";
 export type MixMode = "shake" | "stir";
 
-export const COMMON_RECIPE_SECTIONS = ["Classics", "Fruity", "Halloween specials"];
+export const COMMON_RECIPE_SECTIONS = ["Kids", "Classics", "Fruity", "Halloween specials"];
 export const COMMON_RECIPE_TAGS = ["Halloween", "New", "Nicolas"];
 
 export const DRINK_IMAGE_SLUGS = [
@@ -67,6 +67,7 @@ export const DRINK_IMAGE_SLUGS = [
   "cosmopolitan",
   "daiquiri",
   "draculas-blood",
+  "dragon-juice",
   "elderflower-martini",
   "espresso-martini",
   "espresso-shakerato",
@@ -87,6 +88,8 @@ export const DRINK_IMAGE_SLUGS = [
   "old-pal",
   "paloma",
   "passion-fruit-martini",
+  "shirley-temple",
+  "sparkle-lemonade",
   "violet-smoke",
   "whiskey-neat",
   "whiskey-sour",
