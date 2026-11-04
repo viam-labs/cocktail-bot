@@ -7,8 +7,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0
-	go.viam.com/api v0.1.602
-	go.viam.com/rdk v1.14.0
+	go.viam.com/api v0.1.603
+	go.viam.com/rdk v1.15.0
 	go.viam.com/test v1.2.5
 	golang.org/x/sync v0.24.0
 )
@@ -122,7 +122,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.19.2 // indirect
 	github.com/go-gl/mathgl v1.0.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-nlopt/nlopt v0.0.0-20230219125344-443d3362dcb5 // indirect
