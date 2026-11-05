@@ -56,7 +56,6 @@
 
 .addRow {
   display: flex;
-  flex-wrap: wrap;
   gap: 10px;
   flex: 1 0 min(360px, 100%);
   justify-content: flex-end;
@@ -544,12 +543,6 @@
   font-size: 12px;
   font-weight: 500;
   vertical-align: 1px;
-}
-.btnFridge {
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 .segmentActive {
   background: var(--paper);

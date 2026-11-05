@@ -144,22 +144,6 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     }
   }
 
-  async function setFridgeStock(names: string[], inStock: boolean) {
-    const verb = inStock ? "back in stock" : "out of stock";
-    if (!confirm(`Mark ${names.length} refrigerated item${names.length === 1 ? "" : "s"} ${verb}?\n\n${names.map(titleCase).join(", ")}`)) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const results = await Promise.allSettled(names.map((name) => updateInventoryItem(conn, name, inStock)));
-    const failed = names.filter((_, i) => results[i].status === "rejected");
-    if (failed.length > 0) {
-      setError(`Couldn't mark ${failed.map(titleCase).join(", ")} ${verb}. Try again.`);
-    }
-    load();
-    setBusy(false);
-  }
-
   async function savePourerOz(ingredient: string, oz: number) {
     setBusy(true);
     setError(null);
@@ -234,10 +218,6 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const items = inventory ? Object.entries(inventory.ingredients).sort(([a], [b]) => a.localeCompare(b)) : [];
   const slots = inventory?.slots ?? [];
   const ingredientNames = items.map(([name]) => name);
-  const hasRefrigerated = items.some(([, s]) => s.refrigerated);
-  const refrigeratedInStock = items.filter(([, s]) => s.refrigerated && s.in_stock).map(([name]) => name);
-  // Only slotted ingredients can be in stock, so unslotted fridge items would never leave this list.
-  const refrigeratedOut = items.filter(([, s]) => s.refrigerated && s.slot && !s.in_stock).map(([name]) => name);
   const selectedSlot = selectedSlotId ? slots.find((s) => s.id === selectedSlotId) ?? null : null;
   const selectedStock =
     inventory && selectedSlot?.ingredient ? inventory.ingredients[selectedSlot.ingredient] : undefined;
@@ -263,28 +243,6 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
           <div className={styles.toolbar}>
             <h1 className={styles.pageTitle}>Inventory</h1>
             <div className={styles.addRow}>
-              {hasRefrigerated && (
-                <>
-                  <button
-                    type="button"
-                    className={`${styles.btn} ${styles.btnFridge}`}
-                    onClick={() => setFridgeStock(refrigeratedInStock, false)}
-                    disabled={busy || refrigeratedInStock.length === 0}
-                  >
-                    Fridge items out
-                    {refrigeratedInStock.length > 0 && <span className={styles.chipCount}>{refrigeratedInStock.length}</span>}
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.btn} ${styles.btnFridge}`}
-                    onClick={() => setFridgeStock(refrigeratedOut, true)}
-                    disabled={busy || refrigeratedOut.length === 0}
-                  >
-                    Fridge items back in
-                    {refrigeratedOut.length > 0 && <span className={styles.chipCount}>{refrigeratedOut.length}</span>}
-                  </button>
-                </>
-              )}
               <input
                 type="text"
                 className={styles.input}
@@ -478,7 +436,7 @@ function RackCard({
   onSelect,
 }: {
   slot: Slot;
-  stock: { in_stock: boolean; pourer_oz?: number } | undefined;
+  stock: IngredientStock | undefined;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -497,6 +455,7 @@ function RackCard({
     >
       <span className={styles.rackHead}>
         <span className={styles.rackLetter}>{letter}</span>
+        {hasBottle && stock?.refrigerated && <span className={styles.fridgeTag}>Fridge</span>}
       </span>
       <span className={styles.rackBottle}>{hasBottle ? titleCase(slot.ingredient!) : "Empty slot"}</span>
       {hasBottle && stock?.pourer_oz != null && (
