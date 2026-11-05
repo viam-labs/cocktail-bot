@@ -368,7 +368,8 @@ func normalizeIngredientName(name string) string {
 	}), " ")
 }
 
-// Clears the ingredient's slot too, or it would linger as a slot-only ingredient with its counts wiped.
+// Clears every record keyed by the ingredient: a leftover slot would keep it as a slot-only ingredient, and
+// leftover pourer, category or whiskey-profile entries are invisible but still block re-adding a similar name.
 func (ds *dataStore) DeleteInventoryItem(ingredient string) error {
 	if ingredient == "" {
 		return errors.New("ingredient is required")
@@ -384,6 +385,24 @@ func (ds *dataStore) DeleteInventoryItem(ingredient string) error {
 	}
 	if slotsChanged {
 		if err := ds.persistSlotAssignmentsLocked(); err != nil {
+			return err
+		}
+	}
+	if _, ok := ds.pourerOz[ingredient]; ok {
+		delete(ds.pourerOz, ingredient)
+		if err := ds.persistPourerOzLocked(); err != nil {
+			return err
+		}
+	}
+	if _, ok := ds.categories[ingredient]; ok {
+		delete(ds.categories, ingredient)
+		if err := ds.persistCategoriesLocked(); err != nil {
+			return err
+		}
+	}
+	if _, ok := ds.whiskeyProfiles[ingredient]; ok {
+		delete(ds.whiskeyProfiles, ingredient)
+		if err := ds.persistWhiskeyProfilesLocked(); err != nil {
 			return err
 		}
 	}

@@ -241,6 +241,25 @@ func TestDeleteInventoryItemClearsSlot(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 }
 
+func TestDeleteInventoryItemClearsMetadataSoSimilarNameCanBeAdded(t *testing.T) {
+	dir := t.TempDir()
+	ds, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("coffee-liquor", true), test.ShouldBeNil)
+	test.That(t, ds.UpdatePourerOz("coffee-liquor", 1), test.ShouldBeNil)
+	test.That(t, ds.UpdateCategory("coffee-liquor", "Liqueurs"), test.ShouldBeNil)
+	test.That(t, ds.UpdateWhiskeyProfile("coffee-liquor", WhiskeyProfile{}), test.ShouldBeNil)
+
+	test.That(t, ds.DeleteInventoryItem("coffee-liquor"), test.ShouldBeNil)
+
+	ds2, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds2.PourerOz(), test.ShouldNotContainKey, "coffee-liquor")
+	test.That(t, ds2.Categories(), test.ShouldNotContainKey, "coffee-liquor")
+	test.That(t, ds2.WhiskeyProfiles(), test.ShouldNotContainKey, "coffee-liquor")
+	test.That(t, ds2.UpdateInventoryItem("Coffee Liquor", true), test.ShouldBeNil)
+}
+
 func TestParseIngredientInt(t *testing.T) {
 	ingredient, n, err := parseIngredientInt("adjust_unopened", "delta", map[string]any{"ingredient": "vodka", "delta": -1.0})
 	test.That(t, err, test.ShouldBeNil)
