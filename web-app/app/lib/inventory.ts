@@ -8,6 +8,7 @@ export interface Inventory {
 
 export interface IngredientStock {
   in_stock: boolean;
+  unopened?: number;
   slot?: string;
   pourer_oz?: number;
   category?: string;
@@ -44,4 +45,17 @@ export function isAvailable(recipe: Recipe, inventory: Inventory): boolean {
     if (!inventory.ingredients[ingredient]?.in_stock) return false;
   }
   return true;
+}
+
+// Mirrors the bartender's normalizeIngredientName: names that titleCase the same are the same ingredient.
+export function normalizeIngredientName(name: string): string {
+  return name.toLowerCase().split(/[-_\s]+/).filter(Boolean).join(" ");
+}
+
+export function findEquivalentIngredient(name: string, existing: Iterable<string>): string | undefined {
+  const want = normalizeIngredientName(name);
+  for (const candidate of existing) {
+    if (normalizeIngredientName(candidate) === want) return candidate;
+  }
+  return undefined;
 }

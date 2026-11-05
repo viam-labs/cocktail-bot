@@ -46,8 +46,8 @@ const DEV_RECIPES: Recipe[] = [
 
 const DEV_INVENTORY: Inventory = {
   ingredients: {
-    vodka: { in_stock: true },
-    "coffee-liquor": { in_stock: true },
+    vodka: { in_stock: true, unopened: 2 },
+    "coffee-liquor": { in_stock: true, unopened: 0 },
   },
 };
 
@@ -213,11 +213,42 @@ export async function updateInventoryItem(
   inStock: boolean,
 ): Promise<{ ingredient: string; in_stock: boolean }> {
   if (conn.isDev) {
-    DEV_INVENTORY.ingredients[ingredient] = { in_stock: inStock };
+    DEV_INVENTORY.ingredients[ingredient] = { ...DEV_INVENTORY.ingredients[ingredient], in_stock: inStock };
     return { ingredient, in_stock: inStock };
   }
   return doCommand(conn, BARTENDER_SERVICE_NAME, {
     update_inventory_item: { ingredient, in_stock: inStock },
+  });
+}
+
+export async function adjustUnopened(
+  conn: ViamConnection,
+  ingredient: string,
+  delta: number,
+): Promise<{ ingredient: string; unopened: number }> {
+  if (conn.isDev) {
+    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    const unopened = Math.max((stock.unopened ?? 0) + delta, 0);
+    DEV_INVENTORY.ingredients[ingredient] = { ...stock, unopened };
+    return { ingredient, unopened };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    adjust_unopened: { ingredient, delta },
+  });
+}
+
+export async function setUnopened(
+  conn: ViamConnection,
+  ingredient: string,
+  count: number,
+): Promise<{ ingredient: string; unopened: number }> {
+  if (conn.isDev) {
+    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    DEV_INVENTORY.ingredients[ingredient] = { ...stock, unopened: count };
+    return { ingredient, unopened: count };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    set_unopened: { ingredient, count },
   });
 }
 

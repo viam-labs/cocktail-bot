@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isAvailable, type Inventory } from "./inventory";
+import { findEquivalentIngredient, isAvailable, type Inventory } from "./inventory";
 import type { Recipe } from "./recipes";
 
 const inv = (overrides: Record<string, boolean>): Inventory => ({
@@ -53,4 +53,12 @@ test("isAvailable deduplicates ingredients that appear in multiple pours", () =>
 test("isAvailable ignores extra ingredients in inventory not used by the recipe", () => {
   const r = recipe([{ ingredient: "vodka", oz: 1 }]);
   assert.equal(isAvailable(r, inv({ vodka: true, gin: false })), true);
+});
+
+test("findEquivalentIngredient matches names ignoring case, spaces, dashes and underscores", () => {
+  const names = ["vodka", "coffee-liquor"];
+  assert.equal(findEquivalentIngredient("Coffee Liquor", names), "coffee-liquor");
+  assert.equal(findEquivalentIngredient(" coffee__liquor ", names), "coffee-liquor");
+  assert.equal(findEquivalentIngredient("VODKA", names), "vodka");
+  assert.equal(findEquivalentIngredient("gin", names), undefined);
 });

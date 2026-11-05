@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
@@ -85,6 +86,12 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	}
 	if raw, ok := cmd["delete_inventory_item"]; ok {
 		return b.handleDeleteInventoryItem(raw)
+	}
+	if raw, ok := cmd["adjust_unopened"]; ok {
+		return b.handleAdjustUnopened(raw)
+	}
+	if raw, ok := cmd["set_unopened"]; ok {
+		return b.handleSetUnopened(raw)
 	}
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
@@ -704,7 +711,7 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 	ingredients := make(map[string]any, len(raw.Ingredients)+len(ingredientToSlot))
 	for ingredient, stock := range raw.Ingredients {
 		slot, hasSlot := ingredientToSlot[ingredient]
-		entry := map[string]any{"in_stock": hasSlot && stock.InStock}
+		entry := map[string]any{"in_stock": hasSlot && stock.InStock, "unopened": stock.Unopened}
 		if hasSlot {
 			entry["slot"] = slot
 		}
@@ -715,7 +722,7 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 		if _, seen := ingredients[ingredient]; seen {
 			continue
 		}
-		entry := map[string]any{"in_stock": false, "slot": slot}
+		entry := map[string]any{"in_stock": false, "unopened": 0, "slot": slot}
 		decorate(entry, ingredient)
 		ingredients[ingredient] = entry
 	}
@@ -920,6 +927,51 @@ func (b *bartender) handleDeleteInventoryItem(raw any) (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{"ingredient": ingredient, "deleted": true}, nil
+}
+
+func (b *bartender) handleAdjustUnopened(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, delta, err := parseIngredientInt("adjust_unopened", "delta", raw)
+	if err != nil {
+		return nil, err
+	}
+	count, err := b.dataStore.AdjustUnopened(ingredient, delta)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "unopened": count}, nil
+}
+
+func (b *bartender) handleSetUnopened(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, count, err := parseIngredientInt("set_unopened", "count", raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.SetUnopened(ingredient, count); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "unopened": count}, nil
+}
+
+func parseIngredientInt(cmd, field string, raw any) (string, int, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", 0, fmt.Errorf("%s: expected object with 'ingredient' and '%s', got %T", cmd, field, raw)
+	}
+	ingredient, _ := m["ingredient"].(string)
+	if ingredient == "" {
+		return "", 0, fmt.Errorf("%s: 'ingredient' is required", cmd)
+	}
+	n, ok := m[field].(float64)
+	if !ok || n != math.Trunc(n) {
+		return "", 0, fmt.Errorf("%s: '%s' must be a whole number", cmd, field)
+	}
+	return ingredient, int(n), nil
 }
 
 func parseUpdateInventoryItem(raw any) (string, bool, error) {

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"unicode"
 )
 
 type Recipe struct {
@@ -68,7 +70,8 @@ type Inventory struct {
 }
 
 type IngredientStock struct {
-	InStock bool `json:"in_stock"`
+	InStock  bool `json:"in_stock"`
+	Unopened int  `json:"unopened,omitempty"`
 }
 
 type PourMenu struct {
@@ -257,8 +260,80 @@ func (ds *dataStore) UpdateInventoryItem(ingredient string, inStock bool) error 
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	ds.inventory.Ingredients[ingredient] = IngredientStock{InStock: inStock}
+	stock, exists := ds.inventory.Ingredients[ingredient]
+	if !exists {
+		if existing, ok := ds.equivalentIngredientLocked(ingredient); ok {
+			return fmt.Errorf("ingredient %q already exists as %q", ingredient, existing)
+		}
+	}
+	stock.InStock = inStock
+	ds.inventory.Ingredients[ingredient] = stock
 	return ds.persistInventoryLocked()
+}
+
+func (ds *dataStore) AdjustUnopened(ingredient string, delta int) (int, error) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	stock, err := ds.knownStockLocked(ingredient)
+	if err != nil {
+		return 0, err
+	}
+	stock.Unopened = max(stock.Unopened+delta, 0)
+	ds.inventory.Ingredients[ingredient] = stock
+	return stock.Unopened, ds.persistInventoryLocked()
+}
+
+func (ds *dataStore) SetUnopened(ingredient string, count int) error {
+	if count < 0 {
+		return fmt.Errorf("unopened count must be >= 0, got %d", count)
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	stock, err := ds.knownStockLocked(ingredient)
+	if err != nil {
+		return err
+	}
+	stock.Unopened = count
+	ds.inventory.Ingredients[ingredient] = stock
+	return ds.persistInventoryLocked()
+}
+
+// Slot-only ingredients have no inventory entry yet but are still real ingredients.
+func (ds *dataStore) knownStockLocked(ingredient string) (IngredientStock, error) {
+	if ingredient == "" {
+		return IngredientStock{}, errors.New("ingredient is required")
+	}
+	if stock, ok := ds.inventory.Ingredients[ingredient]; ok {
+		return stock, nil
+	}
+	for _, assigned := range ds.slotAssignments {
+		if assigned == ingredient {
+			return IngredientStock{}, nil
+		}
+	}
+	return IngredientStock{}, fmt.Errorf("unknown ingredient %q", ingredient)
+}
+
+func (ds *dataStore) equivalentIngredientLocked(ingredient string) (string, bool) {
+	want := normalizeIngredientName(ingredient)
+	for name := range ds.inventory.Ingredients {
+		if normalizeIngredientName(name) == want {
+			return name, true
+		}
+	}
+	for _, name := range ds.slotAssignments {
+		if name != ingredient && normalizeIngredientName(name) == want {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// Matches the web app's titleCase: names that display the same are the same ingredient.
+func normalizeIngredientName(name string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return r == '-' || r == '_' || unicode.IsSpace(r)
+	}), " ")
 }
 
 func (ds *dataStore) DeleteInventoryItem(ingredient string) error {

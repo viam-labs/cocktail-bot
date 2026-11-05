@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
 import {
+  adjustUnopened,
   clearSlotAssignment,
   clearWhiskeyProfile,
   deleteInventoryItem,
@@ -13,9 +14,10 @@ import {
   updatePourerOz,
   updateSlotAssignment,
   updateWhiskeyProfile,
+  setUnopened,
 } from "./lib/viamClient";
-import type { Inventory, WhiskeyProfile } from "./lib/inventory";
-import { WHISKEY_TRAITS } from "./lib/inventory";
+import type { IngredientStock, Inventory, WhiskeyProfile } from "./lib/inventory";
+import { WHISKEY_TRAITS, findEquivalentIngredient } from "./lib/inventory";
 import type { Recipe } from "./lib/recipes";
 import { recipeIngredients } from "./lib/recipes";
 import { Nav } from "./nav";
@@ -78,6 +80,11 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   async function addIngredient() {
     const name = newName.trim();
     if (!name) return;
+    const existing = inventory ? findEquivalentIngredient(name, Object.keys(inventory.ingredients)) : undefined;
+    if (existing) {
+      setError(`"${titleCase(existing)}" is already in inventory.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -88,6 +95,38 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  function applyUnopened(ingredient: string, next: (prev: number) => number) {
+    setInventory((inv) => {
+      const stock = inv?.ingredients[ingredient];
+      if (!inv || !stock) return inv;
+      const unopened = Math.max(next(stock.unopened ?? 0), 0);
+      return { ...inv, ingredients: { ...inv.ingredients, [ingredient]: { ...stock, unopened } } };
+    });
+  }
+
+  // Updates locally first so repeated taps feel instant; the server applies deltas, so taps from two devices both count.
+  async function changeUnopened(ingredient: string, delta: number) {
+    setError(null);
+    applyUnopened(ingredient, (prev) => prev + delta);
+    try {
+      await adjustUnopened(conn, ingredient, delta);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      load();
+    }
+  }
+
+  async function saveUnopened(ingredient: string, count: number) {
+    setError(null);
+    applyUnopened(ingredient, () => count);
+    try {
+      await setUnopened(conn, ingredient, count);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      load();
     }
   }
 
@@ -235,6 +274,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                     onFilter={setFilter}
                     selectedName={activeIngredient ?? (selectedSlot?.ingredient ?? null)}
                     onPick={pickIngredient}
+                    onAdjustUnopened={changeUnopened}
+                    onSetUnopened={saveUnopened}
                   />
                 )}
               </div>
@@ -248,6 +289,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   onAssign={assignSlot}
                   onPourerOz={savePourerOz}
                   onToggleStock={toggle}
+                  onAdjustUnopened={changeUnopened}
+                  onSetUnopened={saveUnopened}
                   onDeleteIngredient={remove}
                   onCategory={saveCategory}
                   onSaveWhiskeyProfile={saveWhiskeyProfile}
@@ -263,6 +306,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   onCategory={saveCategory}
                   onSaveWhiskeyProfile={saveWhiskeyProfile}
                   onClearWhiskeyProfile={removeWhiskeyProfile}
+                  onAdjustUnopened={changeUnopened}
+                  onSetUnopened={saveUnopened}
                   onDeleteIngredient={remove}
                   onClose={() => setSelectedIngredient(null)}
                 />
@@ -290,8 +335,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
 }
 
 type Slot = { id: string; ingredient?: string };
-type IngredientRecord = Record<string, { in_stock: boolean; slot?: string; pourer_oz?: number; category?: string }>;
-type IngredientEntry = [string, { in_stock: boolean; slot?: string; pourer_oz?: number; category?: string }];
+type IngredientRecord = Record<string, IngredientStock>;
+type IngredientEntry = [string, IngredientStock];
 
 function buildRecipeIndex(recipes: Recipe[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -416,6 +461,8 @@ function SlotPanel({
   onAssign,
   onPourerOz,
   onToggleStock,
+  onAdjustUnopened,
+  onSetUnopened,
   onDeleteIngredient,
   onCategory,
   onSaveWhiskeyProfile,
@@ -423,13 +470,15 @@ function SlotPanel({
   onClose,
 }: {
   slot: Slot;
-  stock: { in_stock: boolean; pourer_oz?: number; category?: string; whiskey_profile?: WhiskeyProfile } | undefined;
+  stock: IngredientStock | undefined;
   ingredientNames: string[];
   usedIn: string[];
   busy: boolean;
   onAssign: (slot: string, ingredient: string) => void;
   onPourerOz: (ingredient: string, oz: number) => void;
   onToggleStock: (ingredient: string, nextInStock: boolean) => void;
+  onAdjustUnopened: (ingredient: string, delta: number) => void;
+  onSetUnopened: (ingredient: string, count: number) => void;
   onDeleteIngredient: (ingredient: string) => void;
   onCategory: (ingredient: string, category: string) => void;
   onSaveWhiskeyProfile: (ingredient: string, profile: WhiskeyProfile) => void;
@@ -504,6 +553,19 @@ function SlotPanel({
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {hasBottle && (
+        <div className={styles.panelField}>
+          <span className={styles.panelLabel}>Unopened bottles</span>
+          <UnopenedStepper
+            ingredient={bottle!}
+            count={stock?.unopened ?? 0}
+            large
+            onAdjust={onAdjustUnopened}
+            onSet={onSetUnopened}
+          />
         </div>
       )}
 
@@ -584,16 +646,20 @@ function IngredientPanel({
   onCategory,
   onSaveWhiskeyProfile,
   onClearWhiskeyProfile,
+  onAdjustUnopened,
+  onSetUnopened,
   onDeleteIngredient,
   onClose,
 }: {
   name: string;
-  stock: { in_stock: boolean; pourer_oz?: number; category?: string; whiskey_profile?: WhiskeyProfile } | undefined;
+  stock: IngredientStock | undefined;
   usedIn: string[];
   busy: boolean;
   onCategory: (ingredient: string, category: string) => void;
   onSaveWhiskeyProfile: (ingredient: string, profile: WhiskeyProfile) => void;
   onClearWhiskeyProfile: (ingredient: string) => void;
+  onAdjustUnopened: (ingredient: string, delta: number) => void;
+  onSetUnopened: (ingredient: string, count: number) => void;
   onDeleteIngredient: (ingredient: string) => void;
   onClose: () => void;
 }) {
@@ -611,6 +677,17 @@ function IngredientPanel({
       </div>
 
       <div className={styles.panelBody}>
+        <div className={styles.panelField}>
+          <span className={styles.panelLabel}>Unopened bottles</span>
+          <UnopenedStepper
+            ingredient={name}
+            count={stock?.unopened ?? 0}
+            large
+            onAdjust={onAdjustUnopened}
+            onSet={onSetUnopened}
+          />
+        </div>
+
         <CategoryField ingredient={name} initial={stock?.category ?? ""} busy={busy} onSave={onCategory} />
 
         {usedIn.length > 0 && (
@@ -960,12 +1037,16 @@ function AllIngredientsSection({
   onFilter,
   selectedName,
   onPick,
+  onAdjustUnopened,
+  onSetUnopened,
 }: {
   items: IngredientEntry[];
   filter: string;
   onFilter: (next: string) => void;
   selectedName: string | null;
   onPick: (name: string) => void;
+  onAdjustUnopened: (ingredient: string, delta: number) => void;
+  onSetUnopened: (ingredient: string, count: number) => void;
 }) {
   const counts = new Map<string, number>();
   for (const [, stock] of items) {
@@ -1013,7 +1094,8 @@ function AllIngredientsSection({
       <div className={styles.tableHead}>
         <span>Ingredient</span>
         <span>Status</span>
-        <span>Pourer</span>
+        <span className={styles.colPourer}>Pourer</span>
+        <span className={styles.colUnopened}>Unopened</span>
       </div>
 
       {orderedCats.map((cat) => (
@@ -1026,6 +1108,8 @@ function AllIngredientsSection({
               stock={stock}
               selected={selectedName === name}
               onPick={onPick}
+              onAdjustUnopened={onAdjustUnopened}
+              onSetUnopened={onSetUnopened}
             />
           ))}
         </div>
@@ -1062,11 +1146,15 @@ function IngredientRow({
   stock,
   selected,
   onPick,
+  onAdjustUnopened,
+  onSetUnopened,
 }: {
   name: string;
-  stock: { in_stock: boolean; slot?: string; pourer_oz?: number };
+  stock: IngredientStock;
   selected: boolean;
   onPick: (name: string) => void;
+  onAdjustUnopened: (ingredient: string, delta: number) => void;
+  onSetUnopened: (ingredient: string, count: number) => void;
 }) {
   let dotColor = "transparent";
   let statusLabel: string;
@@ -1103,8 +1191,97 @@ function IngredientRow({
         />
         {statusLabel}
       </span>
-      <span className={styles.rowPourer}>{stock.pourer_oz != null ? `${stock.pourer_oz} oz` : "—"}</span>
+      <span className={`${styles.rowPourer} ${styles.colPourer}`}>
+        {stock.pourer_oz != null ? `${stock.pourer_oz} oz` : "—"}
+      </span>
+      <span className={styles.colUnopened}>
+        <UnopenedStepper
+          ingredient={name}
+          count={stock.unopened ?? 0}
+          onAdjust={onAdjustUnopened}
+          onSet={onSetUnopened}
+        />
+      </span>
     </div>
+  );
+}
+
+function UnopenedStepper({
+  ingredient,
+  count,
+  large = false,
+  onAdjust,
+  onSet,
+}: {
+  ingredient: string;
+  count: number;
+  large?: boolean;
+  onAdjust: (ingredient: string, delta: number) => void;
+  onSet: (ingredient: string, count: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+  const label = titleCase(ingredient);
+
+  function commit() {
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(null);
+      return;
+    }
+    if (draft === null) return;
+    const next = Number(draft);
+    setDraft(null);
+    if (draft.trim() === "" || !Number.isInteger(next) || next < 0 || next === count) return;
+    onSet(ingredient, next);
+  }
+
+  return (
+    // The row behind this is clickable; keep stepper taps from selecting it.
+    <span
+      className={`${styles.stepper} ${large ? styles.stepperLarge : ""}`}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className={styles.stepperBtn}
+        onClick={() => onAdjust(ingredient, -1)}
+        disabled={count <= 0}
+        aria-label={`One fewer unopened ${label}`}
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        className={styles.stepperInput}
+        value={draft ?? String(count)}
+        onFocus={(e) => {
+          setDraft(String(count));
+          e.target.select();
+        }}
+        onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            cancelled.current = true;
+            e.currentTarget.blur();
+          }
+        }}
+        aria-label={`Unopened ${label} bottles`}
+      />
+      <button
+        type="button"
+        className={styles.stepperBtn}
+        onClick={() => onAdjust(ingredient, 1)}
+        aria-label={`One more unopened ${label}`}
+      >
+        +
+      </button>
+    </span>
   );
 }
 

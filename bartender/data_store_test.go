@@ -97,6 +97,109 @@ func TestUpdateInventoryItemRejectsEmptyIngredient(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 }
 
+func TestUpdateInventoryItemKeepsUnopenedCount(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vodka", true), test.ShouldBeNil)
+	test.That(t, ds.SetUnopened("vodka", 3), test.ShouldBeNil)
+
+	test.That(t, ds.UpdateInventoryItem("vodka", false), test.ShouldBeNil)
+	test.That(t, ds.GetInventory().Ingredients["vodka"].Unopened, test.ShouldEqual, 3)
+}
+
+func TestUpdateInventoryItemRejectsEquivalentName(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("coffee-liquor", true), test.ShouldBeNil)
+
+	for _, name := range []string{"Coffee Liquor", "coffee_liquor", " coffee  liquor "} {
+		err := ds.UpdateInventoryItem(name, true)
+		test.That(t, err, test.ShouldNotBeNil)
+		test.That(t, err.Error(), test.ShouldContainSubstring, `already exists as "coffee-liquor"`)
+	}
+	test.That(t, len(ds.GetInventory().Ingredients), test.ShouldEqual, 1)
+}
+
+func TestUpdateInventoryItemRejectsNameMatchingSlotOnlyIngredient(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "gin"), test.ShouldBeNil)
+
+	err = ds.UpdateInventoryItem("Gin", true)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, ds.UpdateInventoryItem("gin", true), test.ShouldBeNil)
+}
+
+func TestAdjustUnopenedPersistsAndClampsAtZero(t *testing.T) {
+	dir := t.TempDir()
+	ds, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vodka", true), test.ShouldBeNil)
+
+	count, err := ds.AdjustUnopened("vodka", 2)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, count, test.ShouldEqual, 2)
+	count, err = ds.AdjustUnopened("vodka", -1)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, count, test.ShouldEqual, 1)
+
+	ds2, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds2.GetInventory().Ingredients["vodka"].Unopened, test.ShouldEqual, 1)
+
+	count, err = ds.AdjustUnopened("vodka", -5)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, count, test.ShouldEqual, 0)
+	test.That(t, ds.GetInventory().Ingredients["vodka"].InStock, test.ShouldBeTrue)
+}
+
+func TestUnopenedForSlotOnlyIngredient(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "gin"), test.ShouldBeNil)
+
+	count, err := ds.AdjustUnopened("gin", 1)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, count, test.ShouldEqual, 1)
+	test.That(t, ds.GetInventory().Ingredients["gin"].InStock, test.ShouldBeFalse)
+}
+
+func TestUnopenedRejectsUnknownIngredient(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+
+	_, err = ds.AdjustUnopened("rum", 1)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, ds.SetUnopened("rum", 1), test.ShouldNotBeNil)
+	test.That(t, ds.SetUnopened("", 1), test.ShouldNotBeNil)
+	test.That(t, len(ds.GetInventory().Ingredients), test.ShouldEqual, 0)
+}
+
+func TestSetUnopenedRejectsNegative(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vodka", true), test.ShouldBeNil)
+	test.That(t, ds.SetUnopened("vodka", -1), test.ShouldNotBeNil)
+}
+
+func TestParseIngredientInt(t *testing.T) {
+	ingredient, n, err := parseIngredientInt("adjust_unopened", "delta", map[string]any{"ingredient": "vodka", "delta": -1.0})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ingredient, test.ShouldEqual, "vodka")
+	test.That(t, n, test.ShouldEqual, -1)
+
+	for _, raw := range []any{
+		"vodka",
+		map[string]any{"delta": 1.0},
+		map[string]any{"ingredient": "vodka"},
+		map[string]any{"ingredient": "vodka", "delta": 1.5},
+		map[string]any{"ingredient": "vodka", "delta": "1"},
+	} {
+		_, _, err := parseIngredientInt("adjust_unopened", "delta", raw)
+		test.That(t, err, test.ShouldNotBeNil)
+	}
+}
+
 func TestGetInventoryReturnsCopy(t *testing.T) {
 	ds, err := newDataStore(t.TempDir())
 	test.That(t, err, test.ShouldBeNil)
