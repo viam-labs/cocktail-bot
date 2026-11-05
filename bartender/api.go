@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
@@ -86,6 +87,15 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["delete_inventory_item"]; ok {
 		return b.handleDeleteInventoryItem(raw)
 	}
+	if raw, ok := cmd["adjust_unopened"]; ok {
+		return b.handleAdjustUnopened(raw)
+	}
+	if raw, ok := cmd["set_unopened"]; ok {
+		return b.handleSetUnopened(raw)
+	}
+	if raw, ok := cmd["update_refrigerated"]; ok {
+		return b.handleUpdateRefrigerated(raw)
+	}
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
 	}
@@ -113,7 +123,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, adjust_unopened, set_unopened, update_refrigerated, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -704,7 +714,11 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 	ingredients := make(map[string]any, len(raw.Ingredients)+len(ingredientToSlot))
 	for ingredient, stock := range raw.Ingredients {
 		slot, hasSlot := ingredientToSlot[ingredient]
-		entry := map[string]any{"in_stock": hasSlot && stock.InStock}
+		entry := map[string]any{
+			"in_stock":     hasSlot && stock.InStock,
+			"unopened":     stock.Unopened,
+			"refrigerated": stock.Refrigerated,
+		}
 		if hasSlot {
 			entry["slot"] = slot
 		}
@@ -715,7 +729,7 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 		if _, seen := ingredients[ingredient]; seen {
 			continue
 		}
-		entry := map[string]any{"in_stock": false, "slot": slot}
+		entry := map[string]any{"in_stock": false, "unopened": 0, "refrigerated": false, "slot": slot}
 		decorate(entry, ingredient)
 		ingredients[ingredient] = entry
 	}
@@ -894,7 +908,7 @@ func (b *bartender) handleUpdateInventoryItem(raw any) (map[string]any, error) {
 	if b.dataStore == nil {
 		return nil, errDataStoreNotConfigured
 	}
-	ingredient, inStock, err := parseUpdateInventoryItem(raw)
+	ingredient, inStock, err := parseIngredientBool("update_inventory_item", "in_stock", raw)
 	if err != nil {
 		return nil, err
 	}
@@ -922,20 +936,82 @@ func (b *bartender) handleDeleteInventoryItem(raw any) (map[string]any, error) {
 	return map[string]any{"ingredient": ingredient, "deleted": true}, nil
 }
 
-func parseUpdateInventoryItem(raw any) (string, bool, error) {
+func (b *bartender) handleAdjustUnopened(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, delta, err := parseIngredientInt("adjust_unopened", "delta", raw)
+	if err != nil {
+		return nil, err
+	}
+	count, err := b.dataStore.AdjustUnopened(ingredient, delta)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "unopened": count}, nil
+}
+
+func (b *bartender) handleSetUnopened(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, count, err := parseIngredientInt("set_unopened", "count", raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.SetUnopened(ingredient, count); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "unopened": count}, nil
+}
+
+func (b *bartender) handleUpdateRefrigerated(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	ingredient, refrigerated, err := parseIngredientBool("update_refrigerated", "refrigerated", raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.SetRefrigerated(ingredient, refrigerated); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "refrigerated": refrigerated}, nil
+}
+
+func parseIngredientInt(cmd, field string, raw any) (string, int, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", false, fmt.Errorf("update_inventory_item: expected object with 'ingredient' and 'in_stock', got %T", raw)
+		return "", 0, fmt.Errorf("%s: expected object with 'ingredient' and '%s', got %T", cmd, field, raw)
 	}
 	ingredient, _ := m["ingredient"].(string)
 	if ingredient == "" {
-		return "", false, fmt.Errorf("update_inventory_item: 'ingredient' is required")
+		return "", 0, fmt.Errorf("%s: 'ingredient' is required", cmd)
 	}
-	inStock, ok := m["in_stock"].(bool)
+	n, ok := m[field].(float64)
+	if !ok || n != math.Trunc(n) {
+		return "", 0, fmt.Errorf("%s: '%s' must be a whole number", cmd, field)
+	}
+	if math.Abs(n) > math.MaxInt32 {
+		return "", 0, fmt.Errorf("%s: '%s' is out of range", cmd, field)
+	}
+	return ingredient, int(n), nil
+}
+
+func parseIngredientBool(cmd, field string, raw any) (string, bool, error) {
+	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", false, fmt.Errorf("update_inventory_item: 'in_stock' must be a boolean")
+		return "", false, fmt.Errorf("%s: expected object with 'ingredient' and '%s', got %T", cmd, field, raw)
 	}
-	return ingredient, inStock, nil
+	ingredient, _ := m["ingredient"].(string)
+	if ingredient == "" {
+		return "", false, fmt.Errorf("%s: 'ingredient' is required", cmd)
+	}
+	v, ok := m[field].(bool)
+	if !ok {
+		return "", false, fmt.Errorf("%s: '%s' must be a boolean", cmd, field)
+	}
+	return ingredient, v, nil
 }
 
 func (b *bartender) handleGetPourMenus() (map[string]any, error) {
