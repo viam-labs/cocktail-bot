@@ -46,11 +46,18 @@ const DEV_RECIPES: Recipe[] = [
 
 const DEV_INVENTORY: Inventory = {
   ingredients: {
-    vodka: { in_stock: true, unopened: 2 },
-    "coffee-liquor": { in_stock: true, unopened: 0 },
-    "lime-juice": { in_stock: true, unopened: 1, refrigerated: true },
-    "dry-vermouth": { in_stock: true, unopened: 0, refrigerated: true },
+    vodka: { in_stock: true, unopened: 2, slot: "slot-a-front" },
+    "coffee-liquor": { in_stock: true, unopened: 0, slot: "slot-b-front" },
+    "lime-juice": { in_stock: true, unopened: 1, refrigerated: true, slot: "slot-c-front" },
+    "dry-vermouth": { in_stock: true, unopened: 0, refrigerated: true, slot: "slot-d-back" },
+    "simple-syrup": { in_stock: false, unopened: 3, refrigerated: true },
   },
+  slots: [
+    { id: "slot-a-front", ingredient: "vodka" },
+    { id: "slot-b-front", ingredient: "coffee-liquor" },
+    { id: "slot-c-front", ingredient: "lime-juice" },
+    { id: "slot-d-back", ingredient: "dry-vermouth" },
+  ],
 };
 
 const DEV_POUR_MENUS: import("./pour_menus").PourMenu[] = [
@@ -267,22 +274,6 @@ export async function updateRefrigerated(
   return doCommand(conn, BARTENDER_SERVICE_NAME, {
     update_refrigerated: { ingredient, refrigerated },
   });
-}
-
-export async function markRefrigeratedOutOfStock(
-  conn: ViamConnection,
-): Promise<{ marked_out_of_stock: string[] }> {
-  if (conn.isDev) {
-    const changed: string[] = [];
-    for (const [name, stock] of Object.entries(DEV_INVENTORY.ingredients)) {
-      if (stock.refrigerated && stock.in_stock) {
-        DEV_INVENTORY.ingredients[name] = { ...stock, in_stock: false };
-        changed.push(name);
-      }
-    }
-    return { marked_out_of_stock: changed.sort() };
-  }
-  return doCommand(conn, BARTENDER_SERVICE_NAME, { mark_refrigerated_out_of_stock: true });
 }
 
 export async function deleteInventoryItem(

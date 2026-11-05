@@ -9,7 +9,6 @@ import {
   deleteInventoryItem,
   getInventory,
   getRecipes,
-  markRefrigeratedOutOfStock,
   updateCategory,
   updateInventoryItem,
   updatePourerOz,
@@ -145,20 +144,20 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     }
   }
 
-  async function fridgeAllOut(names: string[]) {
-    if (!confirm(`Mark ${names.length} refrigerated item${names.length === 1 ? "" : "s"} out of stock?\n\n${names.map(titleCase).join(", ")}`)) {
+  async function setFridgeStock(names: string[], inStock: boolean) {
+    const verb = inStock ? "back in stock" : "out of stock";
+    if (!confirm(`Mark ${names.length} refrigerated item${names.length === 1 ? "" : "s"} ${verb}?\n\n${names.map(titleCase).join(", ")}`)) {
       return;
     }
     setBusy(true);
     setError(null);
-    try {
-      await markRefrigeratedOutOfStock(conn);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+    const results = await Promise.allSettled(names.map((name) => updateInventoryItem(conn, name, inStock)));
+    const failed = names.filter((_, i) => results[i].status === "rejected");
+    if (failed.length > 0) {
+      setError(`Couldn't mark ${failed.map(titleCase).join(", ")} ${verb}. Try again.`);
     }
+    load();
+    setBusy(false);
   }
 
   async function savePourerOz(ingredient: string, oz: number) {
@@ -237,6 +236,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const ingredientNames = items.map(([name]) => name);
   const hasRefrigerated = items.some(([, s]) => s.refrigerated);
   const refrigeratedInStock = items.filter(([, s]) => s.refrigerated && s.in_stock).map(([name]) => name);
+  // Only slotted ingredients can be in stock, so unslotted fridge items would never leave this list.
+  const refrigeratedOut = items.filter(([, s]) => s.refrigerated && s.slot && !s.in_stock).map(([name]) => name);
   const selectedSlot = selectedSlotId ? slots.find((s) => s.id === selectedSlotId) ?? null : null;
   const selectedStock =
     inventory && selectedSlot?.ingredient ? inventory.ingredients[selectedSlot.ingredient] : undefined;
@@ -263,16 +264,26 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
             <h1 className={styles.pageTitle}>Inventory</h1>
             <div className={styles.addRow}>
               {hasRefrigerated && (
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnFridge}`}
-                  onClick={() => fridgeAllOut(refrigeratedInStock)}
-                  disabled={busy || refrigeratedInStock.length === 0}
-                  title="Mark every refrigerated ingredient out of stock, e.g. when they go into the fridge for the night"
-                >
-                  Fridge items out of stock
-                  {refrigeratedInStock.length > 0 && <span className={styles.chipCount}>{refrigeratedInStock.length}</span>}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnFridge}`}
+                    onClick={() => setFridgeStock(refrigeratedInStock, false)}
+                    disabled={busy || refrigeratedInStock.length === 0}
+                  >
+                    Fridge items out
+                    {refrigeratedInStock.length > 0 && <span className={styles.chipCount}>{refrigeratedInStock.length}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnFridge}`}
+                    onClick={() => setFridgeStock(refrigeratedOut, true)}
+                    disabled={busy || refrigeratedOut.length === 0}
+                  >
+                    Fridge items back in
+                    {refrigeratedOut.length > 0 && <span className={styles.chipCount}>{refrigeratedOut.length}</span>}
+                  </button>
+                </>
               )}
               <input
                 type="text"

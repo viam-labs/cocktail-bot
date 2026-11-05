@@ -199,35 +199,6 @@ func TestSetRefrigeratedKeepsOtherFields(t *testing.T) {
 	test.That(t, ds.SetRefrigerated("rum", true), test.ShouldNotBeNil)
 }
 
-func TestMarkRefrigeratedOutOfStock(t *testing.T) {
-	dir := t.TempDir()
-	ds, err := newDataStore(dir)
-	test.That(t, err, test.ShouldBeNil)
-	for _, name := range []string{"vermouth", "lime-juice", "simple-syrup", "vodka"} {
-		test.That(t, ds.UpdateInventoryItem(name, true), test.ShouldBeNil)
-	}
-	test.That(t, ds.UpdateInventoryItem("simple-syrup", false), test.ShouldBeNil)
-	for _, name := range []string{"vermouth", "lime-juice", "simple-syrup"} {
-		test.That(t, ds.SetRefrigerated(name, true), test.ShouldBeNil)
-	}
-
-	changed, err := ds.MarkRefrigeratedOutOfStock()
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, changed, test.ShouldResemble, []string{"lime-juice", "vermouth"})
-
-	ds2, err := newDataStore(dir)
-	test.That(t, err, test.ShouldBeNil)
-	inv := ds2.GetInventory().Ingredients
-	test.That(t, inv["vermouth"].InStock, test.ShouldBeFalse)
-	test.That(t, inv["lime-juice"].InStock, test.ShouldBeFalse)
-	test.That(t, inv["vodka"].InStock, test.ShouldBeTrue)
-	test.That(t, inv["vermouth"].Refrigerated, test.ShouldBeTrue)
-
-	changed, err = ds.MarkRefrigeratedOutOfStock()
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, changed, test.ShouldBeEmpty)
-}
-
 func TestParseIngredientInt(t *testing.T) {
 	ingredient, n, err := parseIngredientInt("adjust_unopened", "delta", map[string]any{"ingredient": "vodka", "delta": -1.0})
 	test.That(t, err, test.ShouldBeNil)

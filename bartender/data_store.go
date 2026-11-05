@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -310,24 +309,6 @@ func (ds *dataStore) SetRefrigerated(ingredient string, refrigerated bool) error
 	stock.Refrigerated = refrigerated
 	ds.inventory.Ingredients[ingredient] = stock
 	return ds.persistInventoryLocked()
-}
-
-func (ds *dataStore) MarkRefrigeratedOutOfStock() ([]string, error) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	changed := []string{}
-	for name, stock := range ds.inventory.Ingredients {
-		if stock.Refrigerated && stock.InStock {
-			stock.InStock = false
-			ds.inventory.Ingredients[name] = stock
-			changed = append(changed, name)
-		}
-	}
-	if len(changed) == 0 {
-		return changed, nil
-	}
-	sort.Strings(changed)
-	return changed, ds.persistInventoryLocked()
 }
 
 // Slot-only ingredients have no inventory entry yet but are still real ingredients.
