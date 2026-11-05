@@ -189,9 +189,11 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
 | `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "pours": [{"ingredient": "...", "oz": N}]}]}` |
-| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool, unopened: int}}}` |
+| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool, unopened: int, refrigerated: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` — creates the ingredient if new; rejects a new name that matches an existing one ignoring case, spaces, `-` and `_`. |
 | `delete_inventory_item` | `{"ingredient": "vodka"}` |
 | `adjust_unopened` | `{"ingredient": "vodka", "delta": -1}` → `{ingredient, unopened}` — changes the unopened-bottle count, floored at 0. |
 | `set_unopened` | `{"ingredient": "vodka", "count": 4}` → `{ingredient, unopened}` |
+| `update_refrigerated` | `{"ingredient": "vermouth", "refrigerated": true}` |
+| `mark_refrigerated_out_of_stock` | `{}` → `{marked_out_of_stock: [...]}` — marks every in-stock refrigerated ingredient out of stock, e.g. when they go into the fridge for the night. |
 | `get_bottles` | `{}` → `{bottles: [...]}` — switch names in `pose_switcher_names` that are also in `bottle_pourer_oz`. |

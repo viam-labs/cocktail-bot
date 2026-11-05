@@ -9,6 +9,7 @@ export interface Inventory {
 export interface IngredientStock {
   in_stock: boolean;
   unopened?: number;
+  refrigerated?: boolean;
   slot?: string;
   pourer_oz?: number;
   category?: string;

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -70,8 +71,9 @@ type Inventory struct {
 }
 
 type IngredientStock struct {
-	InStock  bool `json:"in_stock"`
-	Unopened int  `json:"unopened,omitempty"`
+	InStock      bool `json:"in_stock"`
+	Unopened     int  `json:"unopened,omitempty"`
+	Refrigerated bool `json:"refrigerated,omitempty"`
 }
 
 type PourMenu struct {
@@ -296,6 +298,36 @@ func (ds *dataStore) SetUnopened(ingredient string, count int) error {
 	stock.Unopened = count
 	ds.inventory.Ingredients[ingredient] = stock
 	return ds.persistInventoryLocked()
+}
+
+func (ds *dataStore) SetRefrigerated(ingredient string, refrigerated bool) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	stock, err := ds.knownStockLocked(ingredient)
+	if err != nil {
+		return err
+	}
+	stock.Refrigerated = refrigerated
+	ds.inventory.Ingredients[ingredient] = stock
+	return ds.persistInventoryLocked()
+}
+
+func (ds *dataStore) MarkRefrigeratedOutOfStock() ([]string, error) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	changed := []string{}
+	for name, stock := range ds.inventory.Ingredients {
+		if stock.Refrigerated && stock.InStock {
+			stock.InStock = false
+			ds.inventory.Ingredients[name] = stock
+			changed = append(changed, name)
+		}
+	}
+	if len(changed) == 0 {
+		return changed, nil
+	}
+	sort.Strings(changed)
+	return changed, ds.persistInventoryLocked()
 }
 
 // Slot-only ingredients have no inventory entry yet but are still real ingredients.

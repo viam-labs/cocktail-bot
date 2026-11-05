@@ -48,6 +48,8 @@ const DEV_INVENTORY: Inventory = {
   ingredients: {
     vodka: { in_stock: true, unopened: 2 },
     "coffee-liquor": { in_stock: true, unopened: 0 },
+    "lime-juice": { in_stock: true, unopened: 1, refrigerated: true },
+    "dry-vermouth": { in_stock: true, unopened: 0, refrigerated: true },
   },
 };
 
@@ -250,6 +252,37 @@ export async function setUnopened(
   return doCommand(conn, BARTENDER_SERVICE_NAME, {
     set_unopened: { ingredient, count },
   });
+}
+
+export async function updateRefrigerated(
+  conn: ViamConnection,
+  ingredient: string,
+  refrigerated: boolean,
+): Promise<{ ingredient: string; refrigerated: boolean }> {
+  if (conn.isDev) {
+    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    DEV_INVENTORY.ingredients[ingredient] = { ...stock, refrigerated };
+    return { ingredient, refrigerated };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    update_refrigerated: { ingredient, refrigerated },
+  });
+}
+
+export async function markRefrigeratedOutOfStock(
+  conn: ViamConnection,
+): Promise<{ marked_out_of_stock: string[] }> {
+  if (conn.isDev) {
+    const changed: string[] = [];
+    for (const [name, stock] of Object.entries(DEV_INVENTORY.ingredients)) {
+      if (stock.refrigerated && stock.in_stock) {
+        DEV_INVENTORY.ingredients[name] = { ...stock, in_stock: false };
+        changed.push(name);
+      }
+    }
+    return { marked_out_of_stock: changed.sort() };
+  }
+  return doCommand(conn, BARTENDER_SERVICE_NAME, { mark_refrigerated_out_of_stock: true });
 }
 
 export async function deleteInventoryItem(

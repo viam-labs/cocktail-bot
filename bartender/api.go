@@ -93,6 +93,12 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["set_unopened"]; ok {
 		return b.handleSetUnopened(raw)
 	}
+	if raw, ok := cmd["update_refrigerated"]; ok {
+		return b.handleUpdateRefrigerated(raw)
+	}
+	if _, ok := cmd["mark_refrigerated_out_of_stock"]; ok {
+		return b.handleMarkRefrigeratedOutOfStock()
+	}
 	if raw, ok := cmd["update_recipes"]; ok {
 		return b.handleUpdateRecipes(raw)
 	}
@@ -711,7 +717,11 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 	ingredients := make(map[string]any, len(raw.Ingredients)+len(ingredientToSlot))
 	for ingredient, stock := range raw.Ingredients {
 		slot, hasSlot := ingredientToSlot[ingredient]
-		entry := map[string]any{"in_stock": hasSlot && stock.InStock, "unopened": stock.Unopened}
+		entry := map[string]any{
+			"in_stock":     hasSlot && stock.InStock,
+			"unopened":     stock.Unopened,
+			"refrigerated": stock.Refrigerated,
+		}
 		if hasSlot {
 			entry["slot"] = slot
 		}
@@ -722,7 +732,7 @@ func (b *bartender) handleGetInventory() (map[string]any, error) {
 		if _, seen := ingredients[ingredient]; seen {
 			continue
 		}
-		entry := map[string]any{"in_stock": false, "unopened": 0, "slot": slot}
+		entry := map[string]any{"in_stock": false, "unopened": 0, "refrigerated": false, "slot": slot}
 		decorate(entry, ingredient)
 		ingredients[ingredient] = entry
 	}
@@ -956,6 +966,43 @@ func (b *bartender) handleSetUnopened(raw any) (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{"ingredient": ingredient, "unopened": count}, nil
+}
+
+func (b *bartender) handleUpdateRefrigerated(raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("update_refrigerated: expected object with 'ingredient' and 'refrigerated', got %T", raw)
+	}
+	ingredient, _ := m["ingredient"].(string)
+	if ingredient == "" {
+		return nil, errors.New("update_refrigerated: 'ingredient' is required")
+	}
+	refrigerated, ok := m["refrigerated"].(bool)
+	if !ok {
+		return nil, errors.New("update_refrigerated: 'refrigerated' must be a boolean")
+	}
+	if err := b.dataStore.SetRefrigerated(ingredient, refrigerated); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ingredient": ingredient, "refrigerated": refrigerated}, nil
+}
+
+func (b *bartender) handleMarkRefrigeratedOutOfStock() (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	changed, err := b.dataStore.MarkRefrigeratedOutOfStock()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, len(changed))
+	for i, name := range changed {
+		out[i] = name
+	}
+	return map[string]any{"marked_out_of_stock": out}, nil
 }
 
 func parseIngredientInt(cmd, field string, raw any) (string, int, error) {

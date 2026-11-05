@@ -531,6 +531,25 @@
   cursor: default;
   opacity: 0.5;
 }
+.segmentedTwo {
+  grid-template-columns: repeat(2, 1fr);
+}
+.fridgeTag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--tile);
+  color: var(--smoke);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: 1px;
+}
+.btnFridge {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .segmentActive {
   background: var(--paper);
   font-weight: 600;

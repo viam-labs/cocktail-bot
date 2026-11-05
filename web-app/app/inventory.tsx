@@ -9,9 +9,11 @@ import {
   deleteInventoryItem,
   getInventory,
   getRecipes,
+  markRefrigeratedOutOfStock,
   updateCategory,
   updateInventoryItem,
   updatePourerOz,
+  updateRefrigerated,
   updateSlotAssignment,
   updateWhiskeyProfile,
   setUnopened,
@@ -130,6 +132,35 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     }
   }
 
+  async function saveRefrigerated(ingredient: string, refrigerated: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateRefrigerated(conn, ingredient, refrigerated);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fridgeAllOut(names: string[]) {
+    if (!confirm(`Mark ${names.length} refrigerated item${names.length === 1 ? "" : "s"} out of stock?\n\n${names.map(titleCase).join(", ")}`)) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await markRefrigeratedOutOfStock(conn);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function savePourerOz(ingredient: string, oz: number) {
     setBusy(true);
     setError(null);
@@ -204,6 +235,8 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const items = inventory ? Object.entries(inventory.ingredients).sort(([a], [b]) => a.localeCompare(b)) : [];
   const slots = inventory?.slots ?? [];
   const ingredientNames = items.map(([name]) => name);
+  const hasRefrigerated = items.some(([, s]) => s.refrigerated);
+  const refrigeratedInStock = items.filter(([, s]) => s.refrigerated && s.in_stock).map(([name]) => name);
   const selectedSlot = selectedSlotId ? slots.find((s) => s.id === selectedSlotId) ?? null : null;
   const selectedStock =
     inventory && selectedSlot?.ingredient ? inventory.ingredients[selectedSlot.ingredient] : undefined;
@@ -229,6 +262,18 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
           <div className={styles.toolbar}>
             <h1 className={styles.pageTitle}>Inventory</h1>
             <div className={styles.addRow}>
+              {hasRefrigerated && (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnFridge}`}
+                  onClick={() => fridgeAllOut(refrigeratedInStock)}
+                  disabled={busy || refrigeratedInStock.length === 0}
+                  title="Mark every refrigerated ingredient out of stock, e.g. when they go into the fridge for the night"
+                >
+                  Fridge items out of stock
+                  {refrigeratedInStock.length > 0 && <span className={styles.chipCount}>{refrigeratedInStock.length}</span>}
+                </button>
+              )}
               <input
                 type="text"
                 className={styles.input}
@@ -289,6 +334,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   onAssign={assignSlot}
                   onPourerOz={savePourerOz}
                   onToggleStock={toggle}
+                  onRefrigerated={saveRefrigerated}
                   onAdjustUnopened={changeUnopened}
                   onSetUnopened={saveUnopened}
                   onDeleteIngredient={remove}
@@ -306,6 +352,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   onCategory={saveCategory}
                   onSaveWhiskeyProfile={saveWhiskeyProfile}
                   onClearWhiskeyProfile={removeWhiskeyProfile}
+                  onRefrigerated={saveRefrigerated}
                   onAdjustUnopened={changeUnopened}
                   onSetUnopened={saveUnopened}
                   onDeleteIngredient={remove}
@@ -461,6 +508,7 @@ function SlotPanel({
   onAssign,
   onPourerOz,
   onToggleStock,
+  onRefrigerated,
   onAdjustUnopened,
   onSetUnopened,
   onDeleteIngredient,
@@ -477,6 +525,7 @@ function SlotPanel({
   onAssign: (slot: string, ingredient: string) => void;
   onPourerOz: (ingredient: string, oz: number) => void;
   onToggleStock: (ingredient: string, nextInStock: boolean) => void;
+  onRefrigerated: (ingredient: string, refrigerated: boolean) => void;
   onAdjustUnopened: (ingredient: string, delta: number) => void;
   onSetUnopened: (ingredient: string, count: number) => void;
   onDeleteIngredient: (ingredient: string) => void;
@@ -570,6 +619,15 @@ function SlotPanel({
       )}
 
       {hasBottle && (
+        <StorageField
+          ingredient={bottle!}
+          refrigerated={Boolean(stock?.refrigerated)}
+          busy={busy}
+          onChange={onRefrigerated}
+        />
+      )}
+
+      {hasBottle && (
         <fieldset className={styles.panelField}>
           <legend className={styles.panelLabel}>Pourer</legend>
           <div className={styles.segmented}>
@@ -646,6 +704,7 @@ function IngredientPanel({
   onCategory,
   onSaveWhiskeyProfile,
   onClearWhiskeyProfile,
+  onRefrigerated,
   onAdjustUnopened,
   onSetUnopened,
   onDeleteIngredient,
@@ -658,6 +717,7 @@ function IngredientPanel({
   onCategory: (ingredient: string, category: string) => void;
   onSaveWhiskeyProfile: (ingredient: string, profile: WhiskeyProfile) => void;
   onClearWhiskeyProfile: (ingredient: string) => void;
+  onRefrigerated: (ingredient: string, refrigerated: boolean) => void;
   onAdjustUnopened: (ingredient: string, delta: number) => void;
   onSetUnopened: (ingredient: string, count: number) => void;
   onDeleteIngredient: (ingredient: string) => void;
@@ -687,6 +747,13 @@ function IngredientPanel({
             onSet={onSetUnopened}
           />
         </div>
+
+        <StorageField
+          ingredient={name}
+          refrigerated={Boolean(stock?.refrigerated)}
+          busy={busy}
+          onChange={onRefrigerated}
+        />
 
         <CategoryField ingredient={name} initial={stock?.category ?? ""} busy={busy} onSave={onCategory} />
 
@@ -725,6 +792,47 @@ function IngredientPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+function StorageField({
+  ingredient,
+  refrigerated,
+  busy,
+  onChange,
+}: {
+  ingredient: string;
+  refrigerated: boolean;
+  busy: boolean;
+  onChange: (ingredient: string, refrigerated: boolean) => void;
+}) {
+  const options = [
+    { label: "Room temp", value: false },
+    { label: "Refrigerated", value: true },
+  ];
+  return (
+    <fieldset className={styles.panelField}>
+      <legend className={styles.panelLabel}>Storage</legend>
+      <div className={`${styles.segmented} ${styles.segmentedTwo}`}>
+        {options.map((opt) => {
+          const active = refrigerated === opt.value;
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              aria-pressed={active}
+              className={`${styles.segment} ${active ? styles.segmentActive : ""}`}
+              onClick={() => {
+                if (!active) onChange(ingredient, opt.value);
+              }}
+              disabled={busy}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -1182,7 +1290,10 @@ function IngredientRow({
         }
       }}
     >
-      <span className={styles.rowName}>{titleCase(name)}</span>
+      <span className={styles.rowName}>
+        {titleCase(name)}
+        {stock.refrigerated && <span className={styles.fridgeTag}>Fridge</span>}
+      </span>
       <span className={styles.rowStatus}>
         <span
           className={styles.dot}
