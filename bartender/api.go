@@ -123,7 +123,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, adjust_unopened, set_unopened, update_refrigerated, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -908,7 +908,7 @@ func (b *bartender) handleUpdateInventoryItem(raw any) (map[string]any, error) {
 	if b.dataStore == nil {
 		return nil, errDataStoreNotConfigured
 	}
-	ingredient, inStock, err := parseUpdateInventoryItem(raw)
+	ingredient, inStock, err := parseIngredientBool("update_inventory_item", "in_stock", raw)
 	if err != nil {
 		return nil, err
 	}
@@ -969,17 +969,9 @@ func (b *bartender) handleUpdateRefrigerated(raw any) (map[string]any, error) {
 	if b.dataStore == nil {
 		return nil, errDataStoreNotConfigured
 	}
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("update_refrigerated: expected object with 'ingredient' and 'refrigerated', got %T", raw)
-	}
-	ingredient, _ := m["ingredient"].(string)
-	if ingredient == "" {
-		return nil, errors.New("update_refrigerated: 'ingredient' is required")
-	}
-	refrigerated, ok := m["refrigerated"].(bool)
-	if !ok {
-		return nil, errors.New("update_refrigerated: 'refrigerated' must be a boolean")
+	ingredient, refrigerated, err := parseIngredientBool("update_refrigerated", "refrigerated", raw)
+	if err != nil {
+		return nil, err
 	}
 	if err := b.dataStore.SetRefrigerated(ingredient, refrigerated); err != nil {
 		return nil, err
@@ -1000,23 +992,26 @@ func parseIngredientInt(cmd, field string, raw any) (string, int, error) {
 	if !ok || n != math.Trunc(n) {
 		return "", 0, fmt.Errorf("%s: '%s' must be a whole number", cmd, field)
 	}
+	if math.Abs(n) > math.MaxInt32 {
+		return "", 0, fmt.Errorf("%s: '%s' is out of range", cmd, field)
+	}
 	return ingredient, int(n), nil
 }
 
-func parseUpdateInventoryItem(raw any) (string, bool, error) {
+func parseIngredientBool(cmd, field string, raw any) (string, bool, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", false, fmt.Errorf("update_inventory_item: expected object with 'ingredient' and 'in_stock', got %T", raw)
+		return "", false, fmt.Errorf("%s: expected object with 'ingredient' and '%s', got %T", cmd, field, raw)
 	}
 	ingredient, _ := m["ingredient"].(string)
 	if ingredient == "" {
-		return "", false, fmt.Errorf("update_inventory_item: 'ingredient' is required")
+		return "", false, fmt.Errorf("%s: 'ingredient' is required", cmd)
 	}
-	inStock, ok := m["in_stock"].(bool)
+	v, ok := m[field].(bool)
 	if !ok {
-		return "", false, fmt.Errorf("update_inventory_item: 'in_stock' must be a boolean")
+		return "", false, fmt.Errorf("%s: '%s' must be a boolean", cmd, field)
 	}
-	return ingredient, inStock, nil
+	return ingredient, v, nil
 }
 
 func (b *bartender) handleGetPourMenus() (map[string]any, error) {

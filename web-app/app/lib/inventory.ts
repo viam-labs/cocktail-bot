@@ -47,16 +47,3 @@ export function isAvailable(recipe: Recipe, inventory: Inventory): boolean {
   }
   return true;
 }
-
-// Mirrors the bartender's normalizeIngredientName: names that titleCase the same are the same ingredient.
-export function normalizeIngredientName(name: string): string {
-  return name.toLowerCase().split(/[-_\s]+/).filter(Boolean).join(" ");
-}
-
-export function findEquivalentIngredient(name: string, existing: Iterable<string>): string | undefined {
-  const want = normalizeIngredientName(name);
-  for (const candidate of existing) {
-    if (normalizeIngredientName(candidate) === want) return candidate;
-  }
-  return undefined;
-}

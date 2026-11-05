@@ -18,7 +18,7 @@ import {
   setUnopened,
 } from "./lib/viamClient";
 import type { IngredientStock, Inventory, WhiskeyProfile } from "./lib/inventory";
-import { WHISKEY_TRAITS, findEquivalentIngredient } from "./lib/inventory";
+import { WHISKEY_TRAITS } from "./lib/inventory";
 import type { Recipe } from "./lib/recipes";
 import { recipeIngredients } from "./lib/recipes";
 import { Nav } from "./nav";
@@ -27,6 +27,8 @@ import styles from "./inventory.module.css";
 
 const COMMON_CATEGORIES = ["Spirits", "Liqueurs", "Juices & mixers", "Syrups & bitters"];
 const UNCATEGORIZED = "Uncategorized";
+// Matches the bartender's maxUnopened.
+const MAX_UNOPENED = 9999;
 
 export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
@@ -38,10 +40,25 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [selectedIngredient, setSelectedIngredient] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("All");
 
+  const unopenedSeq = useRef(0);
+  const unopenedTouchedAt = useRef(new Map<string, number>());
+  const unopenedInFlight = useRef(new Map<string, number>());
+
   const load = useCallback(() => {
+    const startSeq = unopenedSeq.current;
     Promise.all([getInventory(conn), getRecipes(conn)])
       .then(([inv, rs]) => {
-        setInventory(inv);
+        // A count changed after this fetch began is newer than what the fetch returned.
+        setInventory((prev) => {
+          const ingredients = { ...inv.ingredients };
+          for (const [name, seq] of unopenedTouchedAt.current) {
+            const local = prev?.ingredients[name];
+            if (seq > startSeq && local && ingredients[name]) {
+              ingredients[name] = { ...ingredients[name], unopened: local.unopened };
+            }
+          }
+          return { ...inv, ingredients };
+        });
         setRecipes(rs);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
@@ -81,11 +98,6 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   async function addIngredient() {
     const name = newName.trim();
     if (!name) return;
-    const existing = inventory ? findEquivalentIngredient(name, Object.keys(inventory.ingredients)) : undefined;
-    if (existing) {
-      setError(`"${titleCase(existing)}" is already in inventory.`);
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -108,27 +120,36 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     });
   }
 
-  // Updates locally first so repeated taps feel instant; the server applies deltas, so taps from two devices both count.
-  async function changeUnopened(ingredient: string, delta: number) {
+  // Updates locally first so repeated taps feel instant, then takes the server's count once the last tap lands,
+  // which also picks up changes made from other devices.
+  async function runUnopened(
+    ingredient: string,
+    next: (prev: number) => number,
+    request: () => Promise<{ unopened: number }>,
+  ) {
     setError(null);
-    applyUnopened(ingredient, (prev) => prev + delta);
+    unopenedSeq.current += 1;
+    unopenedTouchedAt.current.set(ingredient, unopenedSeq.current);
+    const inFlight = unopenedInFlight.current;
+    inFlight.set(ingredient, (inFlight.get(ingredient) ?? 0) + 1);
+    applyUnopened(ingredient, next);
     try {
-      await adjustUnopened(conn, ingredient, delta);
+      const res = await request();
+      if (inFlight.get(ingredient) === 1) applyUnopened(ingredient, () => res.unopened);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       load();
+    } finally {
+      inFlight.set(ingredient, (inFlight.get(ingredient) ?? 1) - 1);
     }
   }
 
-  async function saveUnopened(ingredient: string, count: number) {
-    setError(null);
-    applyUnopened(ingredient, () => count);
-    try {
-      await setUnopened(conn, ingredient, count);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      load();
-    }
+  function changeUnopened(ingredient: string, delta: number) {
+    return runUnopened(ingredient, (prev) => prev + delta, () => adjustUnopened(conn, ingredient, delta));
+  }
+
+  function saveUnopened(ingredient: string, count: number) {
+    return runUnopened(ingredient, () => count, () => setUnopened(conn, ingredient, count));
   }
 
   async function saveRefrigerated(ingredient: string, refrigerated: boolean) {
@@ -576,16 +597,12 @@ function SlotPanel({
       )}
 
       {hasBottle && (
-        <div className={styles.panelField}>
-          <span className={styles.panelLabel}>Unopened bottles</span>
-          <UnopenedStepper
-            ingredient={bottle!}
-            count={stock?.unopened ?? 0}
-            large
-            onAdjust={onAdjustUnopened}
-            onSet={onSetUnopened}
-          />
-        </div>
+        <UnopenedField
+          ingredient={bottle!}
+          count={stock?.unopened ?? 0}
+          onAdjust={onAdjustUnopened}
+          onSet={onSetUnopened}
+        />
       )}
 
       {hasBottle && (
@@ -707,16 +724,12 @@ function IngredientPanel({
       </div>
 
       <div className={styles.panelBody}>
-        <div className={styles.panelField}>
-          <span className={styles.panelLabel}>Unopened bottles</span>
-          <UnopenedStepper
-            ingredient={name}
-            count={stock?.unopened ?? 0}
-            large
-            onAdjust={onAdjustUnopened}
-            onSet={onSetUnopened}
-          />
-        </div>
+        <UnopenedField
+          ingredient={name}
+          count={stock?.unopened ?? 0}
+          onAdjust={onAdjustUnopened}
+          onSet={onSetUnopened}
+        />
 
         <StorageField
           ingredient={name}
@@ -762,6 +775,25 @@ function IngredientPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+function UnopenedField({
+  ingredient,
+  count,
+  onAdjust,
+  onSet,
+}: {
+  ingredient: string;
+  count: number;
+  onAdjust: (ingredient: string, delta: number) => void;
+  onSet: (ingredient: string, count: number) => void;
+}) {
+  return (
+    <div className={styles.panelField}>
+      <span className={styles.panelLabel}>Unopened bottles</span>
+      <UnopenedStepper ingredient={ingredient} count={count} large onAdjust={onAdjust} onSet={onSet} />
+    </div>
   );
 }
 
@@ -1313,7 +1345,7 @@ function UnopenedStepper({
     if (draft === null) return;
     const next = Number(draft);
     setDraft(null);
-    if (draft.trim() === "" || !Number.isInteger(next) || next < 0 || next === count) return;
+    if (draft.trim() === "" || !Number.isInteger(next) || next < 0 || next > MAX_UNOPENED || next === count) return;
     onSet(ingredient, next);
   }
 
@@ -1337,6 +1369,7 @@ function UnopenedStepper({
         type="text"
         inputMode="numeric"
         pattern="[0-9]*"
+        maxLength={String(MAX_UNOPENED).length}
         className={styles.stepperInput}
         value={draft ?? String(count)}
         onFocus={(e) => {
@@ -1358,6 +1391,7 @@ function UnopenedStepper({
         type="button"
         className={styles.stepperBtn}
         onClick={() => onAdjust(ingredient, 1)}
+        disabled={count >= MAX_UNOPENED}
         aria-label={`One more unopened ${label}`}
       >
         +

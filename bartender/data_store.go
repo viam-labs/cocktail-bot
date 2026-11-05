@@ -261,54 +261,50 @@ func (ds *dataStore) UpdateInventoryItem(ingredient string, inStock bool) error 
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	stock, exists := ds.inventory.Ingredients[ingredient]
-	if !exists {
-		if existing, ok := ds.equivalentIngredientLocked(ingredient); ok {
-			return fmt.Errorf("ingredient %q already exists as %q", ingredient, existing)
-		}
+	if err := ds.checkIngredientNameLocked(ingredient); err != nil {
+		return err
 	}
+	stock := ds.inventory.Ingredients[ingredient]
 	stock.InStock = inStock
 	ds.inventory.Ingredients[ingredient] = stock
 	return ds.persistInventoryLocked()
 }
 
+const maxUnopened = 9999
+
 func (ds *dataStore) AdjustUnopened(ingredient string, delta int) (int, error) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	stock, err := ds.knownStockLocked(ingredient)
-	if err != nil {
-		return 0, err
+	if delta < -maxUnopened || delta > maxUnopened {
+		return 0, fmt.Errorf("unopened delta must be between %d and %d, got %d", -maxUnopened, maxUnopened, delta)
 	}
-	stock.Unopened = max(stock.Unopened+delta, 0)
-	ds.inventory.Ingredients[ingredient] = stock
-	return stock.Unopened, ds.persistInventoryLocked()
+	stock, err := ds.updateKnownStock(ingredient, func(s *IngredientStock) {
+		s.Unopened = min(max(s.Unopened+delta, 0), maxUnopened)
+	})
+	return stock.Unopened, err
 }
 
 func (ds *dataStore) SetUnopened(ingredient string, count int) error {
-	if count < 0 {
-		return fmt.Errorf("unopened count must be >= 0, got %d", count)
+	if count < 0 || count > maxUnopened {
+		return fmt.Errorf("unopened count must be between 0 and %d, got %d", maxUnopened, count)
 	}
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	stock, err := ds.knownStockLocked(ingredient)
-	if err != nil {
-		return err
-	}
-	stock.Unopened = count
-	ds.inventory.Ingredients[ingredient] = stock
-	return ds.persistInventoryLocked()
+	_, err := ds.updateKnownStock(ingredient, func(s *IngredientStock) { s.Unopened = count })
+	return err
 }
 
 func (ds *dataStore) SetRefrigerated(ingredient string, refrigerated bool) error {
+	_, err := ds.updateKnownStock(ingredient, func(s *IngredientStock) { s.Refrigerated = refrigerated })
+	return err
+}
+
+func (ds *dataStore) updateKnownStock(ingredient string, update func(*IngredientStock)) (IngredientStock, error) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	stock, err := ds.knownStockLocked(ingredient)
 	if err != nil {
-		return err
+		return IngredientStock{}, err
 	}
-	stock.Refrigerated = refrigerated
+	update(&stock)
 	ds.inventory.Ingredients[ingredient] = stock
-	return ds.persistInventoryLocked()
+	return stock, ds.persistInventoryLocked()
 }
 
 // Slot-only ingredients have no inventory entry yet but are still real ingredients.
@@ -327,19 +323,42 @@ func (ds *dataStore) knownStockLocked(ingredient string) (IngredientStock, error
 	return IngredientStock{}, fmt.Errorf("unknown ingredient %q", ingredient)
 }
 
-func (ds *dataStore) equivalentIngredientLocked(ingredient string) (string, bool) {
+// Rejects a new spelling of an ingredient that's already stored under a name that displays the same.
+func (ds *dataStore) checkIngredientNameLocked(ingredient string) error {
 	want := normalizeIngredientName(ingredient)
-	for name := range ds.inventory.Ingredients {
-		if normalizeIngredientName(name) == want {
-			return name, true
+	var match string
+	for _, name := range ds.ingredientNamesLocked() {
+		if name == ingredient {
+			return nil
 		}
+		if match == "" && normalizeIngredientName(name) == want {
+			match = name
+		}
+	}
+	if match != "" {
+		return fmt.Errorf("ingredient %q already exists as %q", ingredient, match)
+	}
+	return nil
+}
+
+func (ds *dataStore) ingredientNamesLocked() []string {
+	names := make([]string, 0, len(ds.inventory.Ingredients)+len(ds.slotAssignments)+len(ds.pourerOz)+len(ds.categories)+len(ds.whiskeyProfiles))
+	for name := range ds.inventory.Ingredients {
+		names = append(names, name)
 	}
 	for _, name := range ds.slotAssignments {
-		if name != ingredient && normalizeIngredientName(name) == want {
-			return name, true
-		}
+		names = append(names, name)
 	}
-	return "", false
+	for name := range ds.pourerOz {
+		names = append(names, name)
+	}
+	for name := range ds.categories {
+		names = append(names, name)
+	}
+	for name := range ds.whiskeyProfiles {
+		names = append(names, name)
+	}
+	return names
 }
 
 // Matches the web app's titleCase: names that display the same are the same ingredient.
@@ -349,12 +368,25 @@ func normalizeIngredientName(name string) string {
 	}), " ")
 }
 
+// Clears the ingredient's slot too, or it would linger as a slot-only ingredient with its counts wiped.
 func (ds *dataStore) DeleteInventoryItem(ingredient string) error {
 	if ingredient == "" {
 		return errors.New("ingredient is required")
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
+	slotsChanged := false
+	for slot, assigned := range ds.slotAssignments {
+		if assigned == ingredient {
+			delete(ds.slotAssignments, slot)
+			slotsChanged = true
+		}
+	}
+	if slotsChanged {
+		if err := ds.persistSlotAssignmentsLocked(); err != nil {
+			return err
+		}
+	}
 	delete(ds.inventory.Ingredients, ingredient)
 	return ds.persistInventoryLocked()
 }
@@ -398,6 +430,9 @@ func (ds *dataStore) UpdateSlotAssignment(slot, ingredient string) error {
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
+	if err := ds.checkIngredientNameLocked(ingredient); err != nil {
+		return err
+	}
 	for existing, ing := range ds.slotAssignments {
 		if ing == ingredient && existing != slot {
 			return fmt.Errorf("ingredient %q is already assigned to slot %q", ingredient, existing)
@@ -472,6 +507,9 @@ func (ds *dataStore) UpdatePourerOz(ingredient string, oz float64) error {
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
+	if err := ds.checkIngredientNameLocked(ingredient); err != nil {
+		return err
+	}
 	ds.pourerOz[ingredient] = oz
 	return ds.persistPourerOzLocked()
 }
@@ -531,6 +569,9 @@ func (ds *dataStore) UpdateCategory(ingredient, category string) error {
 	if category == "" {
 		delete(ds.categories, ingredient)
 	} else {
+		if err := ds.checkIngredientNameLocked(ingredient); err != nil {
+			return err
+		}
 		ds.categories[ingredient] = category
 	}
 	return ds.persistCategoriesLocked()
@@ -588,6 +629,9 @@ func (ds *dataStore) UpdateWhiskeyProfile(ingredient string, profile WhiskeyProf
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
+	if err := ds.checkIngredientNameLocked(ingredient); err != nil {
+		return err
+	}
 	ds.whiskeyProfiles[ingredient] = profile
 	return ds.persistWhiskeyProfilesLocked()
 }

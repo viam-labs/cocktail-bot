@@ -199,6 +199,48 @@ func TestSetRefrigeratedKeepsOtherFields(t *testing.T) {
 	test.That(t, ds.SetRefrigerated("rum", true), test.ShouldNotBeNil)
 }
 
+func TestOtherWritesRejectEquivalentName(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("coffee-liquor", true), test.ShouldBeNil)
+
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "Coffee Liquor"), test.ShouldNotBeNil)
+	test.That(t, ds.UpdatePourerOz("Coffee Liquor", 1), test.ShouldNotBeNil)
+	test.That(t, ds.UpdateCategory("Coffee Liquor", "liqueur"), test.ShouldNotBeNil)
+	test.That(t, ds.UpdateWhiskeyProfile("Coffee Liquor", WhiskeyProfile{}), test.ShouldNotBeNil)
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "coffee-liquor"), test.ShouldBeNil)
+
+	test.That(t, ds.UpdateCategory("simple-syrup", "syrup"), test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("Simple Syrup", true), test.ShouldNotBeNil)
+}
+
+func TestUnopenedBounds(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vodka", true), test.ShouldBeNil)
+
+	test.That(t, ds.SetUnopened("vodka", maxUnopened+1), test.ShouldNotBeNil)
+	_, err = ds.AdjustUnopened("vodka", maxUnopened+1)
+	test.That(t, err, test.ShouldNotBeNil)
+
+	test.That(t, ds.SetUnopened("vodka", maxUnopened), test.ShouldBeNil)
+	count, err := ds.AdjustUnopened("vodka", 1)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, count, test.ShouldEqual, maxUnopened)
+}
+
+func TestDeleteInventoryItemClearsSlot(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "vermouth"), test.ShouldBeNil)
+	test.That(t, ds.SetUnopened("vermouth", 2), test.ShouldBeNil)
+
+	test.That(t, ds.DeleteInventoryItem("vermouth"), test.ShouldBeNil)
+	test.That(t, len(ds.SlotAssignments()), test.ShouldEqual, 0)
+	_, err = ds.AdjustUnopened("vermouth", 1)
+	test.That(t, err, test.ShouldNotBeNil)
+}
+
 func TestParseIngredientInt(t *testing.T) {
 	ingredient, n, err := parseIngredientInt("adjust_unopened", "delta", map[string]any{"ingredient": "vodka", "delta": -1.0})
 	test.That(t, err, test.ShouldBeNil)
@@ -211,6 +253,7 @@ func TestParseIngredientInt(t *testing.T) {
 		map[string]any{"ingredient": "vodka"},
 		map[string]any{"ingredient": "vodka", "delta": 1.5},
 		map[string]any{"ingredient": "vodka", "delta": "1"},
+		map[string]any{"ingredient": "vodka", "delta": 1e20},
 	} {
 		_, _, err := parseIngredientInt("adjust_unopened", "delta", raw)
 		test.That(t, err, test.ShouldNotBeNil)

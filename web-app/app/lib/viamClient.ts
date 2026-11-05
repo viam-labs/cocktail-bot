@@ -1,7 +1,7 @@
 import type { JsonValue } from "@bufbuild/protobuf";
 import type { ViamClient, RobotClient } from "@viamrobotics/sdk";
 import type { Recipe, RecipeStep } from "./recipes";
-import type { Inventory, WhiskeyProfile } from "./inventory";
+import type { IngredientStock, Inventory, WhiskeyProfile } from "./inventory";
 
 const BARTENDER_SERVICE_NAME = "bartender";
 
@@ -230,13 +230,20 @@ export async function updateInventoryItem(
   });
 }
 
+function devKnownStock(ingredient: string): IngredientStock {
+  const stock = DEV_INVENTORY.ingredients[ingredient];
+  if (stock) return stock;
+  if (DEV_INVENTORY.slots?.some((s) => s.ingredient === ingredient)) return { in_stock: false };
+  throw new Error(`unknown ingredient "${ingredient}"`);
+}
+
 export async function adjustUnopened(
   conn: ViamConnection,
   ingredient: string,
   delta: number,
 ): Promise<{ ingredient: string; unopened: number }> {
   if (conn.isDev) {
-    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    const stock = devKnownStock(ingredient);
     const unopened = Math.max((stock.unopened ?? 0) + delta, 0);
     DEV_INVENTORY.ingredients[ingredient] = { ...stock, unopened };
     return { ingredient, unopened };
@@ -252,7 +259,7 @@ export async function setUnopened(
   count: number,
 ): Promise<{ ingredient: string; unopened: number }> {
   if (conn.isDev) {
-    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    const stock = devKnownStock(ingredient);
     DEV_INVENTORY.ingredients[ingredient] = { ...stock, unopened: count };
     return { ingredient, unopened: count };
   }
@@ -267,7 +274,7 @@ export async function updateRefrigerated(
   refrigerated: boolean,
 ): Promise<{ ingredient: string; refrigerated: boolean }> {
   if (conn.isDev) {
-    const stock = DEV_INVENTORY.ingredients[ingredient] ?? { in_stock: false };
+    const stock = devKnownStock(ingredient);
     DEV_INVENTORY.ingredients[ingredient] = { ...stock, refrigerated };
     return { ingredient, refrigerated };
   }
@@ -282,6 +289,7 @@ export async function deleteInventoryItem(
 ): Promise<{ ingredient: string; deleted: boolean }> {
   if (conn.isDev) {
     delete DEV_INVENTORY.ingredients[ingredient];
+    DEV_INVENTORY.slots = DEV_INVENTORY.slots?.map((s) => (s.ingredient === ingredient ? { id: s.id } : s));
     return { ingredient, deleted: true };
   }
   return doCommand(conn, BARTENDER_SERVICE_NAME, {
