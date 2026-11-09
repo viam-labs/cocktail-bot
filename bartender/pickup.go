@@ -273,6 +273,9 @@ func (b *bartender) slotOccupied(slotName string) bool {
 }
 
 func (b *bartender) shuffleBlockerToParking(ctx context.Context, blockerName string) error {
+	if err := b.checkParkingClear(); err != nil {
+		return err
+	}
 	if b.cfg.ParkingSwitchName == "" {
 		return fmt.Errorf("blocker %q is in the way but parking_switch_name is unset", blockerName)
 	}

@@ -143,6 +143,7 @@ func (b *bartender) handleGetQueue() (map[string]any, error) {
 func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	b.detachHeld()
+	b.detachParked()
 	return map[string]any{"cancelled": cancelled}, nil
 }
 
@@ -1117,6 +1118,9 @@ func parseRotateShakers(raw any) (string, error) {
 }
 
 func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]any, error) {
+	if err := b.checkParkingClear(); err != nil {
+		return nil, err
+	}
 	drinkID, recipe, quantity, err := parseMakeCocktail(raw)
 	if err != nil {
 		return nil, err
@@ -1141,6 +1145,9 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	}
 	if b.cfg.RecipeDefaults == nil {
 		return nil, errors.New("make_cocktail: recipe_defaults not configured on bartender service")
+	}
+	if err := b.validateRecipe(*recipe); err != nil {
+		return nil, err
 	}
 
 	name := recipe.Name

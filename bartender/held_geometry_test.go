@@ -1,8 +1,11 @@
 package bartender
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/test"
 )
 
@@ -43,4 +46,39 @@ func TestBuildHeldObjectFrameCylinder(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, frame, test.ShouldNotBeNil)
 	test.That(t, frame.Name(), test.ShouldEqual, heldObjectFrameName)
+}
+
+func TestCancelClearsParkedGeometry(t *testing.T) {
+	b := &bartender{cfg: &Config{
+		HeldBottleGeometry: &HeldObjectGeometry{Type: "cylinder", RadiusMM: 35, LengthMM: 300, ZOffsetMM: 150},
+	}}
+	test.That(t, b.attachParked(spatialmath.NewZeroPose()), test.ShouldBeNil)
+	test.That(t, b.attachParked(spatialmath.NewZeroPose()), test.ShouldNotBeNil)
+
+	_, err := b.handleCancel()
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, b.parkedGeomFrame, test.ShouldBeNil)
+	test.That(t, b.attachParked(spatialmath.NewZeroPose()), test.ShouldBeNil)
+}
+
+func parkedBartender(t *testing.T) *bartender {
+	t.Helper()
+	b := &bartender{cfg: &Config{
+		ParkingSwitchName:  "parking",
+		HeldBottleGeometry: &HeldObjectGeometry{Type: "cylinder", RadiusMM: 35, LengthMM: 300, ZOffsetMM: 150},
+	}}
+	test.That(t, b.attachParked(spatialmath.NewZeroPose()), test.ShouldBeNil)
+	return b
+}
+
+func TestMakeCocktailRefusedWhileParkingOccupied(t *testing.T) {
+	b := parkedBartender(t)
+	_, err := b.handleMakeCocktail(context.Background(), map[string]any{"drink_id": "anything"})
+	test.That(t, errors.Is(err, errParkingOccupied), test.ShouldBeTrue)
+}
+
+func TestShuffleToParkingRefusedBeforeMotionWhileOccupied(t *testing.T) {
+	b := parkedBartender(t)
+	err := b.shuffleBlockerToParking(context.Background(), "blocker")
+	test.That(t, errors.Is(err, errParkingOccupied), test.ShouldBeTrue)
 }

@@ -120,6 +120,15 @@ func (b *bartender) detachParked() {
 	b.parkedGeomFrame = nil
 }
 
+var errParkingOccupied = errors.New("bottle parking spot occupied. move bottle back and press Cancel on the stream deck")
+
+func (b *bartender) checkParkingClear() error {
+	if b.parkedGeomFrame != nil {
+		return errParkingOccupied
+	}
+	return nil
+}
+
 // gripperOpen opens the gripper and detaches the held-object geometry — opening
 // the claws means we are no longer holding whatever was attached. Call this
 // instead of b.gripper.Open so the virtual capsule can't drift out of sync.
