@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 const defaultPourIntoShakerDwellMs = 500
@@ -29,23 +31,28 @@ func (b *bartender) slotForIngredient(ingredient string) (string, error) {
 	return "", fmt.Errorf("ingredient %q is not assigned to any slot", ingredient)
 }
 
-func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz float64) error {
+func (b *bartender) resolvePour(ingredient string, oz float64) (toggleswitch.Switch, int, error) {
 	slot, err := b.slotForIngredient(ingredient)
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
 	bottleSw, err := b.findSwitch(slot)
 	if err != nil {
-		return err
-	}
-	if b.dataStore == nil {
-		return errDataStoreNotConfigured
+		return nil, 0, err
 	}
 	pourerOz, ok := b.dataStore.PourerOz()[ingredient]
 	if !ok {
-		return fmt.Errorf("no pourer oz configured for ingredient %q", ingredient)
+		return nil, 0, fmt.Errorf("no pourer oz configured for ingredient %q", ingredient)
 	}
 	pours, err := pourCount(oz, pourerOz)
+	if err != nil {
+		return nil, 0, err
+	}
+	return bottleSw, pours, nil
+}
+
+func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz float64) error {
+	bottleSw, pours, err := b.resolvePour(ingredient, oz)
 	if err != nil {
 		return err
 	}

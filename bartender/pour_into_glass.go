@@ -12,22 +12,7 @@ const (
 )
 
 func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz float64) error {
-	slot, err := b.slotForIngredient(ingredient)
-	if err != nil {
-		return err
-	}
-	bottleSw, err := b.findSwitch(slot)
-	if err != nil {
-		return err
-	}
-	if b.dataStore == nil {
-		return errDataStoreNotConfigured
-	}
-	pourerOz, ok := b.dataStore.PourerOz()[ingredient]
-	if !ok {
-		return fmt.Errorf("no pourer oz configured for ingredient %q", ingredient)
-	}
-	pours, err := pourCount(oz, pourerOz)
+	bottleSw, pours, err := b.resolvePour(ingredient, oz)
 	if err != nil {
 		return err
 	}

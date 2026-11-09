@@ -4,7 +4,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+// validateRecipe catches step problems that would otherwise surface partway
+// through a drink, after earlier steps have already poured or iced.
+func (b *bartender) validateRecipe(recipe Recipe) error {
+	var problems []string
+	for i, step := range stepsFor(recipe) {
+		switch step.Kind {
+		case "pour":
+			if step.Ingredient == "" {
+				problems = append(problems, fmt.Sprintf("step %d: pour ingredient is required", i+1))
+				continue
+			}
+			if _, _, err := b.resolvePour(step.Ingredient, step.Oz); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", step.Ingredient, err))
+			}
+		case "ice":
+			if step.IceType != "" && step.IceType != "crushed" {
+				problems = append(problems, fmt.Sprintf("step %d ice type %q: not yet supported", i+1, step.IceType))
+			}
+		case "mix":
+			if step.MixMode != "" && step.MixMode != "shake" && step.MixMode != "stir" {
+				problems = append(problems, fmt.Sprintf("step %d mix mode %q is not yet supported", i+1, step.MixMode))
+			}
+		case "strain":
+		default:
+			problems = append(problems, fmt.Sprintf("step %d: unknown kind %q", i+1, step.Kind))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
 
 func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Recipe) error {
 	if recipe == nil {
