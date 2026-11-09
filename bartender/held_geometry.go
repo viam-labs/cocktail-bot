@@ -137,6 +137,17 @@ func (b *bartender) gripperOpen(ctx context.Context) error {
 		return err
 	}
 	b.detachHeld()
+	b.holding = false
+	return nil
+}
+
+// Call this instead of b.gripper.Grab so moves after it use the holding speed,
+// including grabs with no held geometry such as the strainer filter.
+func (b *bartender) gripperGrab(ctx context.Context) error {
+	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		return err
+	}
+	b.holding = true
 	return nil
 }
 

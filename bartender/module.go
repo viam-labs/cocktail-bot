@@ -41,6 +41,7 @@ type bartender struct {
 	poseSwitches    []toggleswitch.Switch
 	heldGeomFrame   referenceframe.Frame
 	parkedGeomFrame referenceframe.Frame
+	holding         bool
 	filesaver       *filesaver.Saver
 	queue           *order.Queue
 	orderSink       orderSensorSink

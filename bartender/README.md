@@ -23,10 +23,12 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `pour_mouth_offset_mm` | number | Optional | Horizontal gripper-to-bottle-mouth distance while pouring, on the side the bottle tips. Negative flips the side. | 100 |
 | `max_pour_offset_mm` | number | Optional | Max world-frame shift of `serve-approach`/`serve-tilt` from their saved positions; glasses beyond fail before pickup. | 300 |
 | `pour_into_shaker_dwell_ms` | int | Optional | Dwell at `pour-tilt` on each pour into the shaker. | 500 |
-| `pour_vel_degs_per_sec` | number | Optional | Angular velocity on pour-tilt moves. Arm default otherwise. |  |
-| `pour_acc_degs_per_sec2` | number | Optional | Angular acceleration on pour-tilt moves. |  |
-| `serve_vel_degs_per_sec` | number | Optional | Angular velocity on serve-tilt moves. When unset, falls back to per-pose vel on `serve-tilt`. |  |
-| `serve_acc_degs_per_sec2` | number | Optional | Angular acceleration on serve-tilt moves. |  |
+| `empty_vel_degs_per_sec` | number | Optional | Joint speed for moves with nothing in the gripper, and for carrying the stirrer (except into `stir-storage-place`, which uses holding). | arm's `speed_degs_per_sec` |
+| `empty_acc_degs_per_sec2` | number | Optional | Joint acceleration for moves with nothing in the gripper. | arm's `acceleration_degs_per_sec_per_sec` |
+| `holding_vel_degs_per_sec` | number | Optional | Joint speed for moves while the gripper holds something fragile (bottle, shaker, filter), and for moving the open gripper in around or back out from a bottle, shaker, or stirrer. | arm's `speed_degs_per_sec` |
+| `holding_acc_degs_per_sec2` | number | Optional | Joint acceleration for moves while the gripper holds something. | arm's `acceleration_degs_per_sec_per_sec` |
+| `interaction_vel_degs_per_sec` | number | Optional | Joint speed for slow interactions: the tilt to `serve-tilt`, the tilt to `strain-tilt`, reaching down to grab the strainer filter (`filter-a-lift`), raising, bobbing, and lowering inside the mixer, stirring, and pushing the ice lever. | arm's `speed_degs_per_sec` |
+| `interaction_acc_degs_per_sec2` | number | Optional | Joint acceleration for slow interactions. | arm's `acceleration_degs_per_sec_per_sec` |
 | `mixer_protector_obstacle` | string | Optional | Obstacle name whose collisions are allowed during `mix()` only. |  |
 | `mixer_power_switch_name` | string | Optional | Switch that powers the mixer, e.g. `viam:zigbee2mqtt:switch` on a smart plug. `mix()` turns it on once the shaker is seated and off before withdrawing (and on error, cancel, or close). When set, the switch is a required dependency. If switching fails, the order continues and a Slack warning asks for the mixer to be switched by hand. Empty leaves the mixer manual. |  |
 | `bottles_protector_obstacle` | string | Optional | Obstacle name whose collisions are allowed during `pickupBottle` and `returnBottle` only. |  |

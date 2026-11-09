@@ -42,14 +42,13 @@ func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch
 	if _, err := b.carryHeldLevelToResolved(ctx, approach, station+":"+poseServeApproach+":carry"); err != nil {
 		return fmt.Errorf("carry to serve-approach: %w", err)
 	}
-	serveOpts := b.serveMoveOptions()
-	if _, err := b.moveToResolvedPose(ctx, tilt, station+":"+poseServeTilt, nil, serveOpts); err != nil {
+	if _, err := b.moveToResolvedPose(interacting(ctx), tilt, station+":"+poseServeTilt, nil); err != nil {
 		return fmt.Errorf("tilt shaker over glass: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(pourMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("pour dwell: %w", err)
 	}
-	if _, err := b.moveToResolvedPose(ctx, approach, station+":"+poseServeApproach, nil, serveOpts); err != nil {
+	if _, err := b.moveToResolvedPose(ctx, approach, station+":"+poseServeApproach, nil); err != nil {
 		return fmt.Errorf("untilt shaker over glass: %w", err)
 	}
 
@@ -62,10 +61,10 @@ func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("release shaker grip at lift: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeApproach, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeHover, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-retreat from shaker: %w", err)
 	}
 	return nil

@@ -33,8 +33,6 @@ type poseData struct {
 	pose                            spatialmath.Pose
 	refFrame                        string
 	componentName                   string
-	velDegsPerSec                   float64
-	accDegsPerSec2                  float64
 	lineToleranceMm                 float64
 	orientationToleranceDegs        float64
 	noSpillOrientationToleranceDegs float64
@@ -106,8 +104,6 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		refFrame = referenceframe.World
 	}
 	componentName, _ := resp["component_name"].(string)
-	vel, _ := resp["vel_degs_per_sec"].(float64)
-	acc, _ := resp["acc_degs_per_sec2"].(float64)
 	lineTol, _ := resp["line_tolerance_mm"].(float64)
 	oriTol, _ := resp["orientation_tolerance_degs"].(float64)
 	noSpillTol, _ := resp["no_spill_orientation_tolerance_degs"].(float64)
@@ -144,8 +140,6 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		),
 		refFrame:                        refFrame,
 		componentName:                   componentName,
-		velDegsPerSec:                   vel,
-		accDegsPerSec2:                  acc,
 		lineToleranceMm:                 lineTol,
 		orientationToleranceDegs:        oriTol,
 		noSpillOrientationToleranceDegs: noSpillTol,
@@ -246,10 +240,7 @@ func (b *bartender) savePlan(ctx context.Context, req *armplanning.PlanRequest, 
 	})
 }
 
-func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
-	if opts == nil {
-		opts = moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
-	}
+func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints) (time.Duration, error) {
 	if poseAllowed := b.poseAllowedCollisions(pd); len(poseAllowed) > 0 {
 		constraints = b.withAllowedCollisions(constraints, poseAllowed)
 	}
@@ -288,7 +279,7 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
-	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, b.moveOptions(ctx), nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
@@ -299,15 +290,7 @@ func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Du
 	if err != nil {
 		return 0, err
 	}
-	return b.moveToResolvedPose(ctx, pd, poseName, nil, nil)
-}
-
-func (b *bartender) moveArmToPoseWithOpts(ctx context.Context, poseName string, opts *arm.MoveOptions) (time.Duration, error) {
-	pd, _, err := b.resolvePose(ctx, poseName)
-	if err != nil {
-		return 0, err
-	}
-	return b.moveToResolvedPose(ctx, pd, poseName, nil, opts)
+	return b.moveToResolvedPose(ctx, pd, poseName, nil)
 }
 
 func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
@@ -317,7 +300,7 @@ func (b *bartender) moveArmToPoseOnSwitch(ctx context.Context, sw toggleswitch.S
 	}
 	label := sw.Name().ShortName() + ":" + poseName
 	constraints := b.withAllowedCollisions(nil, allowed)
-	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveToResolvedPose(ctx, pd, label, constraints)
 }
 
 // moveArmToJointGoalOnSwitch plans to a joint-position goal and executes.
@@ -332,7 +315,6 @@ func (b *bartender) moveArmToJointGoalOnSwitch(ctx context.Context, sw toggleswi
 		return 0, fmt.Errorf("pose %q on %q is not a joint-space pose (joint_positions_degs is empty)", poseName, sw.Name().ShortName())
 	}
 	label := sw.Name().ShortName() + ":" + poseName + ":joint-goal"
-	opts := moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
@@ -360,7 +342,7 @@ func (b *bartender) moveArmToJointGoalOnSwitch(ctx context.Context, sw toggleswi
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
-	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, b.moveOptions(ctx), nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
@@ -516,7 +498,7 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 		}},
 	}
 	constraints = b.withAllowedCollisions(constraints, allowed)
-	return b.moveToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveToResolvedPose(ctx, pd, label, constraints)
 }
 
 // Straight-line + no-spill constraint. For lifting/lowering a bottle held in the
@@ -538,7 +520,7 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 		},
 	}
 	constraints = b.withAllowedCollisions(constraints, allowed)
-	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveHeldToResolvedPose(ctx, pd, label, constraints)
 }
 
 // Carry = plan-wide orientation constraint on the held object's long axis, so
@@ -559,16 +541,13 @@ func (b *bartender) carryHeldLevelToResolved(ctx context.Context, pd *poseData, 
 		},
 	}
 	constraints = b.withAllowedCollisions(constraints, allowed)
-	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
+	return b.moveHeldToResolvedPose(ctx, pd, label, constraints)
 }
 
 // moveHeldToResolvedPose plans with the held-object frame as the goal, so any
 // orientation constraint bounds the shaker's own long axis rather than the
 // gripper's tool axis. Falls back to moveToResolvedPose when nothing is held.
-func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
-	if opts == nil {
-		opts = moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
-	}
+func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints) (time.Duration, error) {
 	if poseAllowed := b.poseAllowedCollisions(pd); len(poseAllowed) > 0 {
 		constraints = b.withAllowedCollisions(constraints, poseAllowed)
 	}
@@ -576,7 +555,7 @@ func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, la
 		constraints = b.withAllowedCollisions(constraints, heldAllowed)
 	}
 	if b.heldGeomFrame == nil {
-		return b.moveToResolvedPose(ctx, pd, label, constraints, opts)
+		return b.moveToResolvedPose(ctx, pd, label, constraints)
 	}
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
@@ -623,7 +602,7 @@ func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, la
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
-	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
+	if err := b.arm.MoveThroughJointPositions(ctx, positions, b.moveOptions(ctx), nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
@@ -699,7 +678,7 @@ func (b *bartender) circleAroundPose(ctx context.Context, sw toggleswitch.Switch
 	if err != nil {
 		return fmt.Errorf("extract trajectory: %w", err)
 	}
-	opts := moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	opts := b.moveOptions(ctx)
 	deadline := time.Now().Add(duration)
 	for rev := 1; time.Now().Before(deadline); rev++ {
 		if err := ctx.Err(); err != nil {
@@ -739,10 +718,43 @@ func moveOptionsFromCfg(velDegsPerSec, accDegsPerSec2 float64) *arm.MoveOptions 
 	}
 }
 
-func (b *bartender) pourMoveOptions() *arm.MoveOptions {
-	return moveOptionsFromCfg(b.cfg.PourVelDegsPerSec, b.cfg.PourAccDegsPerSec2)
+type speedClass int
+
+const (
+	speedByGripper speedClass = iota
+	speedEmpty
+	speedHolding
+	speedInteraction
+)
+
+type speedKey struct{}
+
+// interacting marks every move made with the returned context as a slow interaction.
+func interacting(ctx context.Context) context.Context {
+	return context.WithValue(ctx, speedKey{}, speedInteraction)
 }
 
-func (b *bartender) serveMoveOptions() *arm.MoveOptions {
-	return moveOptionsFromCfg(b.cfg.ServeVelDegsPerSec, b.cfg.ServeAccDegsPerSec2)
+// sturdyHeld runs moves at the empty-gripper speed while holding something that isn't
+// fragile, like the stirrer.
+func sturdyHeld(ctx context.Context) context.Context {
+	return context.WithValue(ctx, speedKey{}, speedEmpty)
+}
+
+// holdingSpeed runs moves at the holding speed whatever the gripper state.
+func holdingSpeed(ctx context.Context) context.Context {
+	return context.WithValue(ctx, speedKey{}, speedHolding)
+}
+
+// moveOptions picks the speed for a move: the class marked on ctx, else holding or empty by
+// gripper state. A nil or zero field leaves the arm component's own speed in effect.
+func (b *bartender) moveOptions(ctx context.Context) *arm.MoveOptions {
+	class, _ := ctx.Value(speedKey{}).(speedClass)
+	switch {
+	case class == speedInteraction:
+		return moveOptionsFromCfg(b.cfg.InteractionVelDegsPerSec, b.cfg.InteractionAccDegsPerSec2)
+	case class == speedHolding, class == speedByGripper && b.holding:
+		return moveOptionsFromCfg(b.cfg.HoldingVelDegsPerSec, b.cfg.HoldingAccDegsPerSec2)
+	default:
+		return moveOptionsFromCfg(b.cfg.EmptyVelDegsPerSec, b.cfg.EmptyAccDegsPerSec2)
+	}
 }

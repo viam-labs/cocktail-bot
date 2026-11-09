@@ -189,7 +189,7 @@ func (b *bartender) findGlasses(ctx context.Context) ([]foundGlass, error) {
 			label := fmt.Sprintf("glass-search-lower%.0fmm-pan%+.0fdeg", lowerMM, panDeg)
 			if lowerMM != 0 || panDeg != 0 {
 				view := &poseData{pose: pannedView(loweredView(cam, target, lowerMM), panDeg), refFrame: referenceframe.World, componentName: camName}
-				if _, err := b.moveToResolvedPose(ctx, view, label, nil, nil); err != nil {
+				if _, err := b.moveToResolvedPose(ctx, view, label, nil); err != nil {
 					b.logger.Warnw("skipping unreachable search view", "view", label, "err", err)
 					continue
 				}

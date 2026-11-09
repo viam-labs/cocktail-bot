@@ -63,7 +63,7 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if _, err := b.carryHeldLevel(ctx, flowSw, poseStrainApproach); err != nil {
 		return fmt.Errorf("carry to strain-approach: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, flowSw, poseStrainTilt); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(interacting(ctx), flowSw, poseStrainTilt); err != nil {
 		return fmt.Errorf("tilt A over filter: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(req.drainDwellMs)*time.Millisecond); err != nil {
@@ -82,10 +82,10 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("release A at shaker-b-place: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBDescend, shakerBAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerBDescend, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend further to shaker-b-descend: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBHover, shakerBAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerBHover, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-retreat to shaker-b-hover: %w", err)
 	}
 
@@ -95,16 +95,16 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("open gripper before filter grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerAApproach, shakerAAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerAApproach, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker-a-approach before filter grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterALift, shakerAAllow...); err != nil {
+	if _, err := b.linearMoveToPose(interacting(ctx), flowSw, poseFilterALift, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to filter-a-lift: %w", err)
 	}
 	if err := sleepCtx(ctx, 500*time.Millisecond); err != nil {
 		return fmt.Errorf("settle before filter grab: %w", err)
 	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+	if err := b.gripperGrab(ctx); err != nil {
 		return fmt.Errorf("close gripper on filter: %w", err)
 	}
 	if _, err := b.linearMoveToPose(ctx, flowSw, poseFilterAHoverAbove, shakerAAllow...); err != nil {
@@ -133,10 +133,10 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("release filter at filter-b-place: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBDescend, shakerBAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerBDescend, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-descend to shaker-b-descend after filter place: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerBHover, shakerBAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerBHover, shakerBAllow...); err != nil {
 		return fmt.Errorf("linear-retreat to shaker-b-hover after filter place: %w", err)
 	}
 
@@ -146,13 +146,13 @@ func (b *bartender) strainShaker(ctx context.Context, req strainShakerRequest) e
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("open gripper before shaker B grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerAApproach, shakerAAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerAApproach, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker-a-approach for B grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, flowSw, poseShakerALift, shakerAAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), flowSw, poseShakerALift, shakerAAllow...); err != nil {
 		return fmt.Errorf("linear-lift at shaker-a: %w", err)
 	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+	if err := b.gripperGrab(ctx); err != nil {
 		return fmt.Errorf("close gripper on shaker B: %w", err)
 	}
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {

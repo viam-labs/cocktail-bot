@@ -118,7 +118,6 @@ func (b *bartender) pourIntoGlasses(ctx context.Context, req pourIntoGlassesReq)
 	if err := b.pickupBottle(ctx, bottleSw); err != nil {
 		return err
 	}
-	pourOpts := b.pourMoveOptions()
 	for i, off := range offsets {
 		label := fmt.Sprintf("glass%d", i)
 		glassApproach := shiftedPose(approach, off)
@@ -126,13 +125,13 @@ func (b *bartender) pourIntoGlasses(ctx context.Context, req pourIntoGlassesReq)
 		if _, err := b.carryHeldLevelToResolved(ctx, glassApproach, label+":"+posePourApproach+":carry"); err != nil {
 			return fmt.Errorf("carry to %s pour-approach: %w", label, err)
 		}
-		if _, err := b.moveToResolvedPose(ctx, shiftedPose(tilt, off), label+":"+posePourTilt, nil, pourOpts); err != nil {
+		if _, err := b.moveToResolvedPose(ctx, shiftedPose(tilt, off), label+":"+posePourTilt, nil); err != nil {
 			return fmt.Errorf("%s pour-tilt: %w", label, err)
 		}
 		if err := sleepCtx(ctx, time.Duration(req.pourMs)*time.Millisecond); err != nil {
 			return fmt.Errorf("%s pour dwell: %w", label, err)
 		}
-		if _, err := b.moveToResolvedPose(ctx, glassApproach, label+":pour-upright", nil, pourOpts); err != nil {
+		if _, err := b.moveToResolvedPose(ctx, glassApproach, label+":pour-upright", nil); err != nil {
 			return fmt.Errorf("%s pour-upright: %w", label, err)
 		}
 	}
