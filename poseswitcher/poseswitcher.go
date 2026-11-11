@@ -47,8 +47,6 @@ type PoseConf struct {
 	Baseline                        string         `json:"baseline,omitempty"`
 	Translation                     *Translation   `json:"translation,omitempty"`
 	Orientation                     *Orientation   `json:"orientation,omitempty"`
-	VelDegsPerSec                   float64        `json:"vel_degs_per_sec,omitempty"`
-	AccDegsPerSec2                  float64        `json:"acc_degs_per_sec2,omitempty"`
 	LineToleranceMm                 float64        `json:"line_tolerance_mm,omitempty"`
 	OrientationToleranceDegs        float64        `json:"orientation_tolerance_degs,omitempty"`
 	NoSpillOrientationToleranceDegs float64        `json:"no_spill_orientation_tolerance_degs,omitempty"`
@@ -78,8 +76,6 @@ type poseValues struct {
 	OX, OY, OZ                      float64
 	Theta                           float64
 	JointPositionsDegs              []float64
-	VelDegsPerSec                   float64
-	AccDegsPerSec2                  float64
 	LineToleranceMm                 float64
 	OrientationToleranceDegs        float64
 	NoSpillOrientationToleranceDegs float64
@@ -296,8 +292,6 @@ func resolvePoses(poses []PoseConf) []poseValues {
 
 			resolved[i] = base
 		}
-		resolved[i].VelDegsPerSec = p.VelDegsPerSec
-		resolved[i].AccDegsPerSec2 = p.AccDegsPerSec2
 		resolved[i].LineToleranceMm = p.LineToleranceMm
 		resolved[i].OrientationToleranceDegs = p.OrientationToleranceDegs
 		resolved[i].NoSpillOrientationToleranceDegs = p.NoSpillOrientationToleranceDegs
@@ -387,12 +381,6 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 					resp["o_y"] = rp.OY
 					resp["o_z"] = rp.OZ
 					resp["theta"] = rp.Theta
-				}
-				if rp.VelDegsPerSec > 0 {
-					resp["vel_degs_per_sec"] = rp.VelDegsPerSec
-				}
-				if rp.AccDegsPerSec2 > 0 {
-					resp["acc_degs_per_sec2"] = rp.AccDegsPerSec2
 				}
 				if rp.LineToleranceMm > 0 {
 					resp["line_tolerance_mm"] = rp.LineToleranceMm

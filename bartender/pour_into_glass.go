@@ -29,20 +29,19 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		return fmt.Errorf("carry to %s: %w", posePourGlassApproach, err)
 	}
 
-	pourOpts := b.pourMoveOptions()
 	for i := 0; i < pours; i++ {
-		if _, err := b.moveArmToPoseWithOpts(ctx, posePourGlassTilt, pourOpts); err != nil {
+		if _, err := b.moveArmToPose(ctx, posePourGlassTilt); err != nil {
 			return fmt.Errorf("%s (pour %d/%d): %w", posePourGlassTilt, i+1, pours, err)
 		}
 		if err := sleepCtx(ctx, b.pourIntoShakerDwell()); err != nil {
 			return fmt.Errorf("direct pour dwell: %w", err)
 		}
-		if _, err := b.moveArmToPoseWithOpts(ctx, posePourGlassApproach, pourOpts); err != nil {
+		if _, err := b.moveArmToPose(ctx, posePourGlassApproach); err != nil {
 			return fmt.Errorf("%s (pour %d/%d): %w", posePourGlassApproach, i+1, pours, err)
 		}
 	}
 
-	if _, err := b.moveArmToPoseWithOpts(ctx, posePourGlassRecover, pourOpts); err != nil {
+	if _, err := b.moveArmToPose(ctx, posePourGlassRecover); err != nil {
 		return fmt.Errorf("%s: %w", posePourGlassRecover, err)
 	}
 

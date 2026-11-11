@@ -64,15 +64,14 @@ func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz fl
 		return fmt.Errorf("carry to pour-approach: %w", err)
 	}
 
-	pourOpts := b.pourMoveOptions()
 	for i := 0; i < pours; i++ {
-		if _, err := b.moveArmToPoseWithOpts(ctx, posePourTilt, pourOpts); err != nil {
+		if _, err := b.moveArmToPose(ctx, posePourTilt); err != nil {
 			return fmt.Errorf("pour-tilt (pour %d/%d): %w", i+1, pours, err)
 		}
 		if err := sleepCtx(ctx, b.pourIntoShakerDwell()); err != nil {
 			return fmt.Errorf("pour dwell: %w", err)
 		}
-		if _, err := b.moveArmToPoseWithOpts(ctx, posePourApproach, pourOpts); err != nil {
+		if _, err := b.moveArmToPose(ctx, posePourApproach); err != nil {
 			return fmt.Errorf("pour-upright (pour %d/%d): %w", i+1, pours, err)
 		}
 	}

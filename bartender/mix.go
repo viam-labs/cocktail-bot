@@ -38,7 +38,8 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseMixerInsert, mixerAllow...); err != nil {
 		return fmt.Errorf("untilt inside mixer: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseMixerLift, mixerAllow...); err != nil {
+	mixCtx := interacting(ctx)
+	if _, err := b.linearCarryToPose(mixCtx, sw, poseMixerLift, mixerAllow...); err != nil {
 		return fmt.Errorf("linear-lift inside mixer: %w", err)
 	}
 
@@ -46,16 +47,16 @@ func (b *bartender) mix(ctx context.Context, stationSwitchName string, dwellMs i
 	defer stopMixer()
 	deadline := time.Now().Add(time.Duration(dwellMs) * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if _, err := b.linearCarryToPose(ctx, sw, poseMixerLower, mixerAllow...); err != nil {
+		if _, err := b.linearCarryToPose(mixCtx, sw, poseMixerLower, mixerAllow...); err != nil {
 			return fmt.Errorf("linear-bob down to mixer-lower: %w", err)
 		}
-		if _, err := b.linearCarryToPose(ctx, sw, poseMixerLift, mixerAllow...); err != nil {
+		if _, err := b.linearCarryToPose(mixCtx, sw, poseMixerLift, mixerAllow...); err != nil {
 			return fmt.Errorf("linear-bob up to mixer-lift: %w", err)
 		}
 	}
 	stopMixer()
 
-	if _, err := b.linearCarryToPose(ctx, sw, poseMixerInsert, mixerAllow...); err != nil {
+	if _, err := b.linearCarryToPose(mixCtx, sw, poseMixerInsert, mixerAllow...); err != nil {
 		return fmt.Errorf("linear-descend from mixer-lift: %w", err)
 	}
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseMixerTiltInsert, mixerAllow...); err != nil {

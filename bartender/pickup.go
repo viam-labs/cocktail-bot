@@ -30,14 +30,13 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 	if _, err := b.carryHeldToUniversal(ctx, posePourApproach); err != nil {
 		return fmt.Errorf("carry to pour-approach: %w", err)
 	}
-	pourOpts := b.pourMoveOptions()
-	if _, err := b.moveArmToPoseWithOpts(ctx, posePourTilt, pourOpts); err != nil {
+	if _, err := b.moveArmToPose(ctx, posePourTilt); err != nil {
 		return fmt.Errorf("pour-tilt: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(pourMs)*time.Millisecond); err != nil {
 		return fmt.Errorf("pour dwell: %w", err)
 	}
-	if _, err := b.moveArmToPoseWithOpts(ctx, posePourApproach, pourOpts); err != nil {
+	if _, err := b.moveArmToPose(ctx, posePourApproach); err != nil {
 		return fmt.Errorf("pour-upright: %w", err)
 	}
 
@@ -74,10 +73,10 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("open gripper: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, bottleSw, poseGrab, allowed...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), bottleSw, poseGrab, allowed...); err != nil {
 		return fmt.Errorf("linear-grab %s: %w", name, err)
 	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+	if err := b.gripperGrab(ctx); err != nil {
 		return fmt.Errorf("close gripper on %s: %w", name, err)
 	}
 	if err := b.attachHeld(ctx, b.cfg.HeldBottleGeometry); err != nil {
@@ -109,13 +108,13 @@ func (b *bartender) grabShakerAtHome(ctx context.Context, sw toggleswitch.Switch
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("open gripper before shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeApproach, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeLift, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-lift shaker before closing: %w", err)
 	}
-	if _, err := b.gripper.Grab(ctx, nil); err != nil {
+	if err := b.gripperGrab(ctx); err != nil {
 		return fmt.Errorf("close gripper on shaker: %w", err)
 	}
 	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
@@ -141,13 +140,13 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 		if err := b.gripperOpen(ctx); err != nil {
 			return fmt.Errorf("open gripper before shaker grab: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeApproach, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-to shaker-home-approach: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerHomeLift, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-lift shaker before closing: %w", err)
 		}
-		if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		if err := b.gripperGrab(ctx); err != nil {
 			return fmt.Errorf("close gripper on shaker-home: %w", err)
 		}
 		if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
@@ -163,13 +162,13 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 		if err := b.gripperOpen(ctx); err != nil {
 			return fmt.Errorf("open gripper before shaker-a grab: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerAApproach, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerAApproach, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-to shaker-a-approach: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerALift, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerALift, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-lift at shaker-a: %w", err)
 		}
-		if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		if err := b.gripperGrab(ctx); err != nil {
 			return fmt.Errorf("close gripper on shaker-a: %w", err)
 		}
 		if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
@@ -185,13 +184,13 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 		if err := b.gripperOpen(ctx); err != nil {
 			return fmt.Errorf("open gripper before shaker-b grab: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerBDescend, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerBDescend, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-to shaker-b-descend: %w", err)
 		}
-		if _, err := b.linearMoveToPose(ctx, sw, poseShakerBPlace, shakerAllow...); err != nil {
+		if _, err := b.linearMoveToPose(holdingSpeed(ctx), sw, poseShakerBPlace, shakerAllow...); err != nil {
 			return fmt.Errorf("linear-to shaker-b-place: %w", err)
 		}
-		if _, err := b.gripper.Grab(ctx, nil); err != nil {
+		if err := b.gripperGrab(ctx); err != nil {
 			return fmt.Errorf("close gripper on shaker-b: %w", err)
 		}
 		if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
@@ -248,7 +247,7 @@ func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("release gripper: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, bottleSw, poseHover, allowed...); err != nil {
+	if _, err := b.linearMoveToPose(holdingSpeed(ctx), bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("linear-retreat %s: %w", name, err)
 	}
 	return nil

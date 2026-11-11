@@ -144,6 +144,7 @@ func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	b.detachHeld()
 	b.detachParked()
+	b.holding = false
 	return map[string]any{"cancelled": cancelled}, nil
 }
 
