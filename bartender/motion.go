@@ -722,7 +722,7 @@ type speedClass int
 
 const (
 	speedByGripper speedClass = iota
-	speedEmpty
+	speedArmDefault
 	speedHolding
 	speedInteraction
 )
@@ -734,10 +734,10 @@ func interacting(ctx context.Context) context.Context {
 	return context.WithValue(ctx, speedKey{}, speedInteraction)
 }
 
-// sturdyHeld runs moves at the empty-gripper speed while holding something that isn't
+// sturdyHeld runs moves at the arm's own speed while holding something that isn't
 // fragile, like the stirrer.
 func sturdyHeld(ctx context.Context) context.Context {
-	return context.WithValue(ctx, speedKey{}, speedEmpty)
+	return context.WithValue(ctx, speedKey{}, speedArmDefault)
 }
 
 // holdingSpeed runs moves at the holding speed whatever the gripper state.
@@ -745,8 +745,8 @@ func holdingSpeed(ctx context.Context) context.Context {
 	return context.WithValue(ctx, speedKey{}, speedHolding)
 }
 
-// moveOptions picks the speed for a move: the class marked on ctx, else holding or empty by
-// gripper state. A nil or zero field leaves the arm component's own speed in effect.
+// moveOptions picks the speed for a move: the class marked on ctx, else holding when the
+// gripper holds something. A nil result or zero field leaves the arm component's own speed in effect.
 func (b *bartender) moveOptions(ctx context.Context) *arm.MoveOptions {
 	class, _ := ctx.Value(speedKey{}).(speedClass)
 	switch {
@@ -755,6 +755,6 @@ func (b *bartender) moveOptions(ctx context.Context) *arm.MoveOptions {
 	case class == speedHolding, class == speedByGripper && b.holding:
 		return moveOptionsFromCfg(b.cfg.HoldingVelDegsPerSec, b.cfg.HoldingAccDegsPerSec2)
 	default:
-		return moveOptionsFromCfg(b.cfg.EmptyVelDegsPerSec, b.cfg.EmptyAccDegsPerSec2)
+		return nil
 	}
 }

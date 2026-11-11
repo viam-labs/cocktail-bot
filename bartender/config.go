@@ -23,9 +23,7 @@ type Config struct {
 	HeldStirrerGeometry   *HeldObjectGeometry `json:"held_stirrer_geometry,omitempty"`
 	OrderSensorName       string              `json:"order_sensor_name,omitempty"`
 	SaveMotionRequestsDir string              `json:"save_motion_requests_dir,omitempty"`
-	// Arm speed overrides by move kind; any unset value uses the arm component's own setting.
-	EmptyVelDegsPerSec        float64 `json:"empty_vel_degs_per_sec,omitempty"`
-	EmptyAccDegsPerSec2       float64 `json:"empty_acc_degs_per_sec2,omitempty"`
+	// Arm speed overrides by move kind; other moves and any unset value use the arm component's own setting.
 	HoldingVelDegsPerSec      float64 `json:"holding_vel_degs_per_sec,omitempty"`
 	HoldingAccDegsPerSec2     float64 `json:"holding_acc_degs_per_sec2,omitempty"`
 	InteractionVelDegsPerSec  float64 `json:"interaction_vel_degs_per_sec,omitempty"`
@@ -104,8 +102,6 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		return nil, nil, err
 	}
 	for name, v := range map[string]float64{
-		"empty_vel_degs_per_sec":        c.EmptyVelDegsPerSec,
-		"empty_acc_degs_per_sec2":       c.EmptyAccDegsPerSec2,
 		"holding_vel_degs_per_sec":      c.HoldingVelDegsPerSec,
 		"holding_acc_degs_per_sec2":     c.HoldingAccDegsPerSec2,
 		"interaction_vel_degs_per_sec":  c.InteractionVelDegsPerSec,
