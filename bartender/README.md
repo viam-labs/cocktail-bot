@@ -189,7 +189,10 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
 | `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "pours": [{"ingredient": "...", "oz": N}]}]}` |
-| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
-| `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |
-| `delete_inventory_item` | `{"ingredient": "vodka"}` |
+| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool, unopened: int, refrigerated: bool}}}` |
+| `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` — creates the ingredient if new; rejects a new name that matches an existing one ignoring case, spaces, `-` and `_`. Slot, pourer, category and whiskey-profile updates apply the same check. |
+| `delete_inventory_item` | `{"ingredient": "vodka"}` — also clears the ingredient's slot, pourer size, category and whiskey profile. |
+| `adjust_unopened` | `{"ingredient": "vodka", "delta": -1}` → `{ingredient, unopened}` — changes the unopened-bottle count, kept between 0 and 9999. |
+| `set_unopened` | `{"ingredient": "vodka", "count": 4}` → `{ingredient, unopened}` |
+| `update_refrigerated` | `{"ingredient": "vermouth", "refrigerated": true}` |
 | `get_bottles` | `{}` → `{bottles: [...]}` — switch names in `pose_switcher_names` that are also in `bottle_pourer_oz`. |
