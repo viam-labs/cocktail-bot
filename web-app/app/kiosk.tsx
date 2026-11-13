@@ -24,8 +24,8 @@ import styles from "./kiosk.module.css";
 
 type OrderState =
   | { kind: "idle" }
-  | { kind: "running"; label: string; slug?: string }
-  | { kind: "done"; label: string; slug?: string; at: number }
+  | { kind: "running"; label: string; slug?: string; double?: boolean }
+  | { kind: "done"; label: string; slug?: string; at: number; double?: boolean }
   | { kind: "error"; label: string; slug?: string; message: string };
 
 type PourEntry = {
@@ -132,13 +132,19 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   }, [conn]);
 
   const startOrder = useCallback(
-    async (recipe: Recipe) => {
-      const label = recipe.name;
+    async (recipe: Recipe, double: boolean) => {
+      let label = recipe.name;
       const slug = recipe.image;
-      setOrder({ kind: "running", label, slug });
+      setOrder({ kind: "running", label, slug, double });
       try {
-        await makeCocktail(conn, recipe.id);
-        setOrder({ kind: "done", label, slug, at: Date.now() });
+        await makeCocktail(conn, recipe.id, {
+          double,
+          onStarted: (title) => {
+            label = title;
+            setOrder({ kind: "running", label, slug, double });
+          },
+        });
+        setOrder({ kind: "done", label, slug, at: Date.now(), double });
       } catch (err) {
         setOrder({
           kind: "error",
@@ -359,10 +365,10 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
             recipe={confirming.recipe}
             orderable={confirming.orderable}
             onCancel={() => setConfirming(null)}
-            onConfirm={() => {
+            onConfirm={(double) => {
               const picked = confirming.recipe;
               setConfirming(null);
-              startOrder(picked);
+              startOrder(picked, double);
             }}
           />
         )}
@@ -757,8 +763,9 @@ function OrderSheet({
   recipe: Recipe;
   orderable: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (double: boolean) => void;
 }) {
+  const [double, setDouble] = useState(false);
   return (
     <div className={styles.scrim} onClick={onCancel}>
       <div className={`${styles.sheet} ${styles.sheetWide}`} onClick={(e) => e.stopPropagation()}>
@@ -774,6 +781,26 @@ function OrderSheet({
             </li>
           ))}
         </ul>
+        {recipe.can_double && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={double}
+            className={styles.doubleRow}
+            onClick={() => setDouble((v) => !v)}
+          >
+            <span className={styles.doubleText}>
+              <strong>Make it a double</strong>
+              <span>
+                2 of the same drink, made together in about the same time. Served in one large glass to share
+                or split.
+              </span>
+            </span>
+            <span className={styles.switch} aria-hidden>
+              <span className={styles.switchThumb} />
+            </span>
+          </button>
+        )}
         {!orderable && <p className={styles.outNote}>Out of stock</p>}
         <div className={styles.btns}>
           <button type="button" className={`${styles.btn} ${styles.btnBig}`} onClick={onCancel}>
@@ -782,7 +809,7 @@ function OrderSheet({
           <button
             type="button"
             className={`${styles.btn} ${styles.btnBig} ${styles.btnMain}`}
-            onClick={onConfirm}
+            onClick={() => onConfirm(double)}
             disabled={!orderable}
           >
             Order
@@ -830,6 +857,9 @@ function KioskQueue({
       {order.kind === "done" && (
         <div className={styles.kqReady} role="status">
           {order.label} is ready
+          {order.double && (
+            <p className={styles.kqReadyNote}>Both drinks come in one large glass. Grab an extra glass to split it.</p>
+          )}
         </div>
       )}
 

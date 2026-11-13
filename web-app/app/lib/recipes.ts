@@ -13,6 +13,7 @@ export interface Recipe {
   crushed_ice?: boolean;
   shake?: boolean;
   strain?: boolean;
+  can_double?: boolean;
 }
 
 export const BASE_SPIRITS = [

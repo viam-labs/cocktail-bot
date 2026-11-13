@@ -663,7 +663,30 @@ func (b *bartender) handleGetRecipes() (map[string]any, error) {
 	if b.dataStore == nil {
 		return nil, errDataStoreNotConfigured
 	}
-	return map[string]any{"recipes": b.dataStore.Recipes()}, nil
+	recipes := b.dataStore.Recipes()
+	out := make([]any, 0, len(recipes))
+	for _, r := range recipes {
+		m, err := recipeWithCanDouble(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return map[string]any{"recipes": out}, nil
+}
+
+// The DoCommand converter nests embedded structs, so can_double goes on a map copy.
+func recipeWithCanDouble(r Recipe) (map[string]any, error) {
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("get_recipes: marshal %q: %w", r.ID, err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("get_recipes: unmarshal %q: %w", r.ID, err)
+	}
+	m["can_double"] = canDouble(r)
+	return m, nil
 }
 
 func (b *bartender) handleGetBottles() (map[string]any, error) {
@@ -1121,7 +1144,7 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	if err := b.checkParkingClear(); err != nil {
 		return nil, err
 	}
-	drinkID, recipe, quantity, err := parseMakeCocktail(raw)
+	drinkID, recipe, quantity, double, err := parseMakeCocktail(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -1146,17 +1169,21 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	if b.cfg.RecipeDefaults == nil {
 		return nil, errors.New("make_cocktail: recipe_defaults not configured on bartender service")
 	}
-	if err := b.validateRecipe(*recipe); err != nil {
-		return nil, err
-	}
 
 	name := recipe.Name
 	if name == "" {
 		name = drinkID
 	}
-	displayName := name
+	plan, err := planDrink(name, *recipe, double)
+	if err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	if err := b.validateSteps(plan.steps); err != nil {
+		return nil, err
+	}
+	displayName := plan.title
 	if quantity > 1 {
-		displayName = fmt.Sprintf("%s × %d", name, quantity)
+		displayName = fmt.Sprintf("%s × %d", plan.title, quantity)
 	}
 	b.status.begin(displayName)
 	start := time.Now()
@@ -1168,7 +1195,7 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 		defer done()
 		var runErr error
 		for i := 0; i < quantity; i++ {
-			runErr = b.makeCocktail(runCtx, drinkID, recipe)
+			runErr = b.makeCocktail(runCtx, plan)
 			if runErr != nil {
 				break
 			}
@@ -1180,6 +1207,7 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 		b.status.finish(runErr)
 		alert := orderAlert{
 			drink:             displayName,
+			double:            plan.double,
 			orderID:           orderID,
 			phase:             phase,
 			duration:          time.Since(start),
@@ -1193,20 +1221,22 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	return map[string]any{
 		"drink_id":   drinkID,
 		"drink":      name,
+		"title":      displayName,
+		"double":     plan.double,
 		"quantity":   quantity,
 		"started_at": start.UTC().Format(time.RFC3339),
 	}, nil
 }
 
-func parseMakeCocktail(raw any) (string, *Recipe, int, error) {
+func parseMakeCocktail(raw any) (string, *Recipe, int, bool, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", nil, 0, fmt.Errorf("make_cocktail: expected object with 'drink_id' or 'recipe', got %T", raw)
+		return "", nil, 0, false, fmt.Errorf("make_cocktail: expected object with 'drink_id' or 'recipe', got %T", raw)
 	}
 	drinkID, _ := m["drink_id"].(string)
 	recipeRaw, hasRecipe := m["recipe"]
 	if drinkID == "" && !hasRecipe {
-		return "", nil, 0, fmt.Errorf("make_cocktail: either 'drink_id' or 'recipe' is required")
+		return "", nil, 0, false, fmt.Errorf("make_cocktail: either 'drink_id' or 'recipe' is required")
 	}
 	quantity := 1
 	if q, ok := m["quantity"].(float64); ok {
@@ -1218,18 +1248,27 @@ func parseMakeCocktail(raw any) (string, *Recipe, int, error) {
 	if quantity > 4 {
 		quantity = 4
 	}
+	double := false
+	if v, ok := m["double"]; ok {
+		if double, ok = v.(bool); !ok {
+			return "", nil, 0, false, fmt.Errorf("make_cocktail: 'double' must be a bool, got %T", v)
+		}
+	}
+	if double && quantity > 1 {
+		return "", nil, 0, false, fmt.Errorf("make_cocktail: 'double' can't be combined with 'quantity' > 1")
+	}
 	if !hasRecipe {
-		return drinkID, nil, quantity, nil
+		return drinkID, nil, quantity, double, nil
 	}
 	bytes, err := json.Marshal(recipeRaw)
 	if err != nil {
-		return "", nil, 0, fmt.Errorf("make_cocktail: marshal recipe: %w", err)
+		return "", nil, 0, false, fmt.Errorf("make_cocktail: marshal recipe: %w", err)
 	}
 	var recipe Recipe
 	if err := json.Unmarshal(bytes, &recipe); err != nil {
-		return "", nil, 0, fmt.Errorf("make_cocktail: invalid recipe shape: %w", err)
+		return "", nil, 0, false, fmt.Errorf("make_cocktail: invalid recipe shape: %w", err)
 	}
-	return drinkID, &recipe, quantity, nil
+	return drinkID, &recipe, quantity, double, nil
 }
 
 func parseExecuteAction(raw any) (string, error) {
