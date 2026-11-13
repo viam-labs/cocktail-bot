@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// validateRecipe catches step problems that would otherwise surface partway
+// validateSteps catches step problems that would otherwise surface partway
 // through a drink, after earlier steps have already poured or iced.
-func (b *bartender) validateRecipe(recipe Recipe) error {
+func (b *bartender) validateSteps(steps []RecipeStep) error {
 	var problems []string
-	for i, step := range stepsFor(recipe) {
+	for i, step := range steps {
 		switch step.Kind {
 		case "pour":
 			if step.Ingredient == "" {
@@ -40,25 +40,7 @@ func (b *bartender) validateRecipe(recipe Recipe) error {
 	return errors.New(strings.Join(problems, "; "))
 }
 
-func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Recipe) error {
-	if recipe == nil {
-		if drinkID == "" {
-			return errors.New("make_cocktail: either drink_id or recipe is required")
-		}
-		if b.dataStore == nil {
-			return errDataStoreNotConfigured
-		}
-		for _, r := range b.dataStore.Recipes() {
-			if r.ID == drinkID {
-				rCopy := r
-				recipe = &rCopy
-				break
-			}
-		}
-		if recipe == nil {
-			return fmt.Errorf("make_cocktail: recipe %q not found", drinkID)
-		}
-	}
+func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 	d := b.cfg.RecipeDefaults
 	if d == nil {
 		return errors.New("make_cocktail: recipe_defaults not configured on bartender service")
@@ -67,18 +49,14 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 		return errors.New("make_cocktail: recipe_defaults is missing one of shaker_source, ice_station, mixer_station, strain_flow, serve_station")
 	}
 
-	steps := stepsFor(*recipe)
+	steps := plan.steps
 	// A drink that never involves the shaker (no ice/mix/strain) implies every
 	// pour goes straight into the serving glass. Otherwise all pours fill the
 	// shaker and the shaker gets served at the end.
-	usesShaker := false
+	shaker := usesShaker(steps)
 	mixed := false
 	strained := false
 	for _, s := range steps {
-		switch s.Kind {
-		case "ice", "mix", "strain":
-			usesShaker = true
-		}
 		// A stir leaves the shaker at shaker-home with the gripper empty, so
 		// only a shake counts as ending with the shaker held.
 		if s.Kind == "mix" && s.MixMode != "stir" {
@@ -95,7 +73,7 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 				return fmt.Errorf("step %d: pour ingredient is required", i+1)
 			}
 			b.status.setPhase(fmt.Sprintf("Pouring %s (step %d of %d)", step.Ingredient, i+1, len(steps)))
-			if usesShaker {
+			if shaker {
 				if err := b.pourIntoShaker(ctx, step.Ingredient, step.Oz); err != nil {
 					return fmt.Errorf("step %d pour %s into shaker: %w", i+1, step.Ingredient, err)
 				}
@@ -152,7 +130,7 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 	}
 
 	// Every drink made in the shaker gets served, including stirred ones.
-	if usesShaker {
+	if shaker {
 		// strain leaves shaker-A held and mix ends still holding the shaker
 		// above the mixer, so in both cases pourFromShaker gets a shaker
 		// already in the gripper. Only when neither ran (ice-only or stirred
@@ -168,7 +146,7 @@ func (b *bartender) makeCocktail(ctx context.Context, drinkID string, recipe *Re
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
-		b.status.setPhase("Serving")
+		b.status.setPhase(plan.servePhase)
 		if err := b.pourFromShaker(ctx, d.ServeStation, d.ServeMs); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}

@@ -37,6 +37,7 @@ const DEV_RECIPES: Recipe[] = [
   {
     id: "espresso_martini",
     name: "Espresso Martini",
+    can_double: true,
     pours: [
       { ingredient: "vodka", oz: 2 },
       { ingredient: "coffee-liquor", oz: 1 },
@@ -395,18 +396,22 @@ async function awaitOrder(conn: ViamConnection, startedAt: string): Promise<void
 export async function makeCocktail(
   conn: ViamConnection,
   drinkId: string,
-  quantity: number = 1,
+  opts: { quantity?: number; double?: boolean; onStarted?: (title: string) => void } = {},
 ): Promise<void> {
-  const q = Math.max(1, Math.min(4, Math.floor(quantity)));
+  const q = Math.max(1, Math.min(4, Math.floor(opts.quantity ?? 1)));
+  const double = opts.double ?? false;
   if (conn.isDev) {
     const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
+    const name = recipe?.name ?? drinkId;
+    opts.onStarted?.(double ? `2 × ${name}` : name);
     const phases = (recipe?.pours?.length ?? 0) + 5;
     await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * phases * q));
     return;
   }
-  const resp = await doCommand<{ started_at: string }>(conn, BARTENDER_SERVICE_NAME, {
-    make_cocktail: { drink_id: drinkId, quantity: q },
+  const resp = await doCommand<{ started_at: string; title: string }>(conn, BARTENDER_SERVICE_NAME, {
+    make_cocktail: { drink_id: drinkId, quantity: q, double },
   });
+  opts.onStarted?.(resp.title);
   await awaitOrder(conn, resp.started_at);
 }
 

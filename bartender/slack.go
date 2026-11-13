@@ -70,6 +70,7 @@ func escapeSlackMrkdwn(s string) string {
 
 type orderAlert struct {
 	drink             string
+	double            bool
 	orderID           string
 	phase             string
 	duration          time.Duration
@@ -80,6 +81,9 @@ type orderAlert struct {
 
 func alertText(a orderAlert) string {
 	drink := escapeSlackMrkdwn(a.drink)
+	if a.double {
+		drink += " (double)"
+	}
 	dur := a.duration.Round(time.Second)
 	suffix := ""
 	if a.orderID != "" {
@@ -103,7 +107,7 @@ func alertBlocks(a orderAlert) []any {
 	dur := a.duration.Round(time.Second).String()
 
 	if a.err == nil {
-		fields := []any{slackField("*Drink:*", drink)}
+		fields := alertDrinkFields(a, drink)
 		if a.orderID != "" {
 			fields = append(fields, slackField("*Order:*", escapeSlackMrkdwn(a.orderID)))
 		}
@@ -132,7 +136,7 @@ func alertBlocks(a orderAlert) []any {
 		phase = "unknown step"
 	}
 
-	fields := []any{slackField("*Drink:*", drink)}
+	fields := alertDrinkFields(a, drink)
 	if a.orderID != "" {
 		fields = append(fields, slackField("*Order:*", escapeSlackMrkdwn(a.orderID)))
 	}
@@ -169,6 +173,14 @@ func alertBlocks(a orderAlert) []any {
 		})
 	}
 	return blocks
+}
+
+func alertDrinkFields(a orderAlert, drink string) []any {
+	fields := []any{slackField("*Drink:*", drink)}
+	if a.double {
+		fields = append(fields, slackField("*Size:*", "Double, one large glass"))
+	}
+	return fields
 }
 
 func slackField(label, value string) map[string]any {
