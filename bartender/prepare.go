@@ -19,6 +19,9 @@ func (b *bartender) prepareDrink(ctx context.Context, o order.Order) error {
 	}
 	b.logger.Infow("starting order", "order_id", o.ID, "drink", o.Drink)
 	for i := 0; i < job.quantity; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := b.brew(ctx, job.plan); err != nil {
 			return err
 		}

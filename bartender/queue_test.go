@@ -48,6 +48,7 @@ func newTestBartender(t *testing.T, sink orderSensorSink) *bartender {
 		queue:     order.NewQueue(),
 		orderSink: sink,
 		queueStop: make(chan struct{}),
+		queueDone: make(chan struct{}),
 	}
 	b.brew = func(context.Context, drinkPlan) error { return nil }
 	return b
@@ -221,4 +222,98 @@ func TestGetQueueShape(t *testing.T) {
 	test.That(t, hasPayload, test.ShouldBeFalse)
 	_, ok = entry["enqueued_at"].(string)
 	test.That(t, ok, test.ShouldBeTrue)
+}
+
+type brewCounter struct {
+	mu    sync.Mutex
+	count int
+}
+
+func (c *brewCounter) brew(ctx context.Context, _ drinkPlan) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.count++
+	return nil
+}
+
+func (c *brewCounter) n() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.count
+}
+
+func TestOrderWaitingOnArmIsNotCurrentAndCancelHitsManualCommand(t *testing.T) {
+	b := newTestBartender(t, nil)
+	brews := &brewCounter{}
+	b.brew = brews.brew
+	go b.processQueue()
+	defer close(b.queueStop)
+
+	manualCtx, done, err := b.claim(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	o := newCocktailOrder("negroni")
+	b.queue.Enqueue(o)
+	time.Sleep(50 * time.Millisecond)
+
+	st := b.queue.State()
+	test.That(t, st.Current, test.ShouldBeNil)
+	test.That(t, len(st.Queue), test.ShouldEqual, 1)
+
+	test.That(t, b.cancelRunning(), test.ShouldBeTrue)
+	test.That(t, manualCtx.Err(), test.ShouldNotBeNil)
+	done()
+
+	waitFor(t, func() bool { return b.queue.State().AwaitingPickup != nil }, "order ran after manual command")
+	test.That(t, b.queue.State().AwaitingPickup.Error, test.ShouldEqual, "")
+	test.That(t, brews.n(), test.ShouldEqual, 1)
+}
+
+func TestCloseDropsOrderWaitingOnArm(t *testing.T) {
+	b := newTestBartender(t, nil)
+	brews := &brewCounter{}
+	b.brew = brews.brew
+	go b.processQueue()
+
+	manualCtx, done, err := b.claim(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	b.queue.Enqueue(newCocktailOrder("negroni"))
+	time.Sleep(20 * time.Millisecond)
+
+	closed := make(chan error, 1)
+	go func() { closed <- b.Close(context.Background()) }()
+	waitFor(t, func() bool { return manualCtx.Err() != nil }, "close cancelled the manual command")
+	done()
+
+	select {
+	case err := <-closed:
+		test.That(t, err, test.ShouldBeNil)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return")
+	}
+	time.Sleep(20 * time.Millisecond)
+	test.That(t, brews.n(), test.ShouldEqual, 0)
+}
+
+func TestCloseCancelsRunningOrderAndWaitsForWorker(t *testing.T) {
+	b := newTestBartender(t, nil)
+	started := make(chan struct{})
+	var brewErr error
+	b.brew = func(ctx context.Context, _ drinkPlan) error {
+		close(started)
+		<-ctx.Done()
+		time.Sleep(20 * time.Millisecond)
+		brewErr = ctx.Err()
+		return brewErr
+	}
+	go b.processQueue()
+	b.queue.Enqueue(newCocktailOrder("negroni"))
+	<-started
+
+	test.That(t, b.Close(context.Background()), test.ShouldBeNil)
+	select {
+	case <-b.queueDone:
+	default:
+		t.Fatal("Close returned before the queue worker exited")
+	}
+	test.That(t, errors.Is(brewErr, context.Canceled), test.ShouldBeTrue)
 }

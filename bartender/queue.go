@@ -14,25 +14,46 @@ type orderSensorSink interface {
 }
 
 func (b *bartender) processQueue() {
-	for {
+	defer close(b.queueDone)
+	life, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() {
 		select {
 		case <-b.queueStop:
+			stop()
+		case <-life.Done():
+		}
+	}()
+	for {
+		select {
+		case <-life.Done():
 			return
 		case <-b.queue.Notify():
 		}
-		for {
-			o, ok := b.queue.Start()
-			if !ok {
-				break
-			}
-			b.queue.Complete(b.safeExecuteOrder(o))
+		for b.runNext(life) {
 		}
 	}
 }
 
-func (b *bartender) safeExecuteOrder(o order.Order) (execErr error) {
+// runNext takes the arm before popping an order, so neither get_queue nor cancel
+// treats an order as running while a manual command still holds the arm.
+func (b *bartender) runNext(life context.Context) bool {
 	b.runMu.Lock()
 	defer b.runMu.Unlock()
+	if life.Err() != nil {
+		return false
+	}
+	o, ok := b.queue.Start()
+	if !ok {
+		return false
+	}
+	ctx, done := b.withCancel(ctxWithOrderID(life, o.ID))
+	defer done()
+	b.queue.Complete(b.safeExecuteOrder(ctx, o))
+	return true
+}
+
+func (b *bartender) safeExecuteOrder(ctx context.Context, o order.Order) (execErr error) {
 	b.status.begin(o.Drink)
 	start := time.Now()
 	defer func() {
@@ -58,9 +79,6 @@ func (b *bartender) safeExecuteOrder(o order.Order) (execErr error) {
 		}
 		slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
 	}()
-	ctx := ctxWithOrderID(context.Background(), o.ID)
-	ctx, done := b.withCancel(ctx)
-	defer done()
 	return b.prepareDrink(ctx, o)
 }
 

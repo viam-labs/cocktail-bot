@@ -48,6 +48,7 @@ type bartender struct {
 	glassFinder     vision.Service
 	mixerPower      toggleswitch.Switch
 	queueStop       chan struct{}
+	queueDone       chan struct{}
 	dataStore       *dataStore
 
 	// runMu makes queued drinks and manual commands mutually exclusive on the arm.
@@ -78,7 +79,7 @@ func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
 	}
 }
 
-var errBusy = errors.New("bartender is busy making a queued drink; wait for it to finish or cancel it")
+var errBusy = errors.New("bartender is busy with a drink or another command; wait for it to finish or cancel it")
 
 // claim gives a manual command the arm, refusing rather than waiting if a drink is being made.
 func (b *bartender) claim(ctx context.Context) (context.Context, func(), error) {
@@ -149,6 +150,7 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		filesaver:    filesaver.New(cfg.SaveMotionRequestsDir, logger),
 		queue:        order.NewQueue(),
 		queueStop:    make(chan struct{}),
+		queueDone:    make(chan struct{}),
 	}
 	b.brew = b.makeCocktail
 
@@ -199,8 +201,13 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 }
 
 func (b *bartender) Close(ctx context.Context) error {
-	b.cancelRunning()
 	close(b.queueStop)
+	b.cancelRunning()
+	select {
+	case <-b.queueDone:
+	case <-ctx.Done():
+		b.logger.Warnf("close: order queue worker still running: %v", ctx.Err())
+	}
 	if err := b.setMixerPower(ctx, false); err != nil {
 		b.logger.Warnf("power off mixer %q on close: %v", b.cfg.MixerPowerSwitchName, err)
 	}
