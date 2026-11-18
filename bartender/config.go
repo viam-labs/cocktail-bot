@@ -46,6 +46,8 @@ type Config struct {
 	DataDir                string            `json:"data_dir,omitempty"`
 	PickupObstacles        map[string]string `json:"pickup_obstacles,omitempty"`
 	RecipeDefaults         *RecipeDefaults   `json:"recipe_defaults,omitempty"`
+	Glasses                []Glass           `json:"glasses,omitempty"`
+	DefaultGlassObstacle   string            `json:"default_glass_obstacle,omitempty"`
 	PourIntoShakerDwellMs  int               `json:"pour_into_shaker_dwell_ms,omitempty"`
 	MixerProtectorObstacle string            `json:"mixer_protector_obstacle,omitempty"`
 	// Switch powering the mixer (e.g. a smart plug); mix turns it on only while the shaker is
@@ -158,6 +160,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 		seenSlot[slot] = struct{}{}
 	}
+	if err := validateGlasses(path, c.Glasses, switcherSet); err != nil {
+		return nil, nil, err
+	}
 	if sc := c.ShakerCleaning; sc.enabled() {
 		if sc.Station == "" {
 			return nil, nil, errors.New(path + ": shaker_cleaning.station is required when enabled")
@@ -182,6 +187,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.MixerPowerSwitchName != "" {
 		deps = append(deps, toggleswitch.Named(c.MixerPowerSwitchName).String())
+	}
+	for _, name := range c.glassObstacleNames() {
+		deps = append(deps, gripper.Named(name).String())
 	}
 
 	var optional []string

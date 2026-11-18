@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
@@ -77,6 +78,9 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if _, ok := cmd["get_recipes"]; ok {
 		return b.handleGetRecipes()
 	}
+	if _, ok := cmd["get_glasses"]; ok {
+		return b.handleGetGlasses()
+	}
 	if _, ok := cmd["get_pour_menus"]; ok {
 		return b.handleGetPourMenus()
 	}
@@ -128,7 +132,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["move_bottle"]; ok {
 		return b.handleMoveBottle(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
+	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_glasses, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
 }
 
 func (b *bartender) handleGetQueue() (map[string]any, error) {
@@ -1105,6 +1109,27 @@ func parseUpdatePourMenus(raw any) ([]PourMenu, error) {
 	return menus, nil
 }
 
+func (b *bartender) handleGetGlasses() (map[string]any, error) {
+	glasses := b.cfg.Glasses
+	if glasses == nil {
+		glasses = []Glass{}
+	}
+	return jsonMap(map[string]any{"glasses": glasses}, "get_glasses")
+}
+
+// jsonMap round-trips v through JSON so DoCommand sees plain maps keyed by json tag names.
+func jsonMap(v any, cmd string) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", cmd, err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("%s: %w", cmd, err)
+	}
+	return out, nil
+}
+
 func (b *bartender) handleUpdateRecipes(raw any) (map[string]any, error) {
 	if b.dataStore == nil {
 		return nil, errDataStoreNotConfigured
@@ -1112,6 +1137,12 @@ func (b *bartender) handleUpdateRecipes(raw any) (map[string]any, error) {
 	recipes, err := parseUpdateRecipes(raw)
 	if err != nil {
 		return nil, err
+	}
+	if bad := unknownGlassRefs(recipes, b.cfg.Glasses); len(bad) > 0 {
+		return nil, fmt.Errorf("update_recipes: not in the bartender's glasses config: %s", strings.Join(bad, "; "))
+	}
+	if bad := missingDoubleGlass(recipes); len(bad) > 0 {
+		return nil, fmt.Errorf("update_recipes: drinks that can be doubled need a glass for the double: %s", strings.Join(bad, "; "))
 	}
 	if err := b.dataStore.UpdateRecipes(recipes); err != nil {
 		return nil, err
@@ -1286,6 +1317,15 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	if err != nil {
 		return nil, fmt.Errorf("make_cocktail: %w", err)
 	}
+	if plan.glass, err = servingGlass(*recipe, plan.double, b.cfg.Glasses); err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	if err := checkGlassFits(plan.glass, plan.steps); err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	if plan.glass != nil {
+		plan.servePhase = "Serving into the " + strings.ToLower(plan.glass.Name) + " glass"
+	}
 	if err := b.validateSteps(plan.steps); err != nil {
 		return nil, err
 	}
@@ -1296,6 +1336,9 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	o := order.NewOrder(displayName)
 	o.Double = plan.double
 	o.Quantity = quantity
+	if plan.glass != nil {
+		o.Glass = plan.glass.Name
+	}
 	payload, err := newCocktailJob(plan, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("make_cocktail: %w", err)
@@ -1313,6 +1356,7 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 		"title":       displayName,
 		"double":      plan.double,
 		"quantity":    quantity,
+		"glass":       o.Glass,
 		"ahead":       ahead,
 		"enqueued_at": o.EnqueuedAt.UTC().Format(time.RFC3339),
 	}, nil

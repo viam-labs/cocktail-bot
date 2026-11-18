@@ -43,6 +43,8 @@ type bartender struct {
 	poseSwitches    []toggleswitch.Switch
 	heldGeomFrame   referenceframe.Frame
 	parkedGeomFrame referenceframe.Frame
+	// Glass obstacle at the serving station; the other glass obstacles are left out of planning.
+	stationObstacle string
 	filesaver       *filesaver.Saver
 	queue           *order.Queue
 	orderSink       orderSensorSink
@@ -152,6 +154,8 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		queue:        order.NewQueue(),
 		queueStop:    make(chan struct{}),
 		queueDone:    make(chan struct{}),
+
+		stationObstacle: cfg.DefaultGlassObstacle,
 	}
 	b.brew = b.makeCocktail
 

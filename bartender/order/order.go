@@ -12,6 +12,7 @@ type Order struct {
 	Drink       string    `json:"drink"`
 	Double      bool      `json:"double"`
 	Quantity    int       `json:"quantity"`
+	Glass       string    `json:"glass,omitempty"`
 	EnqueuedAt  time.Time `json:"enqueued_at"`
 	StartedAt   time.Time `json:"started_at"`
 	RawStep     string    `json:"raw_step"`

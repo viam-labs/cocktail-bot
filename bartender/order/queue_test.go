@@ -169,3 +169,80 @@ func mustEnqueue(t *testing.T, q *Queue, o Order) int {
 	}
 	return ahead
 }
+
+func glassOrder(drink, glass string) Order {
+	o := NewOrder(drink)
+	o.Glass = glass
+	return o
+}
+
+func TestOrderWithGlassWaitsUntilItsGlassIsConfirmed(t *testing.T) {
+	q := NewQueue()
+	o := glassOrder("martini", "Martini")
+	mustEnqueue(t, q, o)
+
+	_, ok := q.Start()
+	test.That(t, ok, test.ShouldBeFalse)
+	test.That(t, q.State().AwaitingGlass.ID, test.ShouldEqual, o.ID)
+
+	test.That(t, q.Release(), test.ShouldBeTrue)
+	test.That(t, q.State().AwaitingGlass, test.ShouldBeNil)
+	started, ok := q.Start()
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, started.ID, test.ShouldEqual, o.ID)
+}
+
+func TestPickupReleaseConfirmsTheNextOrdersGlass(t *testing.T) {
+	q := NewQueue()
+	mustEnqueue(t, q, NewOrder("a"))
+	q.Start()
+	next := glassOrder("b", "Highball")
+	mustEnqueue(t, q, next)
+	q.Complete(nil)
+
+	test.That(t, q.State().AwaitingGlass, test.ShouldBeNil)
+	test.That(t, q.Release(), test.ShouldBeTrue)
+	started, ok := q.Start()
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, started.ID, test.ShouldEqual, next.ID)
+}
+
+func TestGlassOrderAfterTheLineEmptiedWaits(t *testing.T) {
+	q := NewQueue()
+	mustEnqueue(t, q, NewOrder("a"))
+	q.Start()
+	q.Complete(nil)
+	test.That(t, q.Release(), test.ShouldBeTrue)
+
+	late := glassOrder("b", "Martini")
+	mustEnqueue(t, q, late)
+	_, ok := q.Start()
+	test.That(t, ok, test.ShouldBeFalse)
+	test.That(t, q.State().AwaitingGlass.ID, test.ShouldEqual, late.ID)
+}
+
+func TestCancellingTheConfirmedOrderHoldsTheNextGlass(t *testing.T) {
+	q := NewQueue()
+	mustEnqueue(t, q, NewOrder("a"))
+	q.Start()
+	first := glassOrder("b", "Martini")
+	second := glassOrder("c", "Highball")
+	mustEnqueue(t, q, first)
+	mustEnqueue(t, q, second)
+	q.Complete(nil)
+	q.Release()
+
+	removed, err := q.Remove(first.ID)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, removed, test.ShouldBeTrue)
+	_, ok := q.Start()
+	test.That(t, ok, test.ShouldBeFalse)
+	test.That(t, q.State().AwaitingGlass.ID, test.ShouldEqual, second.ID)
+}
+
+func TestReleaseWithNothingHeldIsANoop(t *testing.T) {
+	q := NewQueue()
+	test.That(t, q.Release(), test.ShouldBeFalse)
+	mustEnqueue(t, q, NewOrder("a"))
+	test.That(t, q.Release(), test.ShouldBeFalse)
+}

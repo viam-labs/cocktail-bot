@@ -78,7 +78,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 					return fmt.Errorf("step %d pour %s into shaker: %w", i+1, step.Ingredient, err)
 				}
 			} else {
-				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz); err != nil {
+				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz, plan.glass); err != nil {
 					return fmt.Errorf("step %d pour %s into glass: %w", i+1, step.Ingredient, err)
 				}
 			}
@@ -146,12 +146,13 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
-		serveSw, err := b.findSwitch(d.ServeStation)
+		serveStation, glassAllow := b.glassServe(plan.glass, d.ServeStation)
+		serveSw, err := b.findSwitch(serveStation)
 		if err != nil {
-			return fmt.Errorf("serve station switch %q: %w", d.ServeStation, err)
+			return fmt.Errorf("serve station switch %q: %w", serveStation, err)
 		}
 		b.setPhase(plan.servePhase)
-		if err := b.serveFromShaker(ctx, serveSw, d.ServeMs); err != nil {
+		if err := b.serveFromShaker(ctx, serveSw, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
 		if sc := b.cfg.ShakerCleaning; sc.enabled() {

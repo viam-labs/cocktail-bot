@@ -10,20 +10,22 @@ import (
 )
 
 type Recipe struct {
-	ID         string       `json:"id"`
-	Name       string       `json:"name"`
-	Steps      []RecipeStep `json:"steps,omitempty"`
-	OnMenu     bool         `json:"on_menu,omitempty"`
-	Image      string       `json:"image,omitempty"`
-	Section    string       `json:"section,omitempty"`
-	Tag        string       `json:"tag,omitempty"`
-	BaseSpirit string       `json:"base_spirit,omitempty"`
-	Flavors    []string     `json:"flavors,omitempty"`
-	SortOrder  int          `json:"sort_order,omitempty"`
-	Pours      []Pour       `json:"pours,omitempty"`
-	CrushedIce *bool        `json:"crushed_ice,omitempty"`
-	Shake      *bool        `json:"shake,omitempty"`
-	Strain     *bool        `json:"strain,omitempty"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Steps       []RecipeStep `json:"steps,omitempty"`
+	OnMenu      bool         `json:"on_menu,omitempty"`
+	Image       string       `json:"image,omitempty"`
+	Section     string       `json:"section,omitempty"`
+	Tag         string       `json:"tag,omitempty"`
+	BaseSpirit  string       `json:"base_spirit,omitempty"`
+	Flavors     []string     `json:"flavors,omitempty"`
+	SortOrder   int          `json:"sort_order,omitempty"`
+	Pours       []Pour       `json:"pours,omitempty"`
+	CrushedIce  *bool        `json:"crushed_ice,omitempty"`
+	Shake       *bool        `json:"shake,omitempty"`
+	Strain      *bool        `json:"strain,omitempty"`
+	Glass       string       `json:"glass,omitempty"`
+	DoubleGlass string       `json:"double_glass,omitempty"`
 }
 
 type RecipeStep struct {
