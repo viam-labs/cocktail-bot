@@ -46,20 +46,9 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 
 // Ends holding the bottle at its carry-hover pose.
 func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
-	blockerName, err := b.blockerForTarget(ctx, bottleSw)
+	_, extraAllowed, err := b.prepareBlockerFor(ctx, bottleSw)
 	if err != nil {
 		return err
-	}
-	var extraAllowed []AllowedCollision
-	if blockerName != "" {
-		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
-			extraAllowed = append(extraAllowed, b.gripperAllowedVsObstacle(obs)...)
-		}
-		if b.slotOccupied(blockerName) {
-			if err := b.shuffleBlockerToParking(ctx, blockerName); err != nil {
-				return fmt.Errorf("shuffle blocker aside: %w", err)
-			}
-		}
 	}
 	return b.pickupBottleAt(ctx, bottleSw, extraAllowed)
 }
@@ -212,24 +201,10 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	if err != nil {
 		return err
 	}
-	var extraAllowed []AllowedCollision
-	if blockerName != "" {
-		if obs, ok := b.cfg.PickupObstacles[blockerName]; ok && obs != "" {
-			extraAllowed = append(extraAllowed, b.gripperAllowedVsObstacle(obs)...)
-		}
-	}
-	if err := b.returnBottleAt(ctx, bottleSw, extraAllowed); err != nil {
+	if err := b.returnBottleAt(ctx, bottleSw, b.extraAllowedForBlocker(blockerName)); err != nil {
 		return err
 	}
-	if blockerName != "" && b.cfg.ParkingSwitchName != "" {
-		parkingSw, err := b.findSwitch(b.cfg.ParkingSwitchName)
-		if err == nil {
-			if err := b.shuffleBlockerFromParking(ctx, parkingSw, blockerName); err != nil {
-				return fmt.Errorf("retrieve blocker from parking: %w", err)
-			}
-		}
-	}
-	return nil
+	return b.restoreBlocker(ctx, blockerName)
 }
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {

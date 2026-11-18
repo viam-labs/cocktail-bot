@@ -37,6 +37,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `glass_search_settle_ms` | int | Optional | Settle time after each search move before capture. | 1000 |
 | `glass_min_separation_mm` | number | Optional | Detections closer than this in x, y count as one glass. | 50 |
 | `order_sensor_name` | string | Optional | Order sensor to push each attempt reading to. |  |
+| `loading_spot_switch_name` | string | Optional | Pose-switcher component holding the loading-spot `hover`/`grab`/`lift`/`carry-hover` poses used by `stock_bottle`, `retrieve_bottle`, and `move_bottle`. Required for those commands. |  |
 | `data_dir` | string | Optional | Directory for persisted recipes + inventory. Falls back to `$VIAM_MODULE_DATA`. |  |
 | `save_motion_requests_dir` | string | Optional | When set, every motion-plan request + response is written here, tagged by order id. |  |
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
@@ -158,6 +159,16 @@ Current queue state.
 | `pickup_pour_return` | `{"bottle": "vodka", "pour_ms": 1500}` |
 | `pour_into_glasses` | `{"bottle": "vodka", "pours": [{"glass": "serving-glass-center", "pour_ms": 1500}]}` |
 | `execute_action` | `{"pose_name": "home"}` — move to any named pose on the configured switchers. |
+
+#### Stocking
+
+Move bottles between the shelf and the loading spot. The arm uses the existing blocker-shuffle flow if the target slot is behind an occupied blocker. The inventory data store updates only after the arm reports success.
+
+| Command | Shape |
+| --- | --- |
+| `stock_bottle` | `{"slot": "slot-g-bottom-front", "ingredient": "aged-rum"}` — pick up a bottle sitting at `loading_spot_switch_name`, place it in `slot`, assign `ingredient` to `slot`. |
+| `retrieve_bottle` | `{"slot": "slot-g-bottom-front"}` — pick the bottle out of `slot`, leave it on the loading spot, clear `slot`'s assignment. |
+| `move_bottle` | `{"from": "slot-a-bottom-front", "to": "slot-g-bottom-front"}` — carry `from`'s bottle to `to`. `to` must be empty. Fails if both slots are blocked by different occupied blockers (there's only one parking spot). |
 
 #### Vision-driven
 

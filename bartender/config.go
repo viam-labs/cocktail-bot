@@ -55,6 +55,7 @@ type Config struct {
 	IceProtectorObstacle     string   `json:"ice_protector_obstacle,omitempty"`
 	SlotNames                []string `json:"slot_names,omitempty"`
 	ParkingSwitchName        string   `json:"parking_switch_name,omitempty"`
+	LoadingSpotSwitchName    string   `json:"loading_spot_switch_name,omitempty"`
 	MixPrestagePose          string   `json:"mix_prestage_pose,omitempty"`
 	RotatePrestagePose       string   `json:"rotate_prestage_pose,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
