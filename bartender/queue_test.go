@@ -76,7 +76,7 @@ func TestProcessQueueRunsOrderAndPushesReading(t *testing.T) {
 	defer close(b.queueStop)
 
 	o := newCocktailOrder("negroni")
-	b.queue.Enqueue(o)
+	mustEnqueue(t, b.queue, o)
 
 	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "one reading pushed")
 
@@ -107,7 +107,7 @@ func TestProcessQueueRunsQuantityTimes(t *testing.T) {
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	b.queue.Enqueue(newCocktailOrderN("negroni", 3))
+	mustEnqueue(t, b.queue, newCocktailOrderN("negroni", 3))
 
 	waitFor(t, func() bool { return b.queue.State().AwaitingPickup != nil }, "order finished")
 	mu.Lock()
@@ -123,8 +123,8 @@ func TestProcessQueueHoldsNextOrderUntilStartNext(t *testing.T) {
 
 	first := newCocktailOrder("negroni")
 	second := newCocktailOrder("martini")
-	b.queue.Enqueue(first)
-	b.queue.Enqueue(second)
+	mustEnqueue(t, b.queue, first)
+	mustEnqueue(t, b.queue, second)
 
 	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "first order made")
 	time.Sleep(50 * time.Millisecond)
@@ -152,7 +152,7 @@ func TestFailedOrderRecordsErrorOnQueue(t *testing.T) {
 	defer close(b.queueStop)
 
 	o := newCocktailOrder("martini")
-	b.queue.Enqueue(o)
+	mustEnqueue(t, b.queue, o)
 
 	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "reading pushed")
 	got := sink.snapshot()[0]
@@ -172,7 +172,7 @@ func TestManualCommandRefusedWhileDrinkRuns(t *testing.T) {
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	b.queue.Enqueue(newCocktailOrder("negroni"))
+	mustEnqueue(t, b.queue, newCocktailOrder("negroni"))
 	<-started
 
 	_, err := b.DoCommand(context.Background(), map[string]any{"execute_action": "home"})
@@ -191,7 +191,7 @@ func TestQueuedOrderWaitsForManualCommand(t *testing.T) {
 
 	_, done, err := b.claim(context.Background())
 	test.That(t, err, test.ShouldBeNil)
-	b.queue.Enqueue(newCocktailOrder("negroni"))
+	mustEnqueue(t, b.queue, newCocktailOrder("negroni"))
 	time.Sleep(50 * time.Millisecond)
 	test.That(t, len(sink.snapshot()), test.ShouldEqual, 0)
 
@@ -202,7 +202,7 @@ func TestQueuedOrderWaitsForManualCommand(t *testing.T) {
 func TestCancelOrderRemovesPending(t *testing.T) {
 	b := newTestBartender(t, nil)
 	o := newCocktailOrder("negroni")
-	b.queue.Enqueue(o)
+	mustEnqueue(t, b.queue, o)
 
 	resp, err := b.DoCommand(context.Background(), map[string]any{"cancel_order": map[string]any{"order_id": o.ID}})
 	test.That(t, err, test.ShouldBeNil)
@@ -214,7 +214,7 @@ func TestGetQueueShape(t *testing.T) {
 	b := newTestBartender(t, nil)
 	o := newCocktailOrder("negroni")
 	o.Double = true
-	b.queue.Enqueue(o)
+	mustEnqueue(t, b.queue, o)
 
 	resp, err := b.DoCommand(context.Background(), map[string]any{"get_queue": true})
 	test.That(t, err, test.ShouldBeNil)
@@ -259,7 +259,7 @@ func TestOrderWaitingOnArmIsNotCurrentAndCancelHitsManualCommand(t *testing.T) {
 	manualCtx, done, err := b.claim(context.Background())
 	test.That(t, err, test.ShouldBeNil)
 	o := newCocktailOrder("negroni")
-	b.queue.Enqueue(o)
+	mustEnqueue(t, b.queue, o)
 	time.Sleep(50 * time.Millisecond)
 
 	st := b.queue.State()
@@ -283,7 +283,7 @@ func TestCloseDropsOrderWaitingOnArm(t *testing.T) {
 
 	manualCtx, done, err := b.claim(context.Background())
 	test.That(t, err, test.ShouldBeNil)
-	b.queue.Enqueue(newCocktailOrder("negroni"))
+	mustEnqueue(t, b.queue, newCocktailOrder("negroni"))
 	time.Sleep(20 * time.Millisecond)
 
 	closed := make(chan error, 1)
@@ -313,7 +313,7 @@ func TestCloseCancelsRunningOrderAndWaitsForWorker(t *testing.T) {
 		return brewErr
 	}
 	go b.processQueue()
-	b.queue.Enqueue(newCocktailOrder("negroni"))
+	mustEnqueue(t, b.queue, newCocktailOrder("negroni"))
 	<-started
 
 	test.That(t, b.Close(context.Background()), test.ShouldBeNil)
@@ -374,4 +374,13 @@ func TestReportInterruptedPushesFailedReading(t *testing.T) {
 	test.That(t, got[0].OrderID, test.ShouldEqual, o.ID)
 	test.That(t, got[0].Status, test.ShouldEqual, order.StatusFailed)
 	test.That(t, got[0].ErrMessage, test.ShouldEqual, order.ErrInterrupted)
+}
+
+func mustEnqueue(t *testing.T, q *order.Queue, o order.Order) int {
+	t.Helper()
+	ahead, err := q.Enqueue(o)
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	return ahead
 }

@@ -44,7 +44,7 @@ func TestEnqueueStartComplete(t *testing.T) {
 
 func TestEnqueueReportsOrdersAhead(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("a"))
+	mustEnqueue(t, q, NewOrder("a"))
 	q.Start()
 	ahead, _ := q.Enqueue(NewOrder("b"))
 	test.That(t, ahead, test.ShouldEqual, 1)
@@ -60,8 +60,8 @@ func TestStartEmpty(t *testing.T) {
 
 func TestStartWaitsForRunningOrder(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("a"))
-	q.Enqueue(NewOrder("b"))
+	mustEnqueue(t, q, NewOrder("a"))
+	mustEnqueue(t, q, NewOrder("b"))
 	q.Start()
 	_, ok := q.Start()
 	test.That(t, ok, test.ShouldBeFalse)
@@ -71,8 +71,8 @@ func TestCompleteHoldsUntilRelease(t *testing.T) {
 	q := NewQueue()
 	first := NewOrder("a")
 	second := NewOrder("b")
-	q.Enqueue(first)
-	q.Enqueue(second)
+	mustEnqueue(t, q, first)
+	mustEnqueue(t, q, second)
 	q.Start()
 	q.Complete(nil)
 
@@ -90,7 +90,7 @@ func TestCompleteHoldsUntilRelease(t *testing.T) {
 
 func TestReleaseNotifies(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("a"))
+	mustEnqueue(t, q, NewOrder("a"))
 	<-q.Notify()
 	q.Start()
 	q.Complete(nil)
@@ -104,7 +104,7 @@ func TestReleaseNotifies(t *testing.T) {
 
 func TestCompleteRecordsError(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("a"))
+	mustEnqueue(t, q, NewOrder("a"))
 	q.Start()
 	q.Complete(errors.New("bottle empty"))
 	st := q.State()
@@ -116,8 +116,8 @@ func TestRemovePending(t *testing.T) {
 	q := NewQueue()
 	running := NewOrder("a")
 	waiting := NewOrder("b")
-	q.Enqueue(running)
-	q.Enqueue(waiting)
+	mustEnqueue(t, q, running)
+	mustEnqueue(t, q, waiting)
 	q.Start()
 
 	removed, _ := q.Remove(running.ID)
@@ -131,7 +131,7 @@ func TestRemovePending(t *testing.T) {
 
 func TestSetStep(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("martini"))
+	mustEnqueue(t, q, NewOrder("martini"))
 	q.Start()
 	q.SetStep("pouring gin")
 	got := q.State()
@@ -141,7 +141,7 @@ func TestSetStep(t *testing.T) {
 
 func TestRecentPruning(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("old"))
+	mustEnqueue(t, q, NewOrder("old"))
 	q.Start()
 	q.Complete(nil)
 	q.recent[0].CompletedAt = time.Now().Add(-RecentDisplayDuration - time.Second)
@@ -151,7 +151,7 @@ func TestRecentPruning(t *testing.T) {
 
 func TestNotifyFiresOnEnqueue(t *testing.T) {
 	q := NewQueue()
-	q.Enqueue(NewOrder("daiquiri"))
+	mustEnqueue(t, q, NewOrder("daiquiri"))
 	fired := false
 	select {
 	case <-q.Notify():
@@ -159,4 +159,13 @@ func TestNotifyFiresOnEnqueue(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 	test.That(t, fired, test.ShouldBeTrue)
+}
+
+func mustEnqueue(t *testing.T, q *Queue, o Order) int {
+	t.Helper()
+	ahead, err := q.Enqueue(o)
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	return ahead
 }

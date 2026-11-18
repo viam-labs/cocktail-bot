@@ -56,8 +56,8 @@ func TestRestartMidDrinkMarksOrderInterruptedAndHolds(t *testing.T) {
 	q, _ := openTestQueue(t, path)
 	running := NewOrder("running")
 	next := NewOrder("next")
-	q.Enqueue(running)
-	q.Enqueue(next)
+	mustEnqueue(t, q, running)
+	mustEnqueue(t, q, next)
 	q.Start()
 
 	reopened, interrupted := openTestQueue(t, path)
@@ -79,7 +79,7 @@ func TestRestartMidDrinkMarksOrderInterruptedAndHolds(t *testing.T) {
 func TestReopenSignalsWorkerForPendingOrders(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queue.json")
 	q, _ := openTestQueue(t, path)
-	q.Enqueue(NewOrder("a"))
+	mustEnqueue(t, q, NewOrder("a"))
 
 	reopened, _ := openTestQueue(t, path)
 	select {
@@ -112,7 +112,7 @@ func TestEnqueueAndRemoveRollBackWhenSaveFails(t *testing.T) {
 	q, _, err := OpenQueue(store, nil)
 	test.That(t, err, test.ShouldBeNil)
 	kept := NewOrder("kept")
-	q.Enqueue(kept)
+	mustEnqueue(t, q, kept)
 
 	store.fail = true
 	_, err = q.Enqueue(NewOrder("rejected"))
@@ -130,7 +130,7 @@ func TestPayloadIsHiddenFromState(t *testing.T) {
 	q := NewQueue()
 	o := NewOrder("a")
 	o.Payload = json.RawMessage(`{"secret":true}`)
-	q.Enqueue(o)
+	mustEnqueue(t, q, o)
 	raw, err := json.Marshal(q.State())
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, string(raw), test.ShouldNotContainSubstring, "secret")
