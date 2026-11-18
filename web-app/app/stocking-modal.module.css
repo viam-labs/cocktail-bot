@@ -1,0 +1,208 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.modal {
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 20px 20px 16px;
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.titleOk {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ok);
+}
+
+.titleFail {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--bad);
+}
+
+.lede {
+  margin: 0;
+  color: var(--smoke);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.diagram {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--tile);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.node {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeBox {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  border: 1.5px dashed var(--hair);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nodeBoxFilled {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--hair) 50%, transparent);
+}
+
+.bottle {
+  width: 18px;
+  height: 36px;
+  border-radius: 4px 4px 2px 2px;
+  background: #d78a2b;
+  position: relative;
+}
+
+.bottle::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 10px;
+  background: #d78a2b;
+  border-radius: 2px;
+}
+
+.nodeLabel {
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.arrow {
+  color: var(--verm);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.warn {
+  display: flex;
+  gap: 10px;
+  background: var(--blush);
+  color: var(--verm);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.warn strong {
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.btnGhost,
+.btnPrimary,
+.stopLink {
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 8px 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btnGhost {
+  background: var(--tile);
+  color: var(--ink);
+}
+
+.btnGhost:hover {
+  background: var(--hair);
+}
+
+.btnPrimary {
+  background: var(--verm);
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  filter: brightness(1.05);
+}
+
+.stopLink {
+  background: transparent;
+  color: var(--verm);
+  border: none;
+  padding: 8px 4px;
+}
+
+.stopLink:hover {
+  text-decoration: underline;
+}
+
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hair);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--verm);
+  border-radius: 999px;
+  animation: slide 1.4s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
