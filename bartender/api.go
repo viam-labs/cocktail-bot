@@ -113,7 +113,16 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["make_cocktail"]; ok {
 		return b.handleMakeCocktail(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail")
+	if raw, ok := cmd["stock_bottle"]; ok {
+		return b.handleStockBottle(ctx, raw)
+	}
+	if raw, ok := cmd["retrieve_bottle"]; ok {
+		return b.handleRetrieveBottle(ctx, raw)
+	}
+	if raw, ok := cmd["move_bottle"]; ok {
+		return b.handleMoveBottle(ctx, raw)
+	}
+	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
 }
 
 func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
@@ -1287,4 +1296,149 @@ func parseExecuteAction(raw any) (string, error) {
 	default:
 		return "", fmt.Errorf("execute_action: expected string or object with 'pose', got %T", raw)
 	}
+}
+
+func (b *bartender) handleStockBottle(ctx context.Context, raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	slot, ingredient, err := parseStockBottle(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !slotKnown(b.cfg.SlotNames, slot) {
+		return nil, fmt.Errorf("stock_bottle: slot %q is not in slot_names", slot)
+	}
+	ctx = ctxWithOrderID(ctx, "stock-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.stockBottle(ctx, slot); err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.UpdateSlotAssignment(slot, ingredient); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"slot":        slot,
+		"ingredient":  ingredient,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseStockBottle(raw any) (string, string, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", "", fmt.Errorf("stock_bottle: expected object with 'slot' and 'ingredient', got %T", raw)
+	}
+	slot, _ := m["slot"].(string)
+	ingredient, _ := m["ingredient"].(string)
+	if slot == "" {
+		return "", "", errors.New("stock_bottle: 'slot' is required")
+	}
+	if ingredient == "" {
+		return "", "", errors.New("stock_bottle: 'ingredient' is required")
+	}
+	return slot, ingredient, nil
+}
+
+func (b *bartender) handleRetrieveBottle(ctx context.Context, raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	slot, err := parseRetrieveBottle(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !slotKnown(b.cfg.SlotNames, slot) {
+		return nil, fmt.Errorf("retrieve_bottle: slot %q is not in slot_names", slot)
+	}
+	ctx = ctxWithOrderID(ctx, "retrieve-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.retrieveBottle(ctx, slot); err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.ClearSlotAssignment(slot); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"slot":        slot,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseRetrieveBottle(raw any) (string, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("retrieve_bottle: expected object with 'slot', got %T", raw)
+	}
+	slot, _ := m["slot"].(string)
+	if slot == "" {
+		return "", errors.New("retrieve_bottle: 'slot' is required")
+	}
+	return slot, nil
+}
+
+func (b *bartender) handleMoveBottle(ctx context.Context, raw any) (map[string]any, error) {
+	if b.dataStore == nil {
+		return nil, errDataStoreNotConfigured
+	}
+	from, to, err := parseMoveBottle(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !slotKnown(b.cfg.SlotNames, from) {
+		return nil, fmt.Errorf("move_bottle: slot %q is not in slot_names", from)
+	}
+	if !slotKnown(b.cfg.SlotNames, to) {
+		return nil, fmt.Errorf("move_bottle: slot %q is not in slot_names", to)
+	}
+	assignments := b.dataStore.SlotAssignments()
+	ingredient, ok := assignments[from]
+	if !ok {
+		return nil, fmt.Errorf("move_bottle: slot %q is empty", from)
+	}
+	if _, taken := assignments[to]; taken {
+		return nil, fmt.Errorf("move_bottle: slot %q is already occupied", to)
+	}
+	ctx = ctxWithOrderID(ctx, "move-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done := b.withCancel(ctx)
+	defer done()
+	start := time.Now()
+	if err := b.moveBottle(ctx, from, to); err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.ClearSlotAssignment(from); err != nil {
+		return nil, err
+	}
+	if err := b.dataStore.UpdateSlotAssignment(to, ingredient); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"from":        from,
+		"to":          to,
+		"ingredient":  ingredient,
+		"duration_ms": time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func parseMoveBottle(raw any) (string, string, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", "", fmt.Errorf("move_bottle: expected object with 'from' and 'to', got %T", raw)
+	}
+	from, _ := m["from"].(string)
+	to, _ := m["to"].(string)
+	if from == "" {
+		return "", "", errors.New("move_bottle: 'from' is required")
+	}
+	if to == "" {
+		return "", "", errors.New("move_bottle: 'to' is required")
+	}
+	if from == to {
+		return "", "", errors.New("move_bottle: 'from' and 'to' must differ")
+	}
+	return from, to, nil
 }
