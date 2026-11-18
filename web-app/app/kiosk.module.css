@@ -145,6 +145,66 @@
   font-size: 15px;
   font-weight: 500;
 }
+.kqHelp {
+  background: var(--tile);
+  color: var(--bad);
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+.kqHelp .kqReadyNote {
+  color: var(--ink);
+}
+.kqNext {
+  margin-top: 12px;
+  width: 100%;
+  height: auto;
+  min-height: 52px;
+  padding: 10px 18px;
+  white-space: normal;
+  font-size: 17px;
+}
+.kqStep {
+  display: block;
+  font-size: 14px;
+  color: var(--smoke);
+}
+.kqWait {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--smoke);
+}
+.kqCancel {
+  background: none;
+  border: 0;
+  padding: 8px 4px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--verm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 32px));
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 15;
+  animation: fade 0.2s ease;
+  font-size: 16px;
+}
 .kqNote {
   color: var(--smoke);
   margin: 0 0 16px;
