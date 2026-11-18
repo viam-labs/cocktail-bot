@@ -600,6 +600,20 @@ function RecipeEditor({
       alert("Recipe id is required");
       return;
     }
+    const single = glasses.find((g) => g.id === glass);
+    if (single && !fits(single, need)) {
+      alert(`The ${single.name} glass holds ${single.capacity_oz} oz, but this drink needs about ${fmtOz(need.totalOz)} oz. Pick a bigger glass.`);
+      return;
+    }
+    if (doublable && glass && !doubleGlass) {
+      alert("Pick a glass for a double, since this drink can be doubled.");
+      return;
+    }
+    const forDouble = glasses.find((g) => g.id === doubleGlass);
+    if (doublable && forDouble && !fits(forDouble, doubleNeed)) {
+      alert(`The ${forDouble.name} glass holds ${forDouble.capacity_oz} oz, but a double needs about ${fmtOz(doubleNeed.totalOz)} oz. Pick a bigger glass for the double.`);
+      return;
+    }
     const next: Recipe = {
       id: effectiveId,
       name: trimmedName,

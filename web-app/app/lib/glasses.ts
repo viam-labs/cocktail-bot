@@ -10,8 +10,7 @@ export interface Glass {
   image?: GlassImage;
 }
 
-// Rough planning numbers, not measurements: shaking or stirring over ice adds melt water, and a drink
-// served unstrained keeps the shaker's ice, which takes up about the same room whatever the drink.
+// Rough planning numbers, not measurements; bartender/glasses.go uses the same ones to refuse drinks that don't fit.
 export const MELT_FRACTION = 0.25;
 export const ICE_IN_GLASS_OZ = 3;
 
