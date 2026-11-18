@@ -70,10 +70,13 @@ type Config struct {
 // ShakerCleaning is the v1 feature flag for rinsing the shaker on the cleaner
 // after make_cocktail serves it.
 type ShakerCleaning struct {
-	Enabled  bool   `json:"enabled"`
-	Station  string `json:"station,omitempty"`
-	DwellMs  int    `json:"dwell_ms,omitempty"`
-	Obstacle string `json:"obstacle,omitempty"`
+	Enabled         bool   `json:"enabled"`
+	Station         string `json:"station,omitempty"`
+	DwellMs         int    `json:"dwell_ms,omitempty"`
+	Obstacle        string `json:"obstacle,omitempty"`
+	PowerSwitchName string `json:"power_switch_name,omitempty"`
+	// Pause after cutting cleaner power before lifting the shaker, so water can drip off.
+	DrainMs int `json:"drain_ms,omitempty"`
 }
 
 func (s *ShakerCleaning) enabled() bool {
@@ -173,6 +176,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		if sc.DwellMs < 0 {
 			return nil, nil, errors.New(path + ": shaker_cleaning.dwell_ms must be >= 0")
 		}
+		if sc.DrainMs < 0 {
+			return nil, nil, errors.New(path + ": shaker_cleaning.drain_ms must be >= 0")
+		}
 	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
@@ -187,6 +193,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.MixerPowerSwitchName != "" {
 		deps = append(deps, toggleswitch.Named(c.MixerPowerSwitchName).String())
+	}
+	if sc := c.ShakerCleaning; sc != nil && sc.PowerSwitchName != "" {
+		deps = append(deps, toggleswitch.Named(sc.PowerSwitchName).String())
 	}
 	for _, name := range c.glassObstacleNames() {
 		deps = append(deps, gripper.Named(name).String())
