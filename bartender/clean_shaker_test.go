@@ -13,21 +13,25 @@ func TestParseCleanShaker(t *testing.T) {
 		raw      any
 		station  string
 		dwellMs  int
+		drainMs  int
 		wantErr  bool
 		errMatch string
 	}{
-		{"ok", map[string]any{"station": "shaker-cleaner", "dwell_ms": 3000.0}, "shaker-cleaner", 3000, false, ""},
-		{"ok int", map[string]any{"station": "c", "dwell_ms": 100}, "c", 100, false, ""},
-		{"zero dwell", map[string]any{"station": "c", "dwell_ms": 0.0}, "c", 0, false, ""},
-		{"not object", "shaker-cleaner", "", 0, true, "object"},
-		{"missing station", map[string]any{"dwell_ms": 100}, "", 0, true, "station"},
-		{"missing dwell", map[string]any{"station": "c"}, "", 0, true, "dwell_ms"},
-		{"negative dwell", map[string]any{"station": "c", "dwell_ms": -1.0}, "", 0, true, ">= 0"},
-		{"string dwell", map[string]any{"station": "c", "dwell_ms": "100"}, "", 0, true, "must be a number"},
+		{"ok", map[string]any{"station": "shaker-cleaner", "dwell_ms": 3000.0}, "shaker-cleaner", 3000, 0, false, ""},
+		{"ok with drain", map[string]any{"station": "c", "dwell_ms": 100, "drain_ms": 500.0}, "c", 100, 500, false, ""},
+		{"ok int", map[string]any{"station": "c", "dwell_ms": 100}, "c", 100, 0, false, ""},
+		{"zero dwell", map[string]any{"station": "c", "dwell_ms": 0.0}, "c", 0, 0, false, ""},
+		{"not object", "shaker-cleaner", "", 0, 0, true, "object"},
+		{"missing station", map[string]any{"dwell_ms": 100}, "", 0, 0, true, "station"},
+		{"missing dwell", map[string]any{"station": "c"}, "", 0, 0, true, "dwell_ms"},
+		{"negative dwell", map[string]any{"station": "c", "dwell_ms": -1.0}, "", 0, 0, true, ">= 0"},
+		{"string dwell", map[string]any{"station": "c", "dwell_ms": "100"}, "", 0, 0, true, "must be a number"},
+		{"negative drain", map[string]any{"station": "c", "dwell_ms": 100, "drain_ms": -1.0}, "", 0, 0, true, "drain_ms"},
+		{"string drain", map[string]any{"station": "c", "dwell_ms": 100, "drain_ms": "x"}, "", 0, 0, true, "drain_ms"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			station, dwellMs, err := parseCleanShaker(tc.raw)
+			station, dwellMs, drainMs, err := parseCleanShaker(tc.raw)
 			if tc.wantErr {
 				test.That(t, err, test.ShouldNotBeNil)
 				test.That(t, err.Error(), test.ShouldContainSubstring, tc.errMatch)
@@ -36,6 +40,7 @@ func TestParseCleanShaker(t *testing.T) {
 			test.That(t, err, test.ShouldBeNil)
 			test.That(t, station, test.ShouldEqual, tc.station)
 			test.That(t, dwellMs, test.ShouldEqual, tc.dwellMs)
+			test.That(t, drainMs, test.ShouldEqual, tc.drainMs)
 		})
 	}
 }
@@ -60,6 +65,7 @@ func TestConfigValidateShakerCleaning(t *testing.T) {
 		{"enabled without station", &ShakerCleaning{Enabled: true}, "shaker_cleaning.station is required"},
 		{"station not a switcher", &ShakerCleaning{Enabled: true, Station: "nope"}, "not in pose_switcher_names"},
 		{"negative dwell", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", DwellMs: -1}, "dwell_ms must be >= 0"},
+		{"negative drain", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", DrainMs: -1}, "drain_ms must be >= 0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,7 +82,7 @@ func TestConfigValidateShakerCleaning(t *testing.T) {
 
 func TestCleanShakerRequiresHeldShaker(t *testing.T) {
 	b := &bartender{cfg: &Config{}}
-	err := b.cleanShaker(context.Background(), "shaker-cleaner", 0)
+	err := b.cleanShaker(context.Background(), "shaker-cleaner", 0, 0)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "shaker must already be in the gripper")
 }

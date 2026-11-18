@@ -17,7 +17,7 @@ const (
 // cleanShaker rinses the held shaker on the cleaner, which sprays while the
 // upside-down shaker is pressed onto it, then returns the shaker home using
 // the shaker-home-* poses on the same switch.
-func (b *bartender) cleanShaker(ctx context.Context, stationSwitchName string, dwellMs int) error {
+func (b *bartender) cleanShaker(ctx context.Context, stationSwitchName string, dwellMs, drainMs int) error {
 	if b.heldGeomFrame == nil {
 		return errors.New("clean_shaker: shaker must already be in the gripper")
 	}
@@ -36,11 +36,23 @@ func (b *bartender) cleanShaker(ctx context.Context, stationSwitchName string, d
 	if _, err := b.linearCarryToPose(ctx, sw, poseCleanerApproach, cleanerAllow...); err != nil {
 		return fmt.Errorf("linear-lower to cleaner-approach: %w", err)
 	}
+	stopCleaner, err := b.startCleaner(ctx)
+	if err != nil {
+		return err
+	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseCleanerPress, cleanerAllow...); err != nil {
+		_ = stopCleaner()
 		return fmt.Errorf("linear-press onto cleaner: %w", err)
 	}
 	if err := sleepCtx(ctx, time.Duration(dwellMs)*time.Millisecond); err != nil {
+		_ = stopCleaner()
 		return fmt.Errorf("rinse dwell: %w", err)
+	}
+	if err := stopCleaner(); err != nil {
+		return err
+	}
+	if err := sleepCtx(ctx, time.Duration(drainMs)*time.Millisecond); err != nil {
+		return fmt.Errorf("drain dwell: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseCleanerApproach, cleanerAllow...); err != nil {
 		return fmt.Errorf("linear-release from cleaner: %w", err)

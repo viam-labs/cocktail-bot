@@ -178,7 +178,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults) error {
 	if sc := b.cfg.ShakerCleaning; sc.enabled() {
 		b.setPhase("Cleaning shaker")
-		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs); err != nil {
+		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs, sc.DrainMs); err != nil {
 			return fmt.Errorf("clean shaker: %w", err)
 		}
 		return nil
