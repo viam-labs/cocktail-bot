@@ -210,7 +210,8 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
 | `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "pours": [{"ingredient": "...", "oz": N}]}]}` |
-| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
+| `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool, refrigerated: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |
 | `delete_inventory_item` | `{"ingredient": "vodka"}` |
+| `update_refrigerated` | `{"ingredient": "vermouth", "refrigerated": true}` — rejects ingredients with no inventory entry or slot. |
 | `get_bottles` | `{}` → `{bottles: [...]}` — switch names in `pose_switcher_names` that are also in `bottle_pourer_oz`. |
