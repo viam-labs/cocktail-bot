@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
 import {
   cancelOrder,
+  clearSlotAssignment,
   getStatus,
   moveBottle,
   retrieveBottle,
   stockBottle,
+  updateSlotAssignment,
 } from "./lib/viamClient";
 import { titleCase } from "./lib/display";
 import { slotLabel } from "./lib/stocking";
@@ -96,6 +98,44 @@ export function StockingModal({ conn, plan, onClose, onDone }: StockingModalProp
     setStage("done");
   }, [conn, plan]);
 
+  // runManualFull updates the inventory to match a human-performed move, with no arm motion.
+  // Covers the full "Manually moved" path from the initial confirm, including swap (one update).
+  const runManualFull = useCallback(async () => {
+    setError(null);
+    try {
+      if (plan.action === "place") {
+        await updateSlotAssignment(conn, plan.targetSlot, plan.ingredient!);
+      } else if (plan.action === "move") {
+        await clearSlotAssignment(conn, plan.sourceSlot!);
+        await updateSlotAssignment(conn, plan.targetSlot, plan.ingredient!);
+      } else if (plan.action === "retrieve") {
+        await clearSlotAssignment(conn, plan.targetSlot);
+      } else {
+        // swap: slot assignment is replaced in a single update.
+        await updateSlotAssignment(conn, plan.targetSlot, plan.ingredient!);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStage("failed");
+      return;
+    }
+    setStage("done");
+  }, [conn, plan]);
+
+  // runManualPhaseTwo is the swap-pause variant: the arm has already cleared the slot
+  // and the operator will place the new bottle by hand instead of using the arm.
+  const runManualPhaseTwo = useCallback(async () => {
+    setError(null);
+    try {
+      await updateSlotAssignment(conn, plan.targetSlot, plan.ingredient!);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStage("failed");
+      return;
+    }
+    setStage("done");
+  }, [conn, plan]);
+
   const stop = useCallback(async () => {
     abortedRef.current = true;
     try {
@@ -114,10 +154,17 @@ export function StockingModal({ conn, plan, onClose, onDone }: StockingModalProp
   return (
     <div className={styles.overlay} onClick={stage === "running" ? undefined : close}>
       <div className={styles.modal} role="dialog" onClick={(e) => e.stopPropagation()}>
-        {stage === "confirm" && <ConfirmBody plan={plan} onConfirm={runPhaseOne} onClose={close} />}
+        {stage === "confirm" && (
+          <ConfirmBody plan={plan} onConfirm={runPhaseOne} onManual={runManualFull} onClose={close} />
+        )}
         {stage === "running" && <RunningBody plan={plan} currentStep={currentStep} onStop={stop} />}
         {stage === "swap-pause" && (
-          <SwapPauseBody plan={plan} onContinue={runPhaseTwo} onClose={close} />
+          <SwapPauseBody
+            plan={plan}
+            onContinue={runPhaseTwo}
+            onManual={runManualPhaseTwo}
+            onClose={close}
+          />
         )}
         {stage === "done" && <DoneBody plan={plan} onDone={close} />}
         {stage === "failed" && <FailedBody error={error} onRetry={runPhaseOne} onClose={close} />}
@@ -129,10 +176,12 @@ export function StockingModal({ conn, plan, onClose, onDone }: StockingModalProp
 function ConfirmBody({
   plan,
   onConfirm,
+  onManual,
   onClose,
 }: {
   plan: StockingPlan;
   onConfirm: () => void;
+  onManual: () => void;
   onClose: () => void;
 }) {
   const t = confirmText(plan);
@@ -150,6 +199,10 @@ function ConfirmBody({
       <div className={styles.actions}>
         <button type="button" className={styles.btnGhost} onClick={onClose}>
           Close
+        </button>
+        <span className={styles.spacer} aria-hidden />
+        <button type="button" className={styles.btnSecondary} onClick={onManual}>
+          I moved it manually
         </button>
         <button type="button" className={styles.btnPrimary} onClick={onConfirm}>
           Confirm
@@ -185,10 +238,12 @@ function RunningBody({
 function SwapPauseBody({
   plan,
   onContinue,
+  onManual,
   onClose,
 }: {
   plan: StockingPlan;
   onContinue: () => void;
+  onManual: () => void;
   onClose: () => void;
 }) {
   const newName = titleCase(plan.ingredient!);
@@ -206,6 +261,10 @@ function SwapPauseBody({
       <div className={styles.actions}>
         <button type="button" className={styles.btnGhost} onClick={onClose}>
           Close
+        </button>
+        <span className={styles.spacer} aria-hidden />
+        <button type="button" className={styles.btnSecondary} onClick={onManual}>
+          I moved it manually
         </button>
         <button type="button" className={styles.btnPrimary} onClick={onContinue}>
           Continue

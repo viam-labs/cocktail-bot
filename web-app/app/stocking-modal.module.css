@@ -139,12 +139,18 @@
 
 .actions {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding-top: 4px;
 }
 
+.spacer {
+  flex: 1 1 auto;
+}
+
 .btnGhost,
+.btnSecondary,
 .btnPrimary,
 .stopLink {
   border-radius: 999px;
@@ -164,6 +170,17 @@
   background: var(--hair);
 }
 
+.btnSecondary {
+  background: transparent;
+  color: var(--verm);
+  border: 1px solid color-mix(in srgb, var(--verm) 45%, transparent);
+}
+
+.btnSecondary:hover {
+  background: color-mix(in srgb, var(--verm) 8%, transparent);
+  border-color: var(--verm);
+}
+
 .btnPrimary {
   background: var(--verm);
   color: #fff;
@@ -171,6 +188,16 @@
 
 .btnPrimary:hover {
   filter: brightness(1.05);
+}
+
+@media (max-width: 380px) {
+  .actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .spacer {
+    display: none;
+  }
 }
 
 .stopLink {
