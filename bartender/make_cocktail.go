@@ -155,13 +155,8 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 		if err := b.serveFromShaker(ctx, serveSw, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
-		if sc := b.cfg.ShakerCleaning; sc.enabled() {
-			b.setPhase("Cleaning shaker")
-			if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs); err != nil {
-				return fmt.Errorf("clean shaker: %w", err)
-			}
-		} else if err := b.returnShakerHome(ctx, serveSw); err != nil {
-			return fmt.Errorf("return shaker home: %w", err)
+		if err := b.putShakerAway(ctx, d); err != nil {
+			return err
 		}
 		// rotateShakers resets the strain-flow bookkeeping (shaker-B back to
 		// shaker-A); only relevant when a strain actually ran.
@@ -174,6 +169,26 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 	}
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
 		return fmt.Errorf("park at home: %w", err)
+	}
+	return nil
+}
+
+// putShakerAway cleans or returns the served shaker. The shaker-home poses live on the
+// default serve station, not on a glass's own serve switch.
+func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults) error {
+	if sc := b.cfg.ShakerCleaning; sc.enabled() {
+		b.setPhase("Cleaning shaker")
+		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs); err != nil {
+			return fmt.Errorf("clean shaker: %w", err)
+		}
+		return nil
+	}
+	homeSw, err := b.findSwitch(d.ServeStation)
+	if err != nil {
+		return fmt.Errorf("serve station switch %q: %w", d.ServeStation, err)
+	}
+	if err := b.returnShakerHome(ctx, homeSw); err != nil {
+		return fmt.Errorf("return shaker home: %w", err)
 	}
 	return nil
 }
