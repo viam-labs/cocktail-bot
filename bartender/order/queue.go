@@ -1,6 +1,7 @@
 package order
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -8,11 +9,16 @@ import (
 // RecentDisplayDuration is long enough for clients polling every few seconds to see an order's outcome.
 const RecentDisplayDuration = 2 * time.Minute
 
+// ErrInterrupted is recorded on an order that was being made when the module stopped.
+const ErrInterrupted = "interrupted: the bartender restarted while this drink was being made"
+
 // Queue runs orders one at a time. Every drink is served at the same station,
 // so after each order the queue holds until Release confirms the drink was
 // taken and a fresh glass is in place.
 type Queue struct {
 	mu             sync.Mutex
+	store          Store
+	onSaveErr      func(error)
 	notify         chan struct{}
 	pending        []Order
 	current        *Order
@@ -20,9 +26,65 @@ type Queue struct {
 	recent         []Order
 }
 
+// NewQueue returns a queue that lives only in memory.
 func NewQueue() *Queue {
 	return &Queue{
-		notify: make(chan struct{}, 1),
+		notify:    make(chan struct{}, 1),
+		onSaveErr: func(error) {},
+	}
+}
+
+// OpenQueue restores the queue from store and saves every change back to it.
+// An order that was mid-drink is returned as interrupted: it is not re-made,
+// and the queue holds so someone can clear the station first.
+func OpenQueue(store Store, onSaveErr func(error)) (*Queue, *Order, error) {
+	snap, err := store.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	q := NewQueue()
+	q.store = store
+	if onSaveErr != nil {
+		q.onSaveErr = onSaveErr
+	}
+	q.pending = snap.Pending
+	q.recent = snap.Recent
+	q.awaitingPickup = snap.AwaitingPickup
+	var interrupted *Order
+	if snap.Current != nil {
+		o := *snap.Current
+		o.CompletedAt = time.Now()
+		o.Error = ErrInterrupted
+		o.Payload = nil
+		q.recent = append(q.recent, o)
+		q.awaitingPickup = &o
+		interrupted = &o
+	}
+	q.pruneRecentLocked()
+	if err := q.saveLocked(); err != nil {
+		return nil, nil, err
+	}
+	if len(q.pending) > 0 {
+		q.signal()
+	}
+	return q, interrupted, nil
+}
+
+func (q *Queue) saveLocked() error {
+	if q.store == nil {
+		return nil
+	}
+	return q.store.Save(Snapshot{
+		Pending:        q.pending,
+		Current:        q.current,
+		AwaitingPickup: q.awaitingPickup,
+		Recent:         q.recent,
+	})
+}
+
+func (q *Queue) saveOrReportLocked() {
+	if err := q.saveLocked(); err != nil {
+		q.onSaveErr(err)
 	}
 }
 
@@ -38,16 +100,22 @@ func (q *Queue) signal() {
 }
 
 // Enqueue adds o to the back of the line and returns how many orders are ahead of it.
-func (q *Queue) Enqueue(o Order) int {
+// The order is rejected if it cannot be saved, so a restart never loses an accepted order.
+func (q *Queue) Enqueue(o Order) (int, error) {
 	q.mu.Lock()
 	ahead := len(q.pending)
 	if q.current != nil {
 		ahead++
 	}
 	q.pending = append(q.pending, o)
+	if err := q.saveLocked(); err != nil {
+		q.pending = q.pending[:len(q.pending)-1]
+		q.mu.Unlock()
+		return 0, fmt.Errorf("save order queue: %w", err)
+	}
 	q.mu.Unlock()
 	q.signal()
-	return ahead
+	return ahead, nil
 }
 
 // Start pops the next pending order, unless one is running or a finished drink is still awaiting pickup.
@@ -61,6 +129,7 @@ func (q *Queue) Start() (Order, bool) {
 	q.pending = q.pending[1:]
 	o.StartedAt = time.Now()
 	q.current = &o
+	q.saveOrReportLocked()
 	return o, true
 }
 
@@ -89,6 +158,7 @@ func (q *Queue) Complete(err error) {
 	q.awaitingPickup = &done
 	q.current = nil
 	q.pruneRecentLocked()
+	q.saveOrReportLocked()
 }
 
 // Release clears the pickup hold so the next pending order can start.
@@ -96,6 +166,9 @@ func (q *Queue) Release() bool {
 	q.mu.Lock()
 	released := q.awaitingPickup != nil
 	q.awaitingPickup = nil
+	if released {
+		q.saveOrReportLocked()
+	}
 	q.mu.Unlock()
 	if released {
 		q.signal()
@@ -103,17 +176,23 @@ func (q *Queue) Release() bool {
 	return released
 }
 
-// Remove drops a pending order that has not started yet.
-func (q *Queue) Remove(id string) bool {
+// Remove drops a pending order that has not started yet. It is kept if the
+// removal cannot be saved, so a restart never brings back an order that was reported cancelled.
+func (q *Queue) Remove(id string) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for i, o := range q.pending {
 		if o.ID == id {
+			before := q.pending
 			q.pending = append(q.pending[:i:i], q.pending[i+1:]...)
-			return true
+			if err := q.saveLocked(); err != nil {
+				q.pending = before
+				return false, fmt.Errorf("save order queue: %w", err)
+			}
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func (q *Queue) pruneRecentLocked() {

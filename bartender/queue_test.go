@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -55,8 +56,16 @@ func newTestBartender(t *testing.T, sink orderSensorSink) *bartender {
 }
 
 func newCocktailOrder(drink string) order.Order {
+	return newCocktailOrderN(drink, 1)
+}
+
+func newCocktailOrderN(drink string, quantity int) order.Order {
 	o := order.NewOrder(drink)
-	o.Payload = cocktailJob{plan: drinkPlan{title: drink}, quantity: 1}
+	payload, err := newCocktailJob(drinkPlan{title: drink}, quantity)
+	if err != nil {
+		panic(err)
+	}
+	o.Payload = payload
 	return o
 }
 
@@ -98,9 +107,7 @@ func TestProcessQueueRunsQuantityTimes(t *testing.T) {
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	o := newCocktailOrder("negroni")
-	o.Payload = cocktailJob{quantity: 3}
-	b.queue.Enqueue(o)
+	b.queue.Enqueue(newCocktailOrderN("negroni", 3))
 
 	waitFor(t, func() bool { return b.queue.State().AwaitingPickup != nil }, "order finished")
 	mu.Lock()
@@ -316,4 +323,55 @@ func TestCloseCancelsRunningOrderAndWaitsForWorker(t *testing.T) {
 		t.Fatal("Close returned before the queue worker exited")
 	}
 	test.That(t, errors.Is(brewErr, context.Canceled), test.ShouldBeTrue)
+}
+
+func TestQueuedRecipeSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "order_queue.json")
+	q, _, err := order.OpenQueue(order.NewFileStore(path), nil)
+	test.That(t, err, test.ShouldBeNil)
+
+	plan := drinkPlan{
+		title:      "Negroni",
+		servePhase: "Serving",
+		double:     true,
+		steps: []RecipeStep{
+			{Kind: "pour", Ingredient: "gin", Oz: 1},
+			{Kind: "mix", MixMode: "stir"},
+		},
+	}
+	o := order.NewOrder("Negroni")
+	o.Payload, err = newCocktailJob(plan, 2)
+	test.That(t, err, test.ShouldBeNil)
+	_, err = q.Enqueue(o)
+	test.That(t, err, test.ShouldBeNil)
+
+	reopened, _, err := order.OpenQueue(order.NewFileStore(path), nil)
+	test.That(t, err, test.ShouldBeNil)
+	b := newTestBartender(t, nil)
+	b.queue = reopened
+	var got []drinkPlan
+	b.brew = func(_ context.Context, p drinkPlan) error {
+		got = append(got, p)
+		return nil
+	}
+	next, ok := reopened.Start()
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, b.prepareDrink(context.Background(), next), test.ShouldBeNil)
+	test.That(t, len(got), test.ShouldEqual, 2)
+	test.That(t, got[0], test.ShouldResemble, plan)
+}
+
+func TestReportInterruptedPushesFailedReading(t *testing.T) {
+	sink := &mockSink{}
+	b := newTestBartender(t, sink)
+	o := order.NewOrder("Negroni")
+	o.StartedAt = time.Now().Add(-time.Minute)
+	o.CompletedAt = time.Now()
+	b.reportInterrupted(o)
+
+	got := sink.snapshot()
+	test.That(t, len(got), test.ShouldEqual, 1)
+	test.That(t, got[0].OrderID, test.ShouldEqual, o.ID)
+	test.That(t, got[0].Status, test.ShouldEqual, order.StatusFailed)
+	test.That(t, got[0].ErrMessage, test.ShouldEqual, order.ErrInterrupted)
 }

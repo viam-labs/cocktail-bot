@@ -2,6 +2,7 @@ package bartender
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -80,6 +81,22 @@ func (b *bartender) safeExecuteOrder(ctx context.Context, o order.Order) (execEr
 		slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
 	}()
 	return b.prepareDrink(ctx, o)
+}
+
+// reportInterrupted records a drink cut short by a restart, so it shows up in order history and Slack like any other failure.
+func (b *bartender) reportInterrupted(o order.Order) {
+	err := errors.New(order.ErrInterrupted)
+	b.logger.Errorw("order interrupted by restart; queue is held until start_next", "order_id", o.ID, "drink", o.Drink)
+	b.publishReading(o, o.StartedAt, o.CompletedAt, err, "")
+	alert := orderAlert{
+		drink:     o.Drink,
+		double:    o.Double,
+		orderID:   o.ID,
+		duration:  o.CompletedAt.Sub(o.StartedAt),
+		err:       err,
+		machineID: b.slackMachineID(),
+	}
+	slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
 }
 
 func (b *bartender) publishReading(o order.Order, start, end time.Time, execErr error, failedStep string) {

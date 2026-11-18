@@ -1,6 +1,7 @@
 package order
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,8 +18,8 @@ type Order struct {
 	CompletedAt time.Time `json:"completed_at"`
 	Error       string    `json:"error,omitempty"`
 
-	// Payload is what the executor needs to make the drink; it never leaves the module.
-	Payload any `json:"-"`
+	// Payload is what the executor needs to make the drink. It is persisted but never returned by get_queue.
+	Payload json.RawMessage `json:"-"`
 }
 
 func NewOrder(drink string) Order {

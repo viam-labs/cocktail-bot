@@ -11,7 +11,8 @@ import (
 func TestEnqueueStartComplete(t *testing.T) {
 	q := NewQueue()
 	o := NewOrder("negroni")
-	ahead := q.Enqueue(o)
+	ahead, err := q.Enqueue(o)
+	test.That(t, err, test.ShouldBeNil)
 	test.That(t, ahead, test.ShouldEqual, 0)
 
 	got := q.State()
@@ -45,8 +46,10 @@ func TestEnqueueReportsOrdersAhead(t *testing.T) {
 	q := NewQueue()
 	q.Enqueue(NewOrder("a"))
 	q.Start()
-	test.That(t, q.Enqueue(NewOrder("b")), test.ShouldEqual, 1)
-	test.That(t, q.Enqueue(NewOrder("c")), test.ShouldEqual, 2)
+	ahead, _ := q.Enqueue(NewOrder("b"))
+	test.That(t, ahead, test.ShouldEqual, 1)
+	ahead, _ = q.Enqueue(NewOrder("c"))
+	test.That(t, ahead, test.ShouldEqual, 2)
 }
 
 func TestStartEmpty(t *testing.T) {
@@ -117,9 +120,12 @@ func TestRemovePending(t *testing.T) {
 	q.Enqueue(waiting)
 	q.Start()
 
-	test.That(t, q.Remove(running.ID), test.ShouldBeFalse)
-	test.That(t, q.Remove(waiting.ID), test.ShouldBeTrue)
-	test.That(t, q.Remove(waiting.ID), test.ShouldBeFalse)
+	removed, _ := q.Remove(running.ID)
+	test.That(t, removed, test.ShouldBeFalse)
+	removed, _ = q.Remove(waiting.ID)
+	test.That(t, removed, test.ShouldBeTrue)
+	removed, _ = q.Remove(waiting.ID)
+	test.That(t, removed, test.ShouldBeFalse)
 	test.That(t, len(q.State().Queue), test.ShouldEqual, 0)
 }
 

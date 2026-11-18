@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"go.viam.com/rdk/components/arm"
@@ -192,8 +193,18 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 			return nil, fmt.Errorf("data store: %w", err)
 		}
 		b.dataStore = ds
+		q, interrupted, err := order.OpenQueue(order.NewFileStore(filepath.Join(dir, queueFileName)), func(err error) {
+			logger.Errorw("save order queue; a restart may lose its latest change", "err", err)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("order queue: %w", err)
+		}
+		b.queue = q
+		if interrupted != nil {
+			b.reportInterrupted(*interrupted)
+		}
 	} else {
-		logger.Warn("data_dir not set and VIAM_MODULE_DATA unset; recipes and inventory DoCommands unavailable")
+		logger.Warn("data_dir not set and VIAM_MODULE_DATA unset; recipes and inventory DoCommands unavailable, and the order queue is kept in memory only")
 	}
 
 	go b.processQueue()

@@ -38,7 +38,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `glass_min_separation_mm` | number | Optional | Detections closer than this in x, y count as one glass. | 50 |
 | `order_sensor_name` | string | Optional | Order sensor to push each attempt reading to. |  |
 | `loading_spot_switch_name` | string | Optional | Pose-switcher component holding the loading-spot `hover`/`grab`/`lift`/`carry-hover` poses used by `stock_bottle`, `retrieve_bottle`, and `move_bottle`. Required for those commands. |  |
-| `data_dir` | string | Optional | Directory for persisted recipes + inventory. Falls back to `$VIAM_MODULE_DATA`. |  |
+| `data_dir` | string | Optional | Directory for persisted recipes, inventory and the order queue (`order_queue.json`). Falls back to `$VIAM_MODULE_DATA`. With neither set, the queue is kept in memory only. |  |
 | `save_motion_requests_dir` | string | Optional | When set, every motion-plan request + response is written here, tagged by order id. |  |
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
 | `machine_id` | string | Optional | Viam machine id; when set, failure alerts deep-link to app.viam.com machine logs. |  |
@@ -116,6 +116,8 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 ##### `make_cocktail`
 
 Adds a full recipe to the order queue and returns immediately with `{order_id, title, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it. Watch progress via `get_queue`.
+
+The queue is saved to `order_queue.json` in `data_dir` on every change, so waiting orders survive a restart or reconfigure. An order is rejected if it can't be saved. If the module stops while a drink is being made, that drink isn't remade on restart: it's recorded as failed ("interrupted"), reported to the order sensor and Slack, and the queue holds until `start_next`. A corrupt queue file stops the service from starting, with an error naming the file.
 
 The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place.
 

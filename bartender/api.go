@@ -147,7 +147,11 @@ func (b *bartender) handleCancelOrder(raw any) (map[string]any, error) {
 	if id == "" {
 		return nil, errors.New("cancel_order: 'order_id' is required")
 	}
-	return map[string]any{"removed": b.queue.Remove(id)}, nil
+	removed, err := b.queue.Remove(id)
+	if err != nil {
+		return nil, fmt.Errorf("cancel_order: %w", err)
+	}
+	return map[string]any{"removed": removed}, nil
 }
 
 func (b *bartender) handleCancel() (map[string]any, error) {
@@ -1243,8 +1247,15 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	o := order.NewOrder(displayName)
 	o.Double = plan.double
 	o.Quantity = quantity
-	o.Payload = cocktailJob{plan: plan, quantity: quantity}
-	ahead := b.queue.Enqueue(o)
+	payload, err := newCocktailJob(plan, quantity)
+	if err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	o.Payload = payload
+	ahead, err := b.queue.Enqueue(o)
+	if err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
 
 	return map[string]any{
 		"order_id":    o.ID,
