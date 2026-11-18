@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { ViamConnection } from "./lib/viamClient";
 import {
@@ -8,11 +8,14 @@ import {
   getPourMenus,
   getRecipes,
   getMachineName,
-  getStatus,
+  getQueue,
+  cancelQueuedOrder,
   makeCocktail,
   makeInlineOrder,
+  startNext,
 } from "./lib/viamClient";
-import type { OrderStatus } from "./lib/viamClient";
+import type { PlacedOrder, QueueOrder, QueueState } from "./lib/queue";
+import { guestErrorMessage, orderProgress, ordersInLine } from "./lib/queue";
 import type { BaseSpirit, Flavor, Recipe, RecipeStep } from "./lib/recipes";
 import { BASE_SPIRITS, FLAVORS, recipePours } from "./lib/recipes";
 import type { Inventory, WhiskeyProfile } from "./lib/inventory";
@@ -22,11 +25,12 @@ import { titleCase } from "./lib/display";
 import { Nav } from "./nav";
 import styles from "./kiosk.module.css";
 
-type OrderState =
-  | { kind: "idle" }
-  | { kind: "running"; label: string; slug?: string; double?: boolean }
-  | { kind: "done"; label: string; slug?: string; at: number; double?: boolean }
-  | { kind: "error"; label: string; slug?: string; message: string };
+// Orders placed from this screen, so it can confirm them and report failures.
+type MyOrder = { id: string; label: string };
+
+type Placed = { label: string; ahead: number; at: number };
+
+type OrderFailure = { label: string; message: string };
 
 type PourEntry = {
   menu: PourMenu;
@@ -37,8 +41,9 @@ type PourEntry = {
 
 const WHISKEY_SLUG = "whiskey-neat";
 
-const READY_CARD_MS = 60_000;
 const MINUTES_PER_DRINK = 3;
+const QUEUE_POLL_MS = 1500;
+const PLACED_TOAST_MS = 8_000;
 const FILTER_IDLE_RESET_MS = 30_000;
 
 function spiritForPourMenu(menu: PourMenu): BaseSpirit | null {
@@ -83,7 +88,31 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [menus, setMenus] = useState<PourMenu[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [order, setOrder] = useState<OrderState>({ kind: "idle" });
+  const [myOrders, setMyOrdersState] = useState<MyOrder[]>([]);
+  const myOrdersRef = useRef<MyOrder[]>([]);
+  const setMyOrders = useCallback((next: MyOrder[]) => {
+    myOrdersRef.current = next;
+    setMyOrdersState(next);
+  }, []);
+  const [placing, setPlacing] = useState(false);
+  const [placed, setPlaced] = useState<Placed | null>(null);
+  const [failure, setFailure] = useState<OrderFailure | null>(null);
+
+  // Surface failures of orders placed here; forget orders once they finish or vanish.
+  const onQueueState = useCallback(
+    (state: QueueState) => {
+      const mine = myOrdersRef.current;
+      if (mine.length === 0) return;
+      const still = mine.filter((o) => {
+        const p = orderProgress(state, o.id);
+        if (p.kind === "failed") setFailure({ label: o.label, message: p.error });
+        return p.kind === "waiting" || p.kind === "making";
+      });
+      if (still.length !== mine.length) setMyOrders(still);
+    },
+    [setMyOrders],
+  );
+  const queue = useQueue(conn, connected, onQueueState);
   const [confirming, setConfirming] = useState<{ recipe: Recipe; orderable: boolean } | null>(null);
   const [pourConfirming, setPourConfirming] = useState<PourEntry | null>(null);
   const [pourPreview, setPourPreview] = useState<PourEntry | null>(null);
@@ -131,66 +160,68 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     };
   }, [conn]);
 
-  const startOrder = useCallback(
-    async (recipe: Recipe, double: boolean) => {
-      let label = recipe.name;
-      const slug = recipe.image;
-      setOrder({ kind: "running", label, slug, double });
+  const placeOrder = useCallback(
+    async (label: string, submit: () => Promise<PlacedOrder>) => {
+      setPlacing(true);
       try {
-        await makeCocktail(conn, recipe.id, {
-          double,
-          onStarted: (title) => {
-            label = title;
-            setOrder({ kind: "running", label, slug, double });
-          },
-        });
-        setOrder({ kind: "done", label, slug, at: Date.now(), double });
+        const resp = await submit();
+        const title = resp.title || label;
+        setMyOrders([...myOrdersRef.current, { id: resp.order_id, label: title }]);
+        setPlaced({ label: title, ahead: resp.ahead, at: Date.now() });
+        queue.refresh();
       } catch (err) {
-        setOrder({
-          kind: "error",
-          label,
-          slug,
-          message: err instanceof Error ? err.message : String(err),
-        });
+        setFailure({ label, message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setPlacing(false);
       }
     },
-    [conn],
+    [queue, setMyOrders],
+  );
+
+  const startOrder = useCallback(
+    (recipe: Recipe, double: boolean) =>
+      placeOrder(recipe.name, () => makeCocktail(conn, recipe.id, { double })),
+    [conn, placeOrder],
   );
 
   const startPourOrder = useCallback(
-    async (entry: PourEntry, size: PourSize, serve: PourServe) => {
+    (entry: PourEntry, size: PourSize, serve: PourServe) => {
       const label = `${titleCase(entry.ingredient)} · ${size.label} · ${serve.label}`;
-      const slug = slugForMenu(entry.menu);
       const steps: RecipeStep[] = [];
       if (serve.with_ice) {
         steps.push({ kind: "ice", type: "crushed" });
       }
       steps.push({ kind: "pour", ingredient: entry.ingredient, oz: size.oz });
-      setOrder({ kind: "running", label, slug });
-      try {
-        await makeInlineOrder(conn, { name: label, steps });
-        setOrder({ kind: "done", label, slug, at: Date.now() });
-      } catch (err) {
-        setOrder({
-          kind: "error",
-          label,
-          slug,
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
+      return placeOrder(label, () => makeInlineOrder(conn, { name: label, steps }));
     },
-    [conn],
+    [conn, placeOrder],
   );
 
-  const dismissError = useCallback(() => setOrder({ kind: "idle" }), []);
-
-  // Auto-fade the "ready" state after READY_CARD_MS so the sidebar returns to idle.
   useEffect(() => {
-    if (order.kind !== "done") return;
-    const remaining = Math.max(0, READY_CARD_MS - (Date.now() - order.at));
-    const t = window.setTimeout(() => setOrder({ kind: "idle" }), remaining);
+    if (!placed) return;
+    const t = window.setTimeout(() => setPlaced(null), Math.max(0, PLACED_TOAST_MS - (Date.now() - placed.at)));
     return () => window.clearTimeout(t);
-  }, [order]);
+  }, [placed]);
+
+  const onStartNext = useCallback(async () => {
+    try {
+      await startNext(conn);
+    } finally {
+      queue.refresh();
+    }
+  }, [conn, queue]);
+
+  const onCancelOrder = useCallback(
+    async (id: string) => {
+      try {
+        await cancelQueuedOrder(conn, id);
+        setMyOrders(myOrdersRef.current.filter((o) => o.id !== id));
+      } finally {
+        queue.refresh();
+      }
+    },
+    [conn, queue, setMyOrders],
+  );
 
   const visible = useMemo(
     () => (recipes ? recipes.filter((r) => r.on_menu !== false) : []),
@@ -299,7 +330,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
       flavorFilters={flavorFilters}
       recipes={filteredRecipes}
       pourEntries={filteredPourEntries}
-      disabled={order.kind === "running"}
+      disabled={placing}
       onPickRecipe={(recipe) => setConfirming({ recipe, orderable: true })}
       onPickPour={(entry) => setPourConfirming(entry)}
       onShowAll={clearFilters}
@@ -311,7 +342,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
           key={pm.id}
           menu={pm}
           entries={entries}
-          disabled={order.kind === "running"}
+          disabled={placing}
           onPick={(entry) => setPourConfirming(entry)}
         />
       ))}
@@ -319,7 +350,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         recipes={visible}
         inventory={inventory}
         pendingPours={pendingPours}
-        disabled={order.kind === "running"}
+        disabled={placing}
         onPick={(recipe, orderable) => setConfirming({ recipe, orderable })}
         onPickPendingPour={(entry) => setPourPreview(entry)}
       />
@@ -333,7 +364,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         {kioskMode && (
           <header className={styles.kioskHeader}>
             <span className={styles.wordmark}>Cocktail Bot</span>
-            <StatusPill order={order} connected={connected} />
+            <StatusPill state={queue.state} connected={connected} />
           </header>
         )}
         <main className={`${styles.main} ${kioskMode ? styles.mainKiosk : ""}`}>
@@ -350,14 +381,15 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
           </p>
 
           {filterBar}
-          {kioskMode ? (
-            menu
-          ) : (
-            <div className={styles.kBody}>
-              <div className={styles.menuWrap}>{menu}</div>
-              <KioskQueue conn={conn} order={order} />
-            </div>
-          )}
+          <div className={styles.kBody}>
+            <div className={styles.menuWrap}>{menu}</div>
+            <KioskQueue
+              state={queue.state}
+              mine={myOrders}
+              onStartNext={onStartNext}
+              onCancelOrder={onCancelOrder}
+            />
+          </div>
         </main>
 
         {confirming && (
@@ -392,29 +424,37 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
           />
         )}
 
-        {order.kind === "error" && (
-          <OrderError label={order.label} message={order.message} onDismiss={dismissError} />
+        {placed && !failure && (
+          <PlacedToast placed={placed} onDismiss={() => setPlaced(null)} />
+        )}
+
+        {failure && (
+          <OrderError
+            label={failure.label}
+            message={kioskMode ? guestErrorMessage(failure.message) : failure.message}
+            onDismiss={() => setFailure(null)}
+          />
         )}
       </div>
     </>
   );
 }
 
-function StatusPill({ order, connected }: { order: OrderState; connected: boolean }) {
+function StatusPill({ state, connected }: { state: QueueState | null; connected: boolean }) {
   let dotColor = "var(--ok)";
   let text: string;
+  const inLine = state ? ordersInLine(state) : 0;
   if (!connected) {
     dotColor = "var(--bad)";
     text = "Reconnecting…";
-  } else if (order.kind === "running") {
+  } else if (state?.awaiting_pickup) {
+    dotColor = state.awaiting_pickup.error ? "var(--bad)" : "var(--ok)";
+    text = state.awaiting_pickup.error
+      ? `${state.awaiting_pickup.drink} needs help`
+      : `${state.awaiting_pickup.drink} is ready`;
+  } else if (state?.current) {
     dotColor = "var(--verm)";
-    text = `Making ${order.label}`;
-  } else if (order.kind === "done") {
-    dotColor = "var(--ok)";
-    text = `${order.label} is ready`;
-  } else if (order.kind === "error") {
-    dotColor = "var(--bad)";
-    text = `${order.label} needs help`;
+    text = `Making ${state.current.drink}${inLine > 1 ? ` · ${inLine - 1} waiting` : ""}`;
   } else {
     text = `Nobody in line · about ${MINUTES_PER_DRINK} min per drink`;
   }
@@ -820,61 +860,122 @@ function OrderSheet({
   );
 }
 
-function KioskQueue({
-  conn,
-  order,
-}: {
-  conn: ViamConnection;
-  order: OrderState;
-}) {
-  const [status, setStatus] = useState<OrderStatus | null>(null);
-  const pollActive = order.kind === "running";
+function useQueue(conn: ViamConnection, connected: boolean, onState: (s: QueueState) => void) {
+  const [state, setState] = useState<QueueState | null>(null);
+  const cancelled = useRef(false);
+  const refresh = useCallback(() => {
+    getQueue(conn)
+      .then((s) => {
+        if (cancelled.current) return;
+        setState(s);
+        onState(s);
+      })
+      .catch(() => {});
+  }, [conn, onState]);
 
   useEffect(() => {
-    if (!pollActive) return;
-    let cancelled = false;
-    const poll = () => {
-      getStatus(conn)
-        .then((s) => {
-          if (!cancelled) setStatus(s);
-        })
-        .catch(() => {});
-    };
-    poll();
-    const id = window.setInterval(poll, 1000);
+    if (!connected) return;
+    cancelled.current = false;
+    refresh();
+    const id = window.setInterval(refresh, QUEUE_POLL_MS);
     return () => {
-      cancelled = true;
+      cancelled.current = true;
       window.clearInterval(id);
     };
-  }, [conn, pollActive]);
+  }, [connected, refresh]);
 
-  const currentPhaseForRunning = pollActive ? status?.current_step : undefined;
+  return useMemo(() => ({ state, refresh }), [state, refresh]);
+}
+
+function waitText(position: number): string {
+  if (position <= 1) return "Up next";
+  return `#${position} · ~${position * MINUTES_PER_DRINK} min`;
+}
+
+function KioskQueue({
+  state,
+  mine,
+  onStartNext,
+  onCancelOrder,
+}: {
+  state: QueueState | null;
+  mine: MyOrder[];
+  onStartNext: () => void;
+  onCancelOrder: (id: string) => void;
+}) {
+  const mineIds = new Set(mine.map((o) => o.id));
+  const held = state?.awaiting_pickup;
+  const waiting: QueueOrder[] = state?.queue ?? [];
 
   return (
     <aside className={styles.kq} aria-label="Queue">
       <h2>In line</h2>
 
-      {order.kind === "done" && (
-        <div className={styles.kqReady} role="status">
-          {order.label} is ready
-          {order.double && (
-            <p className={styles.kqReadyNote}>Both drinks come in one large glass. Grab an extra glass to split it.</p>
-          )}
+      {held && (
+        <div className={held.error ? styles.kqHelp : styles.kqReady} role="status">
+          {held.error ? `${held.drink} didn’t finish` : `${held.drink} is ready`}
+          <p className={styles.kqReadyNote}>
+            {held.error
+              ? "Ask a staff member to clear the station."
+              : held.double
+                ? "Both drinks come in one large glass. Grab an extra glass to split it."
+                : "Take your drink from the station."}
+          </p>
+          <p className={styles.kqReadyNote}>
+            {waiting.length > 0
+              ? "Then put an empty glass in its place to start the next drink."
+              : "Then put an empty glass in its place for the next order."}
+          </p>
+          <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.kqNext}`} onClick={onStartNext}>
+            {waiting.length > 0 ? "Glass ready, start next" : "Glass is ready"}
+          </button>
         </div>
       )}
 
-      {order.kind === "running" ? (
+      {state?.current || waiting.length > 0 ? (
         <div className={styles.rows}>
-          <div className={styles.kqRow}>
-            <span className={styles.kqName}>{order.label}</span>
-            <span className={styles.kqTag}>Making now</span>
-          </div>
-          {currentPhaseForRunning && <p className={styles.kqNote}>{currentPhaseForRunning}</p>}
+          {state?.current && (
+            <div className={styles.kqRow}>
+              <span className={styles.kqName}>
+                {state.current.drink}
+                {state.current.raw_step && <span className={styles.kqStep}>{state.current.raw_step}</span>}
+              </span>
+              <span className={styles.kqTag}>Making now</span>
+            </div>
+          )}
+          {waiting.map((o, i) => (
+            <div key={o.id} className={styles.kqRow}>
+              <span className={styles.kqName}>{o.drink}</span>
+              <span className={styles.kqWait}>
+                {held && i === 0 ? "Waiting for glass" : waitText(i + 1)}
+                {mineIds.has(o.id) && (
+                  <button type="button" className={styles.kqCancel} onClick={() => onCancelOrder(o.id)}>
+                    Cancel
+                  </button>
+                )}
+              </span>
+            </div>
+          ))}
         </div>
       ) : (
-        order.kind !== "done" && <p className={styles.kqNote}>Nobody in line.</p>
+        !held && <p className={styles.kqNote}>Nobody in line.</p>
       )}
     </aside>
+  );
+}
+
+function PlacedToast({ placed, onDismiss }: { placed: Placed; onDismiss: () => void }) {
+  const position = placed.ahead + 1;
+  return (
+    <div className={styles.toast} role="status" onClick={onDismiss}>
+      <strong>{placed.label} is in line</strong>
+      <span>
+        {placed.ahead === 0
+          ? "You’re first in line."
+          : `You’re #${position}, about ${position * MINUTES_PER_DRINK} min.`}{" "}
+        Watch the line for your drink.
+      </span>
+    </div>
   );
 }
 

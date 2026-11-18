@@ -2,6 +2,8 @@ import type { JsonValue } from "@bufbuild/protobuf";
 import type { ViamClient, RobotClient } from "@viamrobotics/sdk";
 import type { Recipe, RecipeStep } from "./recipes";
 import type { Inventory, WhiskeyProfile } from "./inventory";
+import type { PlacedOrder, QueueState } from "./queue";
+import { DevQueue } from "./queue";
 
 const BARTENDER_SERVICE_NAME = "bartender";
 
@@ -416,52 +418,55 @@ export async function pourFromShaker(
   });
 }
 
-async function awaitOrder(conn: ViamConnection, startedAt: string): Promise<void> {
-  const firedAt = new Date(startedAt).getTime();
-  while (true) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const status = await getStatus(conn);
-    if (status.is_busy) continue;
-    const outcome = status.last_outcome;
-    if (outcome && new Date(outcome.ended_at).getTime() >= firedAt) {
-      if (outcome.error) throw new Error(outcome.error);
-      return;
-    }
+const devQueue = new DevQueue();
+
+export async function getQueue(conn: ViamConnection): Promise<QueueState> {
+  if (conn.isDev) return devQueue.state();
+  return doCommand<QueueState>(conn, BARTENDER_SERVICE_NAME, { get_queue: true });
+}
+
+export async function startNext(conn: ViamConnection): Promise<void> {
+  if (conn.isDev) {
+    devQueue.startNext();
+    return;
   }
+  await doCommand(conn, BARTENDER_SERVICE_NAME, { start_next: true });
+}
+
+export async function cancelQueuedOrder(conn: ViamConnection, orderId: string): Promise<void> {
+  if (conn.isDev) {
+    devQueue.remove(orderId);
+    return;
+  }
+  await doCommand(conn, BARTENDER_SERVICE_NAME, { cancel_order: { order_id: orderId } });
 }
 
 export async function makeCocktail(
   conn: ViamConnection,
   drinkId: string,
-  opts: { quantity?: number; double?: boolean; onStarted?: (title: string) => void } = {},
-): Promise<void> {
+  opts: { quantity?: number; double?: boolean } = {},
+): Promise<PlacedOrder> {
   const q = Math.max(1, Math.min(4, Math.floor(opts.quantity ?? 1)));
   const double = opts.double ?? false;
   if (conn.isDev) {
     const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
     const name = recipe?.name ?? drinkId;
-    opts.onStarted?.(double ? `2 × ${name}` : name);
     const phases = (recipe?.pours?.length ?? 0) + 5;
-    await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * phases * q));
-    return;
+    return devQueue.enqueue(double ? `2 × ${name}` : name, double, DEV_VERB_DELAY_MS * phases * q);
   }
-  const resp = await doCommand<{ started_at: string; title: string }>(conn, BARTENDER_SERVICE_NAME, {
+  return doCommand<PlacedOrder>(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { drink_id: drinkId, quantity: q, double },
   });
-  opts.onStarted?.(resp.title);
-  await awaitOrder(conn, resp.started_at);
 }
 
 export async function makeInlineOrder(
   conn: ViamConnection,
   recipe: { name: string; steps: RecipeStep[] },
-): Promise<void> {
+): Promise<PlacedOrder> {
   if (conn.isDev) {
-    await new Promise((resolve) => setTimeout(resolve, DEV_VERB_DELAY_MS * (recipe.steps.length + 2)));
-    return;
+    return devQueue.enqueue(recipe.name, false, DEV_VERB_DELAY_MS * (recipe.steps.length + 2));
   }
-  const resp = await doCommand<{ started_at: string }>(conn, BARTENDER_SERVICE_NAME, {
+  return doCommand<PlacedOrder>(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { recipe: recipe as unknown as import("@bufbuild/protobuf").JsonValue },
   });
-  await awaitOrder(conn, resp.started_at);
 }
