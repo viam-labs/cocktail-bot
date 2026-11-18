@@ -72,7 +72,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 			if step.Ingredient == "" {
 				return fmt.Errorf("step %d: pour ingredient is required", i+1)
 			}
-			b.status.setPhase(fmt.Sprintf("Pouring %s (step %d of %d)", step.Ingredient, i+1, len(steps)))
+			b.setPhase(fmt.Sprintf("Pouring %s (step %d of %d)", step.Ingredient, i+1, len(steps)))
 			if shaker {
 				if err := b.pourIntoShaker(ctx, step.Ingredient, step.Oz); err != nil {
 					return fmt.Errorf("step %d pour %s into shaker: %w", i+1, step.Ingredient, err)
@@ -90,7 +90,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 			if iceType != "crushed" {
 				return fmt.Errorf("step %d ice type %q: not yet supported", i+1, iceType)
 			}
-			b.status.setPhase("Dispensing ice")
+			b.setPhase("Dispensing ice")
 			if err := b.dispenseIce(ctx, d.IceStation, d.IceDwellMs); err != nil {
 				return fmt.Errorf("step %d dispense ice: %w", i+1, err)
 			}
@@ -101,12 +101,12 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 			}
 			switch mode {
 			case "shake":
-				b.status.setPhase("Shaking")
+				b.setPhase("Shaking")
 				if err := b.mix(ctx, d.MixerStation, d.MixDwellMs); err != nil {
 					return fmt.Errorf("step %d shake: %w", i+1, err)
 				}
 			case "stir":
-				b.status.setPhase("Stirring")
+				b.setPhase("Stirring")
 				if err := b.stir(ctx, d.stirStation(), d.stirDwellMs()); err != nil {
 					return fmt.Errorf("step %d stir: %w", i+1, err)
 				}
@@ -114,7 +114,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("step %d mix mode %q is not yet supported", i+1, mode)
 			}
 		case "strain":
-			b.status.setPhase("Straining")
+			b.setPhase("Straining")
 			if err := b.strainShaker(ctx, strainShakerRequest{
 				source:            d.ShakerSource,
 				strainFlow:        d.StrainFlow,
@@ -141,19 +141,19 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 			if err != nil {
 				return fmt.Errorf("shaker source switch %q: %w", d.ShakerSource, err)
 			}
-			b.status.setPhase("Picking up shaker")
+			b.setPhase("Picking up shaker")
 			if err := b.pickupShaker(ctx, shakerSw, "shaker-home"); err != nil {
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
-		b.status.setPhase(plan.servePhase)
+		b.setPhase(plan.servePhase)
 		if err := b.pourFromShaker(ctx, d.ServeStation, d.ServeMs); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
 		// rotateShakers resets the strain-flow bookkeeping (shaker-B back to
 		// shaker-A); only relevant when a strain actually ran.
 		if strained {
-			b.status.setPhase("Resetting")
+			b.setPhase("Resetting")
 			if err := b.rotateShakers(ctx, d.StrainFlow); err != nil {
 				return fmt.Errorf("rotate: %w", err)
 			}

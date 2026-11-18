@@ -115,6 +115,7 @@ const (
 	categoriesFileName      = "categories.json"
 	whiskeyProfilesFileName = "whiskey_profiles.json"
 	pourMenusFileName       = "pour_menus.json"
+	queueFileName           = "order_queue.json"
 )
 
 var errDataStoreNotConfigured = errors.New("data_dir not configured; recipes and inventory DoCommands unavailable")

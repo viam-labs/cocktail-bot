@@ -11,11 +11,14 @@ import (
 )
 
 func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[string]any, error) {
-	if raw, ok := cmd["prepare_order"]; ok {
-		return b.handlePrepareOrder(raw)
-	}
 	if _, ok := cmd["get_queue"]; ok {
 		return b.handleGetQueue()
+	}
+	if _, ok := cmd["start_next"]; ok {
+		return map[string]any{"released": b.queue.Release()}, nil
+	}
+	if raw, ok := cmd["cancel_order"]; ok {
+		return b.handleCancelOrder(raw)
 	}
 	if _, ok := cmd["cancel"]; ok {
 		return b.handleCancel()
@@ -122,31 +125,33 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["move_bottle"]; ok {
 		return b.handleMoveBottle(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: prepare_order, get_queue, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
-}
-
-func (b *bartender) handlePrepareOrder(raw any) (map[string]any, error) {
-	req, err := order.DecodeRequest(raw)
-	if err != nil {
-		return nil, err
-	}
-	o := order.NewOrder(req.Drink)
-	b.queue.Enqueue(o)
-	return map[string]any{
-		"order_id": o.ID,
-		"drink":    o.Drink,
-	}, nil
+	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
 }
 
 func (b *bartender) handleGetQueue() (map[string]any, error) {
-	st := b.queue.State()
-	return map[string]any{
-		"is_busy": st.IsBusy,
-		"count":   st.Count,
-		"current": st.Current,
-		"queue":   st.Queue,
-		"recent":  st.Recent,
-	}, nil
+	// Round-trip through JSON so DoCommand sees plain maps with the json tag names and RFC 3339 times.
+	raw, err := json.Marshal(b.queue.State())
+	if err != nil {
+		return nil, fmt.Errorf("get_queue: %w", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("get_queue: %w", err)
+	}
+	return resp, nil
+}
+
+func (b *bartender) handleCancelOrder(raw any) (map[string]any, error) {
+	m, _ := raw.(map[string]any)
+	id, _ := m["order_id"].(string)
+	if id == "" {
+		return nil, errors.New("cancel_order: 'order_id' is required")
+	}
+	removed, err := b.queue.Remove(id)
+	if err != nil {
+		return nil, fmt.Errorf("cancel_order: %w", err)
+	}
+	return map[string]any{"removed": removed}, nil
 }
 
 func (b *bartender) handleCancel() (map[string]any, error) {
@@ -198,7 +203,10 @@ func (b *bartender) handleExecuteAction(ctx context.Context, raw any) (map[strin
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	duration, err := b.moveArmToPose(ctx, pose)
 	if err != nil {
@@ -216,7 +224,10 @@ func (b *bartender) handlePickupPourReturn(ctx context.Context, raw any) (map[st
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.pickupPourReturn(ctx, bottle, pourMs); err != nil {
@@ -235,7 +246,10 @@ func (b *bartender) handleGrabBottle(ctx context.Context, raw any) (map[string]a
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	bottleSw, err := b.findSwitch(bottle)
 	if err != nil {
@@ -269,7 +283,10 @@ func (b *bartender) handleGrabShaker(ctx context.Context, raw any) (map[string]a
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	sw, err := b.findSwitch(switchName)
 	if err != nil {
@@ -312,7 +329,10 @@ func (b *bartender) handlePourIntoGlasses(ctx context.Context, raw any) (map[str
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.pourIntoGlasses(ctx, req); err != nil {
@@ -339,7 +359,10 @@ func foundGlassResponse(g foundGlass) map[string]any {
 
 func (b *bartender) handleFindGlass(ctx context.Context) (map[string]any, error) {
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	glasses, err := b.findGlasses(ctx)
 	if err != nil {
@@ -362,7 +385,10 @@ func (b *bartender) handleFindAndPour(ctx context.Context, raw any) (map[string]
 		return nil, fmt.Errorf("find_and_pour: %w", err)
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	glass, err := b.findAndPour(ctx, bottle, pourMs, mouthOffsetMM)
@@ -407,7 +433,10 @@ func (b *bartender) handleDispenseIce(ctx context.Context, raw any) (map[string]
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.dispenseIce(ctx, station, dwellMs); err != nil {
@@ -450,7 +479,10 @@ func (b *bartender) handleMix(ctx context.Context, raw any) (map[string]any, err
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.mix(ctx, station, dwellMs); err != nil {
@@ -493,7 +525,10 @@ func (b *bartender) handleStir(ctx context.Context, raw any) (map[string]any, er
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.stir(ctx, station, dwellMs); err != nil {
@@ -536,7 +571,10 @@ func (b *bartender) handlePourFromShaker(ctx context.Context, raw any) (map[stri
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.pourFromShaker(ctx, station, pourMs); err != nil {
@@ -555,7 +593,10 @@ func (b *bartender) handleFindAndPourFromShaker(ctx context.Context, raw any) (m
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	poured, skipped, err := b.findAndPourFromShaker(ctx, pourMs)
@@ -631,7 +672,10 @@ func (b *bartender) handlePourIntoShaker(ctx context.Context, raw any) (map[stri
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.pourIntoShaker(ctx, bottle, oz); err != nil {
@@ -1052,7 +1096,10 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.strainShaker(ctx, req); err != nil {
@@ -1125,7 +1172,10 @@ func (b *bartender) handleRotateShakers(ctx context.Context, raw any) (map[strin
 		return nil, err
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.rotateShakers(ctx, strainFlow); err != nil {
@@ -1194,46 +1244,28 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 	if quantity > 1 {
 		displayName = fmt.Sprintf("%s × %d", plan.title, quantity)
 	}
-	b.status.begin(displayName)
-	start := time.Now()
-	orderID := "manual-" + start.UTC().Format("20060102_150405")
-	runCtx := ctxWithOrderID(context.Background(), orderID)
-	runCtx, done := b.withCancel(runCtx)
-
-	go func() {
-		defer done()
-		var runErr error
-		for i := 0; i < quantity; i++ {
-			runErr = b.makeCocktail(runCtx, plan)
-			if runErr != nil {
-				break
-			}
-		}
-		phase := ""
-		if snap := b.status.snapshot(); len(snap.history) > 0 {
-			phase = snap.history[len(snap.history)-1].Step
-		}
-		b.status.finish(runErr)
-		alert := orderAlert{
-			drink:             displayName,
-			double:            plan.double,
-			orderID:           orderID,
-			phase:             phase,
-			duration:          time.Since(start),
-			err:               runErr,
-			operatorCancelled: isOperatorCancel(runErr),
-			machineID:         b.slackMachineID(),
-		}
-		slackPost(context.Background(), b.logger, b.slackWebhookURL(), alertText(alert), alertBlocks(alert))
-	}()
+	o := order.NewOrder(displayName)
+	o.Double = plan.double
+	o.Quantity = quantity
+	payload, err := newCocktailJob(plan, quantity)
+	if err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	o.Payload = payload
+	ahead, err := b.queue.Enqueue(o)
+	if err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
 
 	return map[string]any{
-		"drink_id":   drinkID,
-		"drink":      name,
-		"title":      displayName,
-		"double":     plan.double,
-		"quantity":   quantity,
-		"started_at": start.UTC().Format(time.RFC3339),
+		"order_id":    o.ID,
+		"drink_id":    drinkID,
+		"drink":       name,
+		"title":       displayName,
+		"double":      plan.double,
+		"quantity":    quantity,
+		"ahead":       ahead,
+		"enqueued_at": o.EnqueuedAt.UTC().Format(time.RFC3339),
 	}, nil
 }
 
@@ -1310,7 +1342,10 @@ func (b *bartender) handleStockBottle(ctx context.Context, raw any) (map[string]
 		return nil, fmt.Errorf("stock_bottle: slot %q is not in slot_names", slot)
 	}
 	ctx = ctxWithOrderID(ctx, "stock-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.stockBottle(ctx, slot); err != nil {
@@ -1354,7 +1389,10 @@ func (b *bartender) handleRetrieveBottle(ctx context.Context, raw any) (map[stri
 		return nil, fmt.Errorf("retrieve_bottle: slot %q is not in slot_names", slot)
 	}
 	ctx = ctxWithOrderID(ctx, "retrieve-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.retrieveBottle(ctx, slot); err != nil {
@@ -1404,7 +1442,10 @@ func (b *bartender) handleMoveBottle(ctx context.Context, raw any) (map[string]a
 		return nil, fmt.Errorf("move_bottle: slot %q is already occupied", to)
 	}
 	ctx = ctxWithOrderID(ctx, "move-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done := b.withCancel(ctx)
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer done()
 	start := time.Now()
 	if err := b.moveBottle(ctx, from, to); err != nil {

@@ -2,7 +2,9 @@ package bartender
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"go.viam.com/rdk/components/arm"
@@ -47,12 +49,17 @@ type bartender struct {
 	glassFinder     vision.Service
 	mixerPower      toggleswitch.Switch
 	queueStop       chan struct{}
+	queueDone       chan struct{}
 	dataStore       *dataStore
 
+	// runMu makes queued drinks and manual commands mutually exclusive on the arm.
+	runMu      sync.Mutex
 	cancelMu   sync.Mutex
 	cancelFunc context.CancelFunc
 
 	status statusTracker
+
+	brew func(context.Context, drinkPlan) error
 }
 
 func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
@@ -71,6 +78,25 @@ func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
 		b.cancelMu.Unlock()
 		cancel()
 	}
+}
+
+var errBusy = errors.New("bartender is busy with a drink or another command; wait for it to finish or cancel it")
+
+// claim gives a manual command the arm, refusing rather than waiting if a drink is being made.
+func (b *bartender) claim(ctx context.Context) (context.Context, func(), error) {
+	if !b.runMu.TryLock() {
+		return nil, nil, errBusy
+	}
+	ctx, done := b.withCancel(ctx)
+	return ctx, func() {
+		done()
+		b.runMu.Unlock()
+	}, nil
+}
+
+func (b *bartender) setPhase(phase string) {
+	b.status.setPhase(phase)
+	b.queue.SetStep(phase)
 }
 
 func (b *bartender) cancelRunning() bool {
@@ -125,7 +151,9 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		filesaver:    filesaver.New(cfg.SaveMotionRequestsDir, logger),
 		queue:        order.NewQueue(),
 		queueStop:    make(chan struct{}),
+		queueDone:    make(chan struct{}),
 	}
+	b.brew = b.makeCocktail
 
 	if cfg.OrderSensorName != "" {
 		s, err := sensor.FromProvider(deps, cfg.OrderSensorName)
@@ -165,8 +193,18 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 			return nil, fmt.Errorf("data store: %w", err)
 		}
 		b.dataStore = ds
+		q, interrupted, err := order.OpenQueue(order.NewFileStore(filepath.Join(dir, queueFileName)), func(err error) {
+			logger.Errorw("save order queue; a restart may lose its latest change", "err", err)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("order queue: %w", err)
+		}
+		b.queue = q
+		if interrupted != nil {
+			b.reportInterrupted(*interrupted)
+		}
 	} else {
-		logger.Warn("data_dir not set and VIAM_MODULE_DATA unset; recipes and inventory DoCommands unavailable")
+		logger.Warn("data_dir not set and VIAM_MODULE_DATA unset; recipes and inventory DoCommands unavailable, and the order queue is kept in memory only")
 	}
 
 	go b.processQueue()
@@ -174,8 +212,13 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 }
 
 func (b *bartender) Close(ctx context.Context) error {
-	b.cancelRunning()
 	close(b.queueStop)
+	b.cancelRunning()
+	select {
+	case <-b.queueDone:
+	case <-ctx.Done():
+		b.logger.Warnf("close: order queue worker still running: %v", ctx.Err())
+	}
 	if err := b.setMixerPower(ctx, false); err != nil {
 		b.logger.Warnf("power off mixer %q on close: %v", b.cfg.MixerPowerSwitchName, err)
 	}
