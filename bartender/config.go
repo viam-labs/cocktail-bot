@@ -46,6 +46,8 @@ type Config struct {
 	DataDir                string            `json:"data_dir,omitempty"`
 	PickupObstacles        map[string]string `json:"pickup_obstacles,omitempty"`
 	RecipeDefaults         *RecipeDefaults   `json:"recipe_defaults,omitempty"`
+	Glasses                []Glass           `json:"glasses,omitempty"`
+	DefaultGlassObstacle   string            `json:"default_glass_obstacle,omitempty"`
 	PourIntoShakerDwellMs  int               `json:"pour_into_shaker_dwell_ms,omitempty"`
 	MixerProtectorObstacle string            `json:"mixer_protector_obstacle,omitempty"`
 	// Switch powering the mixer (e.g. a smart plug); mix turns it on only while the shaker is
@@ -61,7 +63,21 @@ type Config struct {
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
-	MachineID string `json:"machine_id,omitempty"`
+	MachineID      string          `json:"machine_id,omitempty"`
+	ShakerCleaning *ShakerCleaning `json:"shaker_cleaning,omitempty"`
+}
+
+// ShakerCleaning is the v1 feature flag for rinsing the shaker on the cleaner
+// after make_cocktail serves it.
+type ShakerCleaning struct {
+	Enabled  bool   `json:"enabled"`
+	Station  string `json:"station,omitempty"`
+	DwellMs  int    `json:"dwell_ms,omitempty"`
+	Obstacle string `json:"obstacle,omitempty"`
+}
+
+func (s *ShakerCleaning) enabled() bool {
+	return s != nil && s.Enabled
 }
 
 type RecipeDefaults struct {
@@ -144,6 +160,20 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 		seenSlot[slot] = struct{}{}
 	}
+	if err := validateGlasses(path, c.Glasses, switcherSet); err != nil {
+		return nil, nil, err
+	}
+	if sc := c.ShakerCleaning; sc.enabled() {
+		if sc.Station == "" {
+			return nil, nil, errors.New(path + ": shaker_cleaning.station is required when enabled")
+		}
+		if _, ok := switcherSet[sc.Station]; !ok {
+			return nil, nil, fmt.Errorf("%s: shaker_cleaning.station %q is not in pose_switcher_names", path, sc.Station)
+		}
+		if sc.DwellMs < 0 {
+			return nil, nil, errors.New(path + ": shaker_cleaning.dwell_ms must be >= 0")
+		}
+	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
 		arm.Named(c.ArmName).String(),
@@ -157,6 +187,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.MixerPowerSwitchName != "" {
 		deps = append(deps, toggleswitch.Named(c.MixerPowerSwitchName).String())
+	}
+	for _, name := range c.glassObstacleNames() {
+		deps = append(deps, gripper.Named(name).String())
 	}
 
 	var optional []string

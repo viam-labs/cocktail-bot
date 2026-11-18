@@ -78,7 +78,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 					return fmt.Errorf("step %d pour %s into shaker: %w", i+1, step.Ingredient, err)
 				}
 			} else {
-				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz); err != nil {
+				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz, plan.glass); err != nil {
 					return fmt.Errorf("step %d pour %s into glass: %w", i+1, step.Ingredient, err)
 				}
 			}
@@ -146,9 +146,22 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
+		serveStation, glassAllow := b.glassServe(plan.glass, d.ServeStation)
+		serveSw, err := b.findSwitch(serveStation)
+		if err != nil {
+			return fmt.Errorf("serve station switch %q: %w", serveStation, err)
+		}
 		b.setPhase(plan.servePhase)
-		if err := b.pourFromShaker(ctx, d.ServeStation, d.ServeMs); err != nil {
+		if err := b.serveFromShaker(ctx, serveSw, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)
+		}
+		if sc := b.cfg.ShakerCleaning; sc.enabled() {
+			b.setPhase("Cleaning shaker")
+			if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs); err != nil {
+				return fmt.Errorf("clean shaker: %w", err)
+			}
+		} else if err := b.returnShakerHome(ctx, serveSw); err != nil {
+			return fmt.Errorf("return shaker home: %w", err)
 		}
 		// rotateShakers resets the strain-flow bookkeeping (shaker-B back to
 		// shaker-A); only relevant when a strain actually ran.

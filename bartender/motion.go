@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -186,7 +187,16 @@ func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSys
 	if err != nil {
 		return nil, nil, fmt.Errorf("get frame system config: %w", err)
 	}
-	fs, err := referenceframe.NewFrameSystem("bartender", fsCfg.Parts, nil)
+	parts := fsCfg.Parts
+	if absent := b.absentGlassObstacles(); len(absent) > 0 {
+		parts = make([]*referenceframe.FrameSystemPart, 0, len(fsCfg.Parts))
+		for _, p := range fsCfg.Parts {
+			if !absent[p.FrameConfig.Name()] {
+				parts = append(parts, p)
+			}
+		}
+	}
+	fs, err := referenceframe.NewFrameSystem("bartender", parts, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build frame system: %w", err)
 	}
@@ -375,34 +385,37 @@ type AllowedCollision struct {
 	Frame2 string
 }
 
-// withAllowedCollisions returns constraints with ac added to its collision-spec
-// allow list. Nil constraints becomes a fresh one; empty ac is a no-op. Allow
-// entries that reference the held-object frame are dropped when nothing is
-// attached, since the planner rejects allow entries whose frame doesn't exist
-// in the current frame system.
+// withAllowedCollisions returns a copy of constraints with ac added to its
+// collision-spec allow list, so callers can reuse constraints across moves
+// without allows leaking between them. Empty ac is a no-op. Allow
+// entries that reference the held-object frame when nothing is attached, or a
+// glass obstacle that isn't at the station, are dropped, since the planner
+// rejects allow entries whose frame doesn't exist in the current frame system.
 func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
-	filtered := ac
-	if b.heldGeomFrame == nil {
-		filtered = filtered[:0:0]
-		for _, a := range ac {
-			if a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName {
-				continue
-			}
-			filtered = append(filtered, a)
+	absent := b.absentGlassObstacles()
+	filtered := make([]AllowedCollision, 0, len(ac))
+	for _, a := range ac {
+		if b.heldGeomFrame == nil && (a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName) {
+			continue
 		}
+		if absent[a.Frame1] || absent[a.Frame2] {
+			continue
+		}
+		filtered = append(filtered, a)
 	}
 	if len(filtered) == 0 {
 		return constraints
 	}
-	if constraints == nil {
-		constraints = &motionplan.Constraints{}
+	out := &motionplan.Constraints{}
+	if constraints != nil {
+		*out = *constraints
 	}
 	allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, len(filtered))
 	for i, a := range filtered {
 		allows[i] = motionplan.CollisionSpecificationAllowedFrameCollisions{Frame1: a.Frame1, Frame2: a.Frame2}
 	}
-	constraints.CollisionSpecification = append(constraints.CollisionSpecification, motionplan.CollisionSpecification{Allows: allows})
-	return constraints
+	out.CollisionSpecification = append(slices.Clip(out.CollisionSpecification), motionplan.CollisionSpecification{Allows: allows})
+	return out
 }
 
 // pickupAllowedCollisions returns the frame pairs whose collision should be
@@ -413,7 +426,11 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 // would otherwise be the obstacle's volume. Returns nil when no obstacle is
 // configured — the move then plans with no override.
 func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
-	obstacle := b.cfg.PickupObstacles[key]
+	return b.heldVsObstacleAllowed(b.cfg.PickupObstacles[key])
+}
+
+// heldVsObstacleAllowed lets the claws and the held object enter obstacle, e.g. a shaker lip over a glass rim.
+func (b *bartender) heldVsObstacleAllowed(obstacle string) []AllowedCollision {
 	if obstacle == "" {
 		return nil
 	}
@@ -468,6 +485,13 @@ func (b *bartender) iceProtectorAllowed() []AllowedCollision {
 		return nil
 	}
 	return b.gripperAllowedVsObstacle(b.cfg.IceProtectorObstacle)
+}
+
+func (b *bartender) cleanerAllowed() []AllowedCollision {
+	if b.cfg.ShakerCleaning == nil || b.cfg.ShakerCleaning.Obstacle == "" {
+		return nil
+	}
+	return b.gripperAllowedVsObstacle(b.cfg.ShakerCleaning.Obstacle)
 }
 
 // poseAllowedCollisions expands a pose's allowed_obstacles list into the same

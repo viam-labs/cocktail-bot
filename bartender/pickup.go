@@ -116,6 +116,30 @@ func (b *bartender) grabShakerAtHome(ctx context.Context, sw toggleswitch.Switch
 	return nil
 }
 
+// returnShakerHome is the inverse of grabShakerAtHome: it sets the held shaker
+// down at shaker-home using the shaker-home-* poses on sw and backs the empty
+// gripper out to shaker-home-hover.
+func (b *bartender) returnShakerHome(ctx context.Context, sw toggleswitch.Switch) error {
+	shakerAllow := b.pickupAllowedCollisions("shaker")
+
+	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
+		return fmt.Errorf("carry back to shaker carry-hover: %w", err)
+	}
+	if _, err := b.linearCarryToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-descend to shaker lift: %w", err)
+	}
+	if err := b.gripperOpen(ctx); err != nil {
+		return fmt.Errorf("release shaker grip at lift: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
+	}
+	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
+		return fmt.Errorf("linear-retreat from shaker: %w", err)
+	}
+	return nil
+}
+
 // Parks the arm at the carry-hover for the given shaker source with the shaker
 // gripped and the HeldObjectGeometry attached, so an operator can open the
 // simulation and visually confirm the capsule position relative to the gripper.

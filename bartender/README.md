@@ -1,6 +1,6 @@
 # Bartender
 
-Orchestrates the full drink cycle: ice → pour → mix → strain → serve → rotate shakers.
+Orchestrates the full drink cycle: ice → pour → mix → strain → serve → clean shaker (optional) → rotate shakers.
 
 ## Model `viam:cocktail-bot:bartender`
 
@@ -19,6 +19,8 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`, `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
 | `bottle_pourer_oz` | object | Optional | Map of bottle switch name → oz delivered per pour-tilt. Each recipe pour oz must be an integer multiple of this. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
+| `glasses` | []object | Optional | Glass types staff can place at the serving station. Recipes pick one by `id`. See below. |  |
+| `default_glass_obstacle` | string | Optional | Obstacle modeling the glass at the station for recipes with no glass, glasses with no `obstacle`, and before the first order. See `glasses`. |  |
 | `serving_station` | string | Optional | Switch holding the shaker and serve poses used by `find_and_pour_from_shaker`. | `serving-glass-center` |
 | `pour_mouth_offset_mm` | number | Optional | Horizontal gripper-to-bottle-mouth distance while pouring, on the side the bottle tips. Negative flips the side. | 100 |
 | `max_pour_offset_mm` | number | Optional | Max world-frame shift of `serve-approach`/`serve-tilt` from their saved positions; glasses beyond fail before pickup. | 300 |
@@ -42,6 +44,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `save_motion_requests_dir` | string | Optional | When set, every motion-plan request + response is written here, tagged by order id. |  |
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
 | `machine_id` | string | Optional | Viam machine id; when set, failure alerts deep-link to app.viam.com machine logs. |  |
+| `shaker_cleaning` | object | Optional | v1 feature flag: rinse the shaker on the cleaner after `make_cocktail` serves it. See below. | off |
 
 ##### `held_bottle_geometry`, `held_shaker_geometry` and `held_stirrer_geometry`
 
@@ -53,6 +56,30 @@ Capsule attached as a child of the gripper frame while the object is held.
 | `radius_mm` | number | Required | Cylinder radius. |  |
 | `length_mm` | number | Required | Cylinder length. |  |
 | `z_offset_mm` | number | Optional | Offset in gripper +z. | 0 |
+
+##### `glasses`
+
+Each glass names the pose switcher holding its taught poses, the same way each bottle slot does.
+
+| Name | Type | Inclusion | Description | Default |
+| --- | --- | --- | --- | --- |
+| `id` | string | Required | What recipes store in `glass` and `double_glass`. |  |
+| `name` | string | Required | Shown to staff, e.g. "Highball". |  |
+| `capacity_oz` | number | Required | How much the glass holds. `make_cocktail` refuses a drink that needs more, counting melt water from mixing over ice and the shaker's ice when the drink isn't strained. |  |
+| `image` | string | Optional | Outline the web app draws: `highball`, `martini`, `rocks`, `coupe` or `wine` (stemless). | `rocks` |
+| `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
+| `obstacle` | string | Optional | Obstacle modeling this glass, a component such as `erh:vmodutils:obstacle`. The gripper and held shaker or bottle may intersect it while pouring into the glass. | `default_glass_obstacle` |
+
+```json
+"glasses": [
+  {"id": "martini", "name": "Martini", "capacity_oz": 7, "image": "martini", "pose_switcher": "serve-martini", "obstacle": "martini-glass"},
+  {"id": "highball", "name": "Highball", "capacity_oz": 12, "image": "highball", "pose_switcher": "serve-highball", "obstacle": "highball-glass"}
+]
+```
+
+A recipe with no glass serves at `recipe_defaults.serve_station`, and its direct pours use the first pose switcher that defines the `direct-pour-*` poses.
+
+Only one glass is at the station at a time, so motion planning includes only one glass obstacle: the glass of the order being made, or of the last order made, since that glass stays until someone takes it. Every other glass obstacle and `default_glass_obstacle` is left out, along with any `allowed_obstacles` entry that names one. A recipe with no glass, and every move before the first order, uses `default_glass_obstacle`, as does a glass with no `obstacle`. Glass obstacles are dependencies, so the service won't start if one is missing.
 
 ##### `recipe_defaults`
 
@@ -72,6 +99,31 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
 | `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
 | `strain_dump_ms` | int | Optional | Dump dwell over garbage. | 0 |
+
+##### `shaker_cleaning`
+
+When enabled, `make_cocktail` rinses the shaker after serving instead of putting it straight back at shaker-home. The cleaner sprays water while the upside-down shaker is pressed onto it.
+
+| Name | Type | Inclusion | Description | Default |
+| --- | --- | --- | --- | --- |
+| `enabled` | bool | Optional | Turns the cleaning step on. | false |
+| `station` | string | Required when enabled | Pose switcher holding the cleaner poses below. Must be in `pose_switcher_names`. |  |
+| `dwell_ms` | int | Optional | How long the shaker stays pressed on the cleaner. | 0 |
+| `obstacle` | string | Optional | Obstacle name modeling the cleaner; the gripper, arm and held shaker may intersect it during the cleaning moves. |  |
+
+The `station` switch needs these poses:
+
+| Pose | Shaker |
+| --- | --- |
+| `cleaner-hover` | Upright, above the cleaner. |
+| `cleaner-flip-hover` | Upside down, same spot as `cleaner-hover`. |
+| `cleaner-approach` | Upside down, mouth just above the cleaner. Also where the shaker backs off to so the spray stops. |
+| `cleaner-press` | Upside down, pressed onto the cleaner so it sprays. |
+| `shaker-home-carry-hover`, `shaker-home-lift`, `shaker-home-approach`, `shaker-home-hover` | Same shaker-home poses the other station switches carry, used to put the shaker back. |
+
+```json
+"shaker_cleaning": {"enabled": true, "station": "shaker-cleaner", "dwell_ms": 3000, "obstacle": "cleaner-obstacle"}
+```
 
 #### Example Configuration
 
@@ -115,15 +167,17 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 
 ##### `make_cocktail`
 
-Adds a full recipe to the order queue and returns immediately with `{order_id, title, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it. Watch progress via `get_queue`.
+Adds a full recipe to the order queue and returns immediately with `{order_id, title, glass, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it and `glass` is the name of the glass staff should place: the recipe's `double_glass` for a double, otherwise its `glass`, or empty if the recipe names none. The drink is poured using that glass's poses. Fails if the glass isn't in `glasses`, if the drink won't fit in it, or if a double is ordered for a recipe that names a `glass` but no `double_glass`. Watch progress via `get_queue`.
 
 The queue is saved to `order_queue.json` in `data_dir` on every change, so waiting orders survive a restart or reconfigure. An order is rejected if it can't be saved. If the module stops while a drink is being made, that drink isn't remade on restart: it's recorded as failed ("interrupted"), reported to the order sensor and Slack, and the queue holds until `start_next`. A corrupt queue file stops the service from starting, with an error naming the file.
 
-The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place.
+The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place. An order that names a glass also waits for `start_next` unless it was next in line when `start_next` was called, since only then were staff shown which glass to place: for example, the first order after the line was empty, or after a restart.
 
 ```json
 {"make_cocktail": {"drink_id": "espresso_martini"}}
 ```
+
+With `shaker_cleaning` enabled, every drink served from the shaker runs `clean_shaker` at `shaker_cleaning.station` after the pour, shown as the `Cleaning shaker` step, and the order finishes once the shaker is back home.
 
 A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. A recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
 
@@ -135,11 +189,11 @@ Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 
 ##### `get_queue`
 
-`{is_busy, count, current?, awaiting_pickup?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
+`{is_busy, count, current?, awaiting_pickup?, awaiting_glass?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, glass?, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `awaiting_glass` is the next order, held until someone confirms its glass is at the station; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
 
 ##### `start_next`
 
-Clear the pickup hold so the next queued order starts. Returns `{released}`.
+Confirm the station is ready: clear the pickup hold, and confirm the next order's glass is in place, so that order starts. Returns `{released}`.
 
 ##### `cancel_order`
 
@@ -165,6 +219,7 @@ Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_
 | `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — `stir-storage-hover` → open → linear down to `stir-storage-place` → close (stirrer held) → linear up to `stir-storage-hover` → `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover` → `stir-storage-hover` → linear down to `stir-storage-place` → open (stirrer released) → linear up to `stir-storage-hover`. `stir-storage-hover` must be high enough that the held stirrer clears its storage. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
 | `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
+| `clean_shaker` | `{"station": "shaker-cleaner", "dwell_ms": 3000}` — shaker must already be held (e.g. after `grab_shaker`). Carry level to `cleaner-hover` → flip to `cleaner-flip-hover` → linear down to `cleaner-approach` → linear down to `cleaner-press` → wait `dwell_ms` → linear up to `cleaner-approach` (stops the spray) → linear up to `cleaner-flip-hover` → flip upright at `cleaner-hover` → return to shaker-home using the station's `shaker-home-*` poses. Runs regardless of `shaker_cleaning.enabled`, so poses can be tuned before turning it on. |
 | `rotate_shakers` | `{"strain_flow": "strain-flow"}` |
 | `pickup_pour_return` | `{"bottle": "vodka", "pour_ms": 1500}` |
 | `pour_into_glasses` | `{"bottle": "vodka", "pours": [{"glass": "serving-glass-center", "pour_ms": 1500}]}` |
@@ -209,7 +264,8 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | Command | Shape |
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
-| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "pours": [{"ingredient": "...", "oz": N}]}]}` |
+| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "glass": "martini", "double_glass": "highball", "pours": [{"ingredient": "...", "oz": N}]}]}` — `glass` and `double_glass` must be ids from the `glasses` config, and a recipe that names a `glass` and can be doubled must also name a `double_glass`. |
+| `get_glasses` | `{}` → `{glasses: [...]}`, the `glasses` config. |
 | `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |
 | `delete_inventory_item` | `{"ingredient": "vodka"}` |
