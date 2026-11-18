@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
 import {
-  clearSlotAssignment,
   clearWhiskeyProfile,
   deleteInventoryItem,
   getInventory,
@@ -11,7 +10,6 @@ import {
   updateCategory,
   updateInventoryItem,
   updatePourerOz,
-  updateSlotAssignment,
   updateWhiskeyProfile,
 } from "./lib/viamClient";
 import type { Inventory, WhiskeyProfile } from "./lib/inventory";
@@ -20,6 +18,9 @@ import type { Recipe } from "./lib/recipes";
 import { recipeIngredients } from "./lib/recipes";
 import { Nav } from "./nav";
 import { titleCase } from "./lib/display";
+import { planStockingAction } from "./lib/stocking";
+import type { StockingPlan } from "./lib/stocking";
+import { StockingModal } from "./stocking-modal";
 import styles from "./inventory.module.css";
 
 const COMMON_CATEGORIES = ["Spirits", "Liqueurs", "Juices & mixers", "Syrups & bitters"];
@@ -34,6 +35,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [selectedIngredient, setSelectedIngredient] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("All");
+  const [stockingPlan, setStockingPlan] = useState<StockingPlan | null>(null);
 
   const load = useCallback(() => {
     Promise.all([getInventory(conn), getRecipes(conn)])
@@ -104,20 +106,15 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
     }
   }
 
-  async function assignSlot(slot: string, ingredient: string) {
-    setBusy(true);
+  function openStockingPlan(slotId: string, choice: string) {
+    if (!inventory) return;
+    const target = (inventory.slots ?? []).find((s) => s.id === slotId);
+    if (!target) return;
     setError(null);
     try {
-      if (ingredient === "") {
-        await clearSlotAssignment(conn, slot);
-      } else {
-        await updateSlotAssignment(conn, slot, ingredient);
-      }
-      load();
+      setStockingPlan(planStockingAction(target, choice, inventory));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -245,7 +242,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   ingredientNames={ingredientNames}
                   usedIn={selectedSlot.ingredient ? usedIn.get(selectedSlot.ingredient) ?? [] : []}
                   busy={busy}
-                  onAssign={assignSlot}
+                  onAssign={openStockingPlan}
                   onPourerOz={savePourerOz}
                   onToggleStock={toggle}
                   onDeleteIngredient={remove}
@@ -285,6 +282,17 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
           )}
         </main>
       </div>
+      {stockingPlan && (
+        <StockingModal
+          conn={conn}
+          plan={stockingPlan}
+          onClose={() => setStockingPlan(null)}
+          onDone={() => {
+            setStockingPlan(null);
+            load();
+          }}
+        />
+      )}
     </>
   );
 }

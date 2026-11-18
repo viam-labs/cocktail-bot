@@ -256,6 +256,43 @@ export async function clearSlotAssignment(
   });
 }
 
+export async function stockBottle(
+  conn: ViamConnection,
+  slot: string,
+  ingredient: string,
+): Promise<{ slot: string; ingredient: string; duration_ms: number }> {
+  if (conn.isDev) return { slot, ingredient, duration_ms: 0 };
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    stock_bottle: { slot, ingredient },
+  });
+}
+
+export async function retrieveBottle(
+  conn: ViamConnection,
+  slot: string,
+): Promise<{ slot: string; duration_ms: number }> {
+  if (conn.isDev) return { slot, duration_ms: 0 };
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    retrieve_bottle: { slot },
+  });
+}
+
+export async function moveBottle(
+  conn: ViamConnection,
+  from: string,
+  to: string,
+): Promise<{ from: string; to: string; ingredient: string; duration_ms: number }> {
+  if (conn.isDev) return { from, to, ingredient: "", duration_ms: 0 };
+  return doCommand(conn, BARTENDER_SERVICE_NAME, {
+    move_bottle: { from, to },
+  });
+}
+
+export async function cancelOrder(conn: ViamConnection): Promise<void> {
+  if (conn.isDev) return;
+  await doCommand(conn, BARTENDER_SERVICE_NAME, { cancel: true });
+}
+
 export async function updatePourerOz(
   conn: ViamConnection,
   ingredient: string,
