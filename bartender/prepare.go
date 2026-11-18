@@ -2,21 +2,27 @@ package bartender
 
 import (
 	"context"
-	"time"
+	"fmt"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
 )
 
-var phaseDuration = time.Second
+type cocktailJob struct {
+	plan     drinkPlan
+	quantity int
+}
 
-func (b *bartender) prepareDrink(ctx context.Context, o order.Order) (string, error) {
+func (b *bartender) prepareDrink(ctx context.Context, o order.Order) error {
+	job, ok := o.Payload.(cocktailJob)
+	if !ok {
+		return fmt.Errorf("order %s has no recipe to make", o.ID)
+	}
 	b.logger.Infow("starting order", "order_id", o.ID, "drink", o.Drink)
-	b.queue.SetStep("running")
-	select {
-	case <-ctx.Done():
-		return "running", ctx.Err()
-	case <-time.After(phaseDuration):
+	for i := 0; i < job.quantity; i++ {
+		if err := b.brew(ctx, job.plan); err != nil {
+			return err
+		}
 	}
 	b.logger.Infow("finished order", "order_id", o.ID)
-	return "", nil
+	return nil
 }

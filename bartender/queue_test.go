@@ -1,6 +1,8 @@
 package bartender
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -41,30 +43,29 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 }
 
 func newTestBartender(t *testing.T, sink orderSensorSink) *bartender {
-	return &bartender{
+	b := &bartender{
 		logger:    logging.NewTestLogger(t),
 		queue:     order.NewQueue(),
 		orderSink: sink,
 		queueStop: make(chan struct{}),
 	}
+	b.brew = func(context.Context, drinkPlan) error { return nil }
+	return b
 }
 
-func withFastPhases(t *testing.T) {
-	t.Helper()
-	prev := phaseDuration
-	phaseDuration = time.Millisecond
-	t.Cleanup(func() { phaseDuration = prev })
+func newCocktailOrder(drink string) order.Order {
+	o := order.NewOrder(drink)
+	o.Payload = cocktailJob{plan: drinkPlan{title: drink}, quantity: 1}
+	return o
 }
 
 func TestProcessQueueRunsOrderAndPushesReading(t *testing.T) {
-	withFastPhases(t)
-
 	sink := &mockSink{}
 	b := newTestBartender(t, sink)
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	o := order.NewOrder("negroni")
+	o := newCocktailOrder("negroni")
 	b.queue.Enqueue(o)
 
 	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "one reading pushed")
@@ -77,40 +78,147 @@ func TestProcessQueueRunsOrderAndPushesReading(t *testing.T) {
 	test.That(t, got.FailedStep, test.ShouldEqual, "")
 	test.That(t, got.StartedAt.IsZero(), test.ShouldBeFalse)
 	test.That(t, got.EndedAt.Before(got.StartedAt), test.ShouldBeFalse)
+
+	snap := b.status.snapshot()
+	test.That(t, snap.busy, test.ShouldBeFalse)
+	test.That(t, snap.lastOutcome.Drink, test.ShouldEqual, "negroni")
 }
 
-func TestProcessQueueRunsOrdersInOrder(t *testing.T) {
-	withFastPhases(t)
+func TestProcessQueueRunsQuantityTimes(t *testing.T) {
+	b := newTestBartender(t, nil)
+	var mu sync.Mutex
+	brews := 0
+	b.brew = func(context.Context, drinkPlan) error {
+		mu.Lock()
+		brews++
+		mu.Unlock()
+		return nil
+	}
+	go b.processQueue()
+	defer close(b.queueStop)
 
+	o := newCocktailOrder("negroni")
+	o.Payload = cocktailJob{quantity: 3}
+	b.queue.Enqueue(o)
+
+	waitFor(t, func() bool { return b.queue.State().AwaitingPickup != nil }, "order finished")
+	mu.Lock()
+	defer mu.Unlock()
+	test.That(t, brews, test.ShouldEqual, 3)
+}
+
+func TestProcessQueueHoldsNextOrderUntilStartNext(t *testing.T) {
 	sink := &mockSink{}
 	b := newTestBartender(t, sink)
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	first := order.NewOrder("negroni")
-	second := order.NewOrder("martini")
+	first := newCocktailOrder("negroni")
+	second := newCocktailOrder("martini")
 	b.queue.Enqueue(first)
 	b.queue.Enqueue(second)
 
-	waitFor(t, func() bool { return len(sink.snapshot()) == 2 }, "two readings pushed")
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "first order made")
+	time.Sleep(50 * time.Millisecond)
+	test.That(t, len(sink.snapshot()), test.ShouldEqual, 1)
+	st := b.queue.State()
+	test.That(t, st.AwaitingPickup.ID, test.ShouldEqual, first.ID)
+	test.That(t, len(st.Queue), test.ShouldEqual, 1)
 
-	got := sink.snapshot()
-	test.That(t, got[0].OrderID, test.ShouldEqual, first.ID)
-	test.That(t, got[1].OrderID, test.ShouldEqual, second.ID)
+	resp, err := b.DoCommand(context.Background(), map[string]any{"start_next": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, resp["released"], test.ShouldEqual, true)
+
+	waitFor(t, func() bool { return len(sink.snapshot()) == 2 }, "second order made")
+	test.That(t, sink.snapshot()[1].OrderID, test.ShouldEqual, second.ID)
 }
 
-func TestProcessQueueSkipsPushWhenSinkNil(t *testing.T) {
-	withFastPhases(t)
-
-	b := newTestBartender(t, nil)
+func TestFailedOrderRecordsErrorOnQueue(t *testing.T) {
+	sink := &mockSink{}
+	b := newTestBartender(t, sink)
+	b.brew = func(ctx context.Context, _ drinkPlan) error {
+		b.setPhase("Pouring vodka")
+		return errors.New("bottle empty")
+	}
 	go b.processQueue()
 	defer close(b.queueStop)
 
-	o := order.NewOrder("daiquiri")
+	o := newCocktailOrder("martini")
 	b.queue.Enqueue(o)
 
-	waitFor(t, func() bool {
-		st := b.queue.State()
-		return !st.IsBusy && len(st.Recent) == 1
-	}, "order completed without panic")
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "reading pushed")
+	got := sink.snapshot()[0]
+	test.That(t, got.Status, test.ShouldEqual, order.StatusFailed)
+	test.That(t, got.FailedStep, test.ShouldEqual, "Pouring vodka")
+	test.That(t, b.queue.State().AwaitingPickup.Error, test.ShouldEqual, "bottle empty")
+}
+
+func TestManualCommandRefusedWhileDrinkRuns(t *testing.T) {
+	b := newTestBartender(t, nil)
+	started := make(chan struct{})
+	b.brew = func(ctx context.Context, _ drinkPlan) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	go b.processQueue()
+	defer close(b.queueStop)
+
+	b.queue.Enqueue(newCocktailOrder("negroni"))
+	<-started
+
+	_, err := b.DoCommand(context.Background(), map[string]any{"execute_action": "home"})
+	test.That(t, errors.Is(err, errBusy), test.ShouldBeTrue)
+
+	b.cancelRunning()
+	waitFor(t, func() bool { return b.queue.State().AwaitingPickup != nil }, "cancelled order completed")
+	test.That(t, b.queue.State().AwaitingPickup.Error, test.ShouldContainSubstring, "canceled")
+}
+
+func TestQueuedOrderWaitsForManualCommand(t *testing.T) {
+	sink := &mockSink{}
+	b := newTestBartender(t, sink)
+	go b.processQueue()
+	defer close(b.queueStop)
+
+	_, done, err := b.claim(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	b.queue.Enqueue(newCocktailOrder("negroni"))
+	time.Sleep(50 * time.Millisecond)
+	test.That(t, len(sink.snapshot()), test.ShouldEqual, 0)
+
+	done()
+	waitFor(t, func() bool { return len(sink.snapshot()) == 1 }, "order ran after manual command")
+}
+
+func TestCancelOrderRemovesPending(t *testing.T) {
+	b := newTestBartender(t, nil)
+	o := newCocktailOrder("negroni")
+	b.queue.Enqueue(o)
+
+	resp, err := b.DoCommand(context.Background(), map[string]any{"cancel_order": map[string]any{"order_id": o.ID}})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, resp["removed"], test.ShouldEqual, true)
+	test.That(t, b.queue.State().Count, test.ShouldEqual, 0)
+}
+
+func TestGetQueueShape(t *testing.T) {
+	b := newTestBartender(t, nil)
+	o := newCocktailOrder("negroni")
+	o.Double = true
+	b.queue.Enqueue(o)
+
+	resp, err := b.DoCommand(context.Background(), map[string]any{"get_queue": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, resp["count"], test.ShouldEqual, 1.0)
+	test.That(t, resp["is_busy"], test.ShouldEqual, false)
+	queue, ok := resp["queue"].([]any)
+	test.That(t, ok, test.ShouldBeTrue)
+	entry := queue[0].(map[string]any)
+	test.That(t, entry["id"], test.ShouldEqual, o.ID)
+	test.That(t, entry["double"], test.ShouldEqual, true)
+	_, hasPayload := entry["Payload"]
+	test.That(t, hasPayload, test.ShouldBeFalse)
+	_, ok = entry["enqueued_at"].(string)
+	test.That(t, ok, test.ShouldBeTrue)
 }

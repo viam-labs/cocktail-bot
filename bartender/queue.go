@@ -25,24 +25,30 @@ func (b *bartender) processQueue() {
 			if !ok {
 				break
 			}
-			b.safeExecuteOrder(o)
-			b.queue.Complete()
+			b.queue.Complete(b.safeExecuteOrder(o))
 		}
 	}
 }
 
-func (b *bartender) safeExecuteOrder(o order.Order) {
+func (b *bartender) safeExecuteOrder(o order.Order) (execErr error) {
+	b.runMu.Lock()
+	defer b.runMu.Unlock()
+	b.status.begin(o.Drink)
 	start := time.Now()
-	var execErr error
-	var failedStep string
 	defer func() {
 		if r := recover(); r != nil {
 			execErr = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
 		}
 		end := time.Now()
+		failedStep := ""
+		if snap := b.status.snapshot(); len(snap.history) > 0 {
+			failedStep = snap.history[len(snap.history)-1].Step
+		}
+		b.status.finish(execErr)
 		b.publishReading(o, start, end, execErr, failedStep)
 		alert := orderAlert{
 			drink:             o.Drink,
+			double:            o.Double,
 			orderID:           o.ID,
 			phase:             failedStep,
 			duration:          end.Sub(start),
@@ -55,7 +61,7 @@ func (b *bartender) safeExecuteOrder(o order.Order) {
 	ctx := ctxWithOrderID(context.Background(), o.ID)
 	ctx, done := b.withCancel(ctx)
 	defer done()
-	failedStep, execErr = b.prepareDrink(ctx, o)
+	return b.prepareDrink(ctx, o)
 }
 
 func (b *bartender) publishReading(o order.Order, start, end time.Time, execErr error, failedStep string) {

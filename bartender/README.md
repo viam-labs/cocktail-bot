@@ -115,7 +115,9 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 
 ##### `make_cocktail`
 
-Runs a full recipe end-to-end. Async: returns `{started_at}` immediately; watch progress via `get_status`.
+Adds a full recipe to the order queue and returns immediately with `{order_id, title, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it. Watch progress via `get_queue`.
+
+The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place.
 
 ```json
 {"make_cocktail": {"drink_id": "espresso_martini"}}
@@ -129,21 +131,27 @@ Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 {"make_cocktail": {"recipe": {"id": "ad_hoc", "name": "Ad hoc", "pours": [{"ingredient": "vodka", "oz": 1.5}]}}}
 ```
 
-##### `prepare_order`
+##### `get_queue`
 
-Enqueue an order on the queue.
+`{is_busy, count, current?, awaiting_pickup?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
+
+##### `start_next`
+
+Clear the pickup hold so the next queued order starts. Returns `{released}`.
+
+##### `cancel_order`
+
+Remove an order that hasn't started: `{"cancel_order": {"order_id": "..."}}`. Returns `{removed}`.
 
 ##### `cancel`
 
-Cancel the running order.
+Cancel the running order. Pending orders stay queued behind the pickup hold.
 
 ##### `get_status`
 
-Snapshot of the running or last order. Returns `{is_busy, current_step, drink, started_at, elapsed_ms, step_history, last_outcome: {drink, ended_at, error?}}`.
+Snapshot of the running or last order. Returns `{is_busy, count, current_step, drink, started_at, elapsed_ms, step_history, last_outcome: {drink, ended_at, error?}}`.
 
-##### `get_queue`
-
-Current queue state.
+Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_action`, `stock_bottle`, `retrieve_bottle` and `move_bottle` return an error while a queued drink is being made rather than interrupting it.
 
 #### Primitives
 

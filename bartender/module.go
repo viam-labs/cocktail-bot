@@ -2,6 +2,7 @@ package bartender
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -49,10 +50,14 @@ type bartender struct {
 	queueStop       chan struct{}
 	dataStore       *dataStore
 
+	// runMu makes queued drinks and manual commands mutually exclusive on the arm.
+	runMu      sync.Mutex
 	cancelMu   sync.Mutex
 	cancelFunc context.CancelFunc
 
 	status statusTracker
+
+	brew func(context.Context, drinkPlan) error
 }
 
 func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
@@ -71,6 +76,25 @@ func (b *bartender) withCancel(ctx context.Context) (context.Context, func()) {
 		b.cancelMu.Unlock()
 		cancel()
 	}
+}
+
+var errBusy = errors.New("bartender is busy making a queued drink; wait for it to finish or cancel it")
+
+// claim gives a manual command the arm, refusing rather than waiting if a drink is being made.
+func (b *bartender) claim(ctx context.Context) (context.Context, func(), error) {
+	if !b.runMu.TryLock() {
+		return nil, nil, errBusy
+	}
+	ctx, done := b.withCancel(ctx)
+	return ctx, func() {
+		done()
+		b.runMu.Unlock()
+	}, nil
+}
+
+func (b *bartender) setPhase(phase string) {
+	b.status.setPhase(phase)
+	b.queue.SetStep(phase)
 }
 
 func (b *bartender) cancelRunning() bool {
@@ -126,6 +150,7 @@ func newBartender(ctx context.Context, deps resource.Dependencies, conf resource
 		queue:        order.NewQueue(),
 		queueStop:    make(chan struct{}),
 	}
+	b.brew = b.makeCocktail
 
 	if cfg.OrderSensorName != "" {
 		s, err := sensor.FromProvider(deps, cfg.OrderSensorName)
