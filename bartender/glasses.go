@@ -93,3 +93,49 @@ func servingGlass(r Recipe, double bool, glasses []Glass) (*Glass, error) {
 	}
 	return &g, nil
 }
+
+// glassObstacleNames lists every obstacle that models a glass at the serving station, sorted.
+// Only one of them is in the planning world at a time.
+func (c *Config) glassObstacleNames() []string {
+	seen := map[string]bool{}
+	if c.DefaultGlassObstacle != "" {
+		seen[c.DefaultGlassObstacle] = true
+	}
+	for _, g := range c.Glasses {
+		if g.Obstacle != "" {
+			seen[g.Obstacle] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// stationObstacleFor is the obstacle at the station while a drink in glass is made.
+// A glass with no obstacle leaves the station unmodeled.
+func (c *Config) stationObstacleFor(glass *Glass) string {
+	if glass != nil {
+		return glass.Obstacle
+	}
+	if c == nil {
+		return ""
+	}
+	return c.DefaultGlassObstacle
+}
+
+// absentGlassObstacles are the glass obstacles left out of planning because another glass is at the station.
+func (b *bartender) absentGlassObstacles() map[string]bool {
+	if b.cfg == nil {
+		return nil
+	}
+	absent := map[string]bool{}
+	for _, name := range b.cfg.glassObstacleNames() {
+		if name != b.stationObstacle {
+			absent[name] = true
+		}
+	}
+	return absent
+}

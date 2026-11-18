@@ -5,6 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/components/gripper"
+	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/testutils/inject"
 	"go.viam.com/test"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
@@ -114,4 +121,99 @@ func TestGetGlassesFromConfig(t *testing.T) {
 	empty, err := (&bartender{cfg: &Config{}}).handleGetGlasses()
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, empty["glasses"], test.ShouldResemble, []any{})
+}
+
+func stationTestBartender(t *testing.T, station string) *bartender {
+	return &bartender{
+		logger:          logging.NewTestLogger(t),
+		cfg:             &Config{ArmName: "arm", GripperName: "gripper", Glasses: testGlasses(), DefaultGlassObstacle: "glass-center"},
+		stationObstacle: station,
+	}
+}
+
+func TestGlassObstaclesAreDependencies(t *testing.T) {
+	cfg := Config{
+		ArmName:              "arm",
+		GripperName:          "gripper",
+		PoseSwitcherNames:    []string{"serve-martini", "serve-highball"},
+		Glasses:              testGlasses(),
+		DefaultGlassObstacle: "glass-center",
+	}
+	deps, _, err := cfg.Validate("bartender")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, deps, test.ShouldContain, gripper.Named("martini-glass").String())
+	test.That(t, deps, test.ShouldContain, gripper.Named("glass-center").String())
+}
+
+func TestStationObstacleForGlass(t *testing.T) {
+	cfg := &Config{DefaultGlassObstacle: "glass-center"}
+	glasses := testGlasses()
+	test.That(t, cfg.stationObstacleFor(&glasses[0]), test.ShouldEqual, "martini-glass")
+	test.That(t, cfg.stationObstacleFor(&glasses[1]), test.ShouldEqual, "")
+	test.That(t, cfg.stationObstacleFor(nil), test.ShouldEqual, "glass-center")
+}
+
+func TestPrepareDrinkPlacesOrderGlassAtStation(t *testing.T) {
+	b := stationTestBartender(t, "glass-center")
+	var during string
+	b.brew = func(context.Context, drinkPlan) error {
+		during = b.stationObstacle
+		return nil
+	}
+	glasses := testGlasses()
+	payload, err := newCocktailJob(drinkPlan{title: "Iced", glass: &glasses[0]}, 1)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, b.prepareDrink(context.Background(), order.Order{ID: "1", Payload: payload}), test.ShouldBeNil)
+	test.That(t, during, test.ShouldEqual, "martini-glass")
+	test.That(t, b.stationObstacle, test.ShouldEqual, "martini-glass")
+
+	payload, err = newCocktailJob(drinkPlan{title: "Plain"}, 1)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, b.prepareDrink(context.Background(), order.Order{ID: "2", Payload: payload}), test.ShouldBeNil)
+	test.That(t, during, test.ShouldEqual, "glass-center")
+}
+
+func TestPlanningWorldHasOnlyStationGlass(t *testing.T) {
+	b := stationTestBartender(t, "martini-glass")
+	fsSvc := inject.NewFrameSystemService("fs")
+	fsSvc.FrameSystemConfigFunc = func(context.Context) (*framesystem.Config, error) {
+		var parts []*referenceframe.FrameSystemPart
+		for _, name := range []string{"martini-glass", "highball-glass", "glass-center", "table"} {
+			box, err := spatialmath.NewBox(spatialmath.NewZeroPose(), r3.Vector{X: 10, Y: 10, Z: 10}, name)
+			if err != nil {
+				return nil, err
+			}
+			lif := referenceframe.NewLinkInFrame(referenceframe.World, spatialmath.NewZeroPose(), name, box)
+			parts = append(parts, &referenceframe.FrameSystemPart{FrameConfig: lif})
+		}
+		return &framesystem.Config{Parts: parts}, nil
+	}
+	a := inject.NewArm("arm")
+	a.CurrentInputsFunc = func(context.Context) ([]referenceframe.Input, error) { return nil, nil }
+	b.fsSvc, b.arm = fsSvc, a
+	b.cfg.Glasses[1].Obstacle = "highball-glass"
+
+	fs, _, err := b.currentInputs(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	names := fs.FrameNames()
+	test.That(t, names, test.ShouldContain, "martini-glass")
+	test.That(t, names, test.ShouldContain, "table")
+	test.That(t, names, test.ShouldNotContain, "highball-glass")
+	test.That(t, names, test.ShouldNotContain, "glass-center")
+}
+
+func TestAllowsForAbsentGlassesAreDropped(t *testing.T) {
+	b := stationTestBartender(t, "martini-glass")
+	c := b.withAllowedCollisions(nil, []AllowedCollision{
+		{Frame1: "claws-middle", Frame2: "glass-center"},
+		{Frame1: "claws-middle", Frame2: "martini-glass"},
+		{Frame1: "claws-middle", Frame2: "table"},
+	})
+	var kept []string
+	for _, spec := range c.CollisionSpecification {
+		for _, a := range spec.Allows {
+			kept = append(kept, a.Frame2)
+		}
+	}
+	test.That(t, kept, test.ShouldResemble, []string{"martini-glass", "table"})
 }

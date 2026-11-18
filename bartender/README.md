@@ -20,6 +20,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `bottle_pourer_oz` | object | Optional | Map of bottle switch name → oz delivered per pour-tilt. Each recipe pour oz must be an integer multiple of this. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
 | `glasses` | []object | Optional | Glass types staff can place at the serving station. Recipes pick one by `id`. See below. |  |
+| `default_glass_obstacle` | string | Optional | Obstacle modeling the glass at the station for recipes with no glass, and before the first order. See `glasses`. |  |
 | `serving_station` | string | Optional | Switch holding the shaker and serve poses used by `find_and_pour_from_shaker`. | `serving-glass-center` |
 | `pour_mouth_offset_mm` | number | Optional | Horizontal gripper-to-bottle-mouth distance while pouring, on the side the bottle tips. Negative flips the side. | 100 |
 | `max_pour_offset_mm` | number | Optional | Max world-frame shift of `serve-approach`/`serve-tilt` from their saved positions; glasses beyond fail before pickup. | 300 |
@@ -66,7 +67,7 @@ Each glass names the pose switcher holding its taught poses, the same way each b
 | `capacity_oz` | number | Required | How much the glass holds. The recipe editor hides glasses too small for the drink. |  |
 | `image` | string | Optional | Outline the web app draws: `highball`, `martini`, `rocks`, `coupe` or `wine` (stemless). | `rocks` |
 | `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
-| `obstacle` | string | Optional | Obstacle modeling this glass. The gripper and held shaker or bottle may intersect it while pouring into the glass. |  |
+| `obstacle` | string | Optional | Obstacle modeling this glass, a component such as `erh:vmodutils:obstacle`. The gripper and held shaker or bottle may intersect it while pouring into the glass. |  |
 
 ```json
 "glasses": [
@@ -76,6 +77,8 @@ Each glass names the pose switcher holding its taught poses, the same way each b
 ```
 
 A recipe with no glass serves at `recipe_defaults.serve_station`, and its direct pours use the first pose switcher that defines the `direct-pour-*` poses.
+
+Only one glass is at the station at a time, so motion planning includes only one glass obstacle: the glass of the order being made, or of the last order made, since that glass stays until someone takes it. Every other glass obstacle and `default_glass_obstacle` is left out, along with any `allowed_obstacles` entry that names one. A recipe with no glass, and every move before the first order, uses `default_glass_obstacle`; a glass with no `obstacle` leaves the station unmodeled. Glass obstacles are dependencies, so the service won't start if one is missing.
 
 ##### `recipe_defaults`
 

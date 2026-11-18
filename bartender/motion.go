@@ -186,7 +186,16 @@ func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSys
 	if err != nil {
 		return nil, nil, fmt.Errorf("get frame system config: %w", err)
 	}
-	fs, err := referenceframe.NewFrameSystem("bartender", fsCfg.Parts, nil)
+	parts := fsCfg.Parts
+	if absent := b.absentGlassObstacles(); len(absent) > 0 {
+		parts = make([]*referenceframe.FrameSystemPart, 0, len(fsCfg.Parts))
+		for _, p := range fsCfg.Parts {
+			if !absent[p.FrameConfig.Name()] {
+				parts = append(parts, p)
+			}
+		}
+	}
+	fs, err := referenceframe.NewFrameSystem("bartender", parts, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build frame system: %w", err)
 	}
@@ -377,19 +386,20 @@ type AllowedCollision struct {
 
 // withAllowedCollisions returns constraints with ac added to its collision-spec
 // allow list. Nil constraints becomes a fresh one; empty ac is a no-op. Allow
-// entries that reference the held-object frame are dropped when nothing is
-// attached, since the planner rejects allow entries whose frame doesn't exist
-// in the current frame system.
+// entries that reference the held-object frame when nothing is attached, or a
+// glass obstacle that isn't at the station, are dropped, since the planner
+// rejects allow entries whose frame doesn't exist in the current frame system.
 func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
-	filtered := ac
-	if b.heldGeomFrame == nil {
-		filtered = filtered[:0:0]
-		for _, a := range ac {
-			if a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName {
-				continue
-			}
-			filtered = append(filtered, a)
+	absent := b.absentGlassObstacles()
+	filtered := make([]AllowedCollision, 0, len(ac))
+	for _, a := range ac {
+		if b.heldGeomFrame == nil && (a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName) {
+			continue
 		}
+		if absent[a.Frame1] || absent[a.Frame2] {
+			continue
+		}
+		filtered = append(filtered, a)
 	}
 	if len(filtered) == 0 {
 		return constraints

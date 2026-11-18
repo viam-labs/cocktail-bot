@@ -38,7 +38,9 @@ func (b *bartender) prepareDrink(ctx context.Context, o order.Order) error {
 		return fmt.Errorf("order %s: decode recipe: %w", o.ID, err)
 	}
 	plan := drinkPlan{title: job.Title, steps: job.Steps, servePhase: job.ServePhase, double: job.Double, glass: job.Glass}
-	b.logger.Infow("starting order", "order_id", o.ID, "drink", o.Drink)
+	// Staff place this order's glass before it starts, and it stays until the next order starts.
+	b.stationObstacle = b.cfg.stationObstacleFor(job.Glass)
+	b.logger.Infow("starting order", "order_id", o.ID, "drink", o.Drink, "station_obstacle", b.stationObstacle)
 	for i := 0; i < job.Quantity; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
