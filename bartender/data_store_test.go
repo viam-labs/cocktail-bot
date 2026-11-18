@@ -97,6 +97,38 @@ func TestUpdateInventoryItemRejectsEmptyIngredient(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 }
 
+func TestSetRefrigeratedPersistsAcrossInStockToggles(t *testing.T) {
+	dir := t.TempDir()
+	ds, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vermouth", true), test.ShouldBeNil)
+
+	test.That(t, ds.SetRefrigerated("vermouth", true), test.ShouldBeNil)
+	test.That(t, ds.UpdateInventoryItem("vermouth", false), test.ShouldBeNil)
+
+	ds2, err := newDataStore(dir)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds2.GetInventory().Ingredients["vermouth"], test.ShouldResemble, IngredientStock{InStock: false, Refrigerated: true})
+}
+
+func TestSetRefrigeratedForSlotOnlyIngredient(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateSlotAssignment("slot-a-front", "gin"), test.ShouldBeNil)
+
+	test.That(t, ds.SetRefrigerated("gin", true), test.ShouldBeNil)
+	test.That(t, ds.GetInventory().Ingredients["gin"], test.ShouldResemble, IngredientStock{Refrigerated: true})
+}
+
+func TestSetRefrigeratedRejectsUnknownIngredient(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+
+	test.That(t, ds.SetRefrigerated("rum", true), test.ShouldNotBeNil)
+	test.That(t, ds.SetRefrigerated("", true), test.ShouldNotBeNil)
+	test.That(t, len(ds.GetInventory().Ingredients), test.ShouldEqual, 0)
+}
+
 func TestGetInventoryReturnsCopy(t *testing.T) {
 	ds, err := newDataStore(t.TempDir())
 	test.That(t, err, test.ShouldBeNil)

@@ -68,7 +68,8 @@ type Inventory struct {
 }
 
 type IngredientStock struct {
-	InStock bool `json:"in_stock"`
+	InStock      bool `json:"in_stock"`
+	Refrigerated bool `json:"refrigerated,omitempty"`
 }
 
 type PourMenu struct {
@@ -258,8 +259,38 @@ func (ds *dataStore) UpdateInventoryItem(ingredient string, inStock bool) error 
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	ds.inventory.Ingredients[ingredient] = IngredientStock{InStock: inStock}
+	stock := ds.inventory.Ingredients[ingredient]
+	stock.InStock = inStock
+	ds.inventory.Ingredients[ingredient] = stock
 	return ds.persistInventoryLocked()
+}
+
+func (ds *dataStore) SetRefrigerated(ingredient string, refrigerated bool) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	stock, err := ds.knownStockLocked(ingredient)
+	if err != nil {
+		return err
+	}
+	stock.Refrigerated = refrigerated
+	ds.inventory.Ingredients[ingredient] = stock
+	return ds.persistInventoryLocked()
+}
+
+// Slot-only ingredients have no inventory entry yet but are still real ingredients.
+func (ds *dataStore) knownStockLocked(ingredient string) (IngredientStock, error) {
+	if ingredient == "" {
+		return IngredientStock{}, errors.New("ingredient is required")
+	}
+	if stock, ok := ds.inventory.Ingredients[ingredient]; ok {
+		return stock, nil
+	}
+	for _, assigned := range ds.slotAssignments {
+		if assigned == ingredient {
+			return IngredientStock{}, nil
+		}
+	}
+	return IngredientStock{}, fmt.Errorf("unknown ingredient %q", ingredient)
 }
 
 func (ds *dataStore) DeleteInventoryItem(ingredient string) error {
