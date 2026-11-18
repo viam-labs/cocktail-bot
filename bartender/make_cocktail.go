@@ -173,22 +173,22 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 	return nil
 }
 
-// putShakerAway cleans or returns the served shaker. The shaker-home poses live on the
-// default serve station, not on a glass's own serve switch.
+// putShakerAway returns the served shaker home, then cleans it when shaker cleaning
+// is on. The shaker-home poses live on the default serve station, not on a glass's
+// own serve switch.
 func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults) error {
-	if sc := b.cfg.ShakerCleaning; sc.enabled() {
-		b.setPhase("Cleaning shaker")
-		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs, sc.DrainMs); err != nil {
-			return fmt.Errorf("clean shaker: %w", err)
-		}
-		return nil
-	}
 	homeSw, err := b.findSwitch(d.ServeStation)
 	if err != nil {
 		return fmt.Errorf("serve station switch %q: %w", d.ServeStation, err)
 	}
 	if err := b.returnShakerHome(ctx, homeSw); err != nil {
 		return fmt.Errorf("return shaker home: %w", err)
+	}
+	if sc := b.cfg.ShakerCleaning; sc.enabled() {
+		b.setPhase("Cleaning shaker")
+		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs, sc.DrainMs); err != nil {
+			return fmt.Errorf("clean shaker: %w", err)
+		}
 	}
 	return nil
 }

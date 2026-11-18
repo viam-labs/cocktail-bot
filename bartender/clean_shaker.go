@@ -8,25 +8,34 @@ import (
 )
 
 const (
-	poseCleanerHover     = "cleaner-hover"
-	poseCleanerFlipHover = "cleaner-flip-hover"
-	poseCleanerApproach  = "cleaner-approach"
-	poseCleanerPress     = "cleaner-press"
+	poseCleanerGrabHover      = "cleaner-grab-hover"
+	poseCleanerGrabApproach   = "cleaner-grab-approach"
+	poseCleanerGrabLift       = "cleaner-grab-lift"
+	poseCleanerGrabCarryHover = "cleaner-grab-carry-hover"
+	poseCleanerHover          = "cleaner-hover"
+	poseCleanerFlipHover      = "cleaner-flip-hover"
+	poseCleanerApproach       = "cleaner-approach"
+	poseCleanerPress          = "cleaner-press"
 )
 
-// cleanShaker rinses the held shaker on the cleaner, which sprays while the
-// upside-down shaker is pressed onto it, then returns the shaker home using
-// the shaker-home-* poses on the same switch.
+// cleanShaker picks the shaker up from shaker-home with the cleaner-grab-*
+// poses, rinses it on the cleaner, which sprays while the upside-down shaker
+// is pressed onto it, and sets it back down at shaker-home with the same grip.
+// The grip is lower than the other flows use so the shaker can be flipped.
 func (b *bartender) cleanShaker(ctx context.Context, stationSwitchName string, dwellMs, drainMs int) error {
-	if b.heldGeomFrame == nil {
-		return errors.New("clean_shaker: shaker must already be in the gripper")
+	if b.heldGeomFrame != nil {
+		return errors.New("clean_shaker: gripper must be empty with the shaker at shaker-home")
 	}
 	sw, err := b.findSwitch(stationSwitchName)
 	if err != nil {
 		return err
 	}
 	cleanerAllow := b.cleanerAllowed()
+	grip := b.cleanerGrip()
 
+	if err := b.grabShakerAtHomeUsing(ctx, sw, grip, b.cleanerHeldShakerGeometry()); err != nil {
+		return err
+	}
 	if _, err := b.carryHeldLevel(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("carry to cleaner-hover: %w", err)
 	}
@@ -63,5 +72,25 @@ func (b *bartender) cleanShaker(ctx context.Context, stationSwitchName string, d
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("flip shaker upright at cleaner-hover: %w", err)
 	}
-	return b.returnShakerHome(ctx, sw)
+	return b.returnShakerHomeUsing(ctx, sw, grip)
+}
+
+func (b *bartender) cleanerGrip() shakerGrip {
+	grip := shakerGrip{
+		hover:      poseCleanerGrabHover,
+		approach:   poseCleanerGrabApproach,
+		lift:       poseCleanerGrabLift,
+		carryHover: poseCleanerGrabCarryHover,
+	}
+	if sc := b.cfg.ShakerCleaning; sc != nil {
+		grip.prestage = sc.PrestagePose
+	}
+	return grip
+}
+
+func (b *bartender) cleanerHeldShakerGeometry() *HeldObjectGeometry {
+	if sc := b.cfg.ShakerCleaning; sc != nil && sc.HeldShakerGeometry != nil {
+		return sc.HeldShakerGeometry
+	}
+	return b.cfg.HeldShakerGeometry
 }

@@ -77,6 +77,10 @@ type ShakerCleaning struct {
 	PowerSwitchName string `json:"power_switch_name,omitempty"`
 	// Pause after cutting cleaner power before lifting the shaker, so water can drip off.
 	DrainMs int `json:"drain_ms,omitempty"`
+	// Joint-space pose on station passed through before the cleaner grab, like mix_prestage_pose.
+	PrestagePose string `json:"prestage_pose,omitempty"`
+	// Held shaker cylinder for the cleaner's lower grip; defaults to held_shaker_geometry.
+	HeldShakerGeometry *HeldObjectGeometry `json:"held_shaker_geometry,omitempty"`
 }
 
 func (s *ShakerCleaning) enabled() bool {
@@ -165,6 +169,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if err := validateGlasses(path, c.Glasses, switcherSet); err != nil {
 		return nil, nil, err
+	}
+	if sc := c.ShakerCleaning; sc != nil {
+		if err := sc.HeldShakerGeometry.Validate(path + ".shaker_cleaning.held_shaker_geometry"); err != nil {
+			return nil, nil, err
+		}
 	}
 	if sc := c.ShakerCleaning; sc.enabled() {
 		if sc.Station == "" {
