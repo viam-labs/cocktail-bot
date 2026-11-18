@@ -14,7 +14,9 @@ const ErrInterrupted = "interrupted: the bartender restarted while this drink wa
 
 // Queue runs orders one at a time. Every drink is served at the same station,
 // so after each order the queue holds until Release confirms the drink was
-// taken and a fresh glass is in place.
+// taken and a fresh glass is in place. An order that names a glass also holds
+// until a Release made while it was next in line, since only then were staff
+// shown which glass to place.
 type Queue struct {
 	mu             sync.Mutex
 	store          Store
@@ -23,6 +25,7 @@ type Queue struct {
 	pending        []Order
 	current        *Order
 	awaitingPickup *Order
+	glassReadyFor  string
 	recent         []Order
 }
 
@@ -118,15 +121,17 @@ func (q *Queue) Enqueue(o Order) (int, error) {
 	return ahead, nil
 }
 
-// Start pops the next pending order, unless one is running or a finished drink is still awaiting pickup.
+// Start pops the next pending order, unless one is running, a finished drink is still awaiting pickup,
+// or the next order's glass has not been confirmed.
 func (q *Queue) Start() (Order, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.current != nil || q.awaitingPickup != nil || len(q.pending) == 0 {
+	if q.current != nil || q.awaitingPickup != nil || len(q.pending) == 0 || q.awaitingGlassLocked() != nil {
 		return Order{}, false
 	}
 	o := q.pending[0]
 	q.pending = q.pending[1:]
+	q.glassReadyFor = ""
 	o.StartedAt = time.Now()
 	q.current = &o
 	q.saveOrReportLocked()
@@ -161,12 +166,27 @@ func (q *Queue) Complete(err error) {
 	q.saveOrReportLocked()
 }
 
-// Release clears the pickup hold so the next pending order can start.
+// awaitingGlassLocked is the next order when it names a glass nobody has confirmed is at the station.
+func (q *Queue) awaitingGlassLocked() *Order {
+	if q.current != nil || q.awaitingPickup != nil || len(q.pending) == 0 {
+		return nil
+	}
+	next := &q.pending[0]
+	if next.Glass == "" || next.ID == q.glassReadyFor {
+		return nil
+	}
+	return next
+}
+
+// Release confirms the station is ready: the finished drink was taken, and the glass for the next order is in place.
 func (q *Queue) Release() bool {
 	q.mu.Lock()
-	released := q.awaitingPickup != nil
-	q.awaitingPickup = nil
+	released := q.awaitingPickup != nil || q.awaitingGlassLocked() != nil
 	if released {
+		q.awaitingPickup = nil
+		if len(q.pending) > 0 {
+			q.glassReadyFor = q.pending[0].ID
+		}
 		q.saveOrReportLocked()
 	}
 	q.mu.Unlock()
@@ -211,6 +231,7 @@ type State struct {
 	Count          int     `json:"count"`
 	Current        *Order  `json:"current,omitempty"`
 	AwaitingPickup *Order  `json:"awaiting_pickup,omitempty"`
+	AwaitingGlass  *Order  `json:"awaiting_glass,omitempty"`
 	Queue          []Order `json:"queue"`
 	Recent         []Order `json:"recent"`
 }
@@ -233,6 +254,10 @@ func (q *Queue) State() State {
 	if q.awaitingPickup != nil {
 		held := *q.awaitingPickup
 		s.AwaitingPickup = &held
+	}
+	if next := q.awaitingGlassLocked(); next != nil {
+		waiting := *next
+		s.AwaitingGlass = &waiting
 	}
 	return s
 }

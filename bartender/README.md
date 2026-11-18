@@ -65,7 +65,7 @@ Each glass names the pose switcher holding its taught poses, the same way each b
 | --- | --- | --- | --- | --- |
 | `id` | string | Required | What recipes store in `glass` and `double_glass`. |  |
 | `name` | string | Required | Shown to staff, e.g. "Highball". |  |
-| `capacity_oz` | number | Required | How much the glass holds. The recipe editor hides glasses too small for the drink. |  |
+| `capacity_oz` | number | Required | How much the glass holds. `make_cocktail` refuses a drink that needs more, counting melt water from mixing over ice and the shaker's ice when the drink isn't strained. |  |
 | `image` | string | Optional | Outline the web app draws: `highball`, `martini`, `rocks`, `coupe` or `wine` (stemless). | `rocks` |
 | `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
 | `obstacle` | string | Optional | Obstacle modeling this glass, a component such as `erh:vmodutils:obstacle`. The gripper and held shaker or bottle may intersect it while pouring into the glass. | `default_glass_obstacle` |
@@ -167,11 +167,11 @@ The `station` switch needs these poses:
 
 ##### `make_cocktail`
 
-Adds a full recipe to the order queue and returns immediately with `{order_id, title, glass, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it and `glass` is the name of the glass staff should place: the recipe's `double_glass` for a double, otherwise its `glass`, or empty if the recipe names none. The drink is poured using that glass's poses. Fails if the glass isn't in `glasses`. Watch progress via `get_queue`.
+Adds a full recipe to the order queue and returns immediately with `{order_id, title, glass, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it and `glass` is the name of the glass staff should place: the recipe's `double_glass` for a double, otherwise its `glass`, or empty if the recipe names none. The drink is poured using that glass's poses. Fails if the glass isn't in `glasses`, if the drink won't fit in it, or if a double is ordered for a recipe that names a `glass` but no `double_glass`. Watch progress via `get_queue`.
 
 The queue is saved to `order_queue.json` in `data_dir` on every change, so waiting orders survive a restart or reconfigure. An order is rejected if it can't be saved. If the module stops while a drink is being made, that drink isn't remade on restart: it's recorded as failed ("interrupted"), reported to the order sensor and Slack, and the queue holds until `start_next`. A corrupt queue file stops the service from starting, with an error naming the file.
 
-The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place.
+The queue makes one drink at a time. Every drink is served at the same station, so after each order (succeeded, failed or cancelled) the queue holds until `start_next` confirms the drink was taken and a fresh glass is in place. An order that names a glass also waits for `start_next` unless it was next in line when `start_next` was called, since only then were staff shown which glass to place: for example, the first order after the line was empty, or after a restart.
 
 ```json
 {"make_cocktail": {"drink_id": "espresso_martini"}}
@@ -189,11 +189,11 @@ Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 
 ##### `get_queue`
 
-`{is_busy, count, current?, awaiting_pickup?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, glass?, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
+`{is_busy, count, current?, awaiting_pickup?, awaiting_glass?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, glass?, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `awaiting_glass` is the next order, held until someone confirms its glass is at the station; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
 
 ##### `start_next`
 
-Clear the pickup hold so the next queued order starts. Returns `{released}`.
+Confirm the station is ready: clear the pickup hold, and confirm the next order's glass is in place, so that order starts. Returns `{released}`.
 
 ##### `cancel_order`
 
@@ -264,7 +264,7 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | Command | Shape |
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
-| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "glass": "martini", "double_glass": "highball", "pours": [{"ingredient": "...", "oz": N}]}]}` — `glass` and `double_glass` must be ids from the `glasses` config. |
+| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "glass": "martini", "double_glass": "highball", "pours": [{"ingredient": "...", "oz": N}]}]}` — `glass` and `double_glass` must be ids from the `glasses` config, and a recipe that names a `glass` and can be doubled must also name a `double_glass`. |
 | `get_glasses` | `{}` → `{glasses: [...]}`, the `glasses` config. |
 | `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |

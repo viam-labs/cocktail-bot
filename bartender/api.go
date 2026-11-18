@@ -1141,6 +1141,9 @@ func (b *bartender) handleUpdateRecipes(raw any) (map[string]any, error) {
 	if bad := unknownGlassRefs(recipes, b.cfg.Glasses); len(bad) > 0 {
 		return nil, fmt.Errorf("update_recipes: not in the bartender's glasses config: %s", strings.Join(bad, "; "))
 	}
+	if bad := missingDoubleGlass(recipes); len(bad) > 0 {
+		return nil, fmt.Errorf("update_recipes: drinks that can be doubled need a glass for the double: %s", strings.Join(bad, "; "))
+	}
 	if err := b.dataStore.UpdateRecipes(recipes); err != nil {
 		return nil, err
 	}
@@ -1315,6 +1318,9 @@ func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]a
 		return nil, fmt.Errorf("make_cocktail: %w", err)
 	}
 	if plan.glass, err = servingGlass(*recipe, plan.double, b.cfg.Glasses); err != nil {
+		return nil, fmt.Errorf("make_cocktail: %w", err)
+	}
+	if err := checkGlassFits(plan.glass, plan.steps); err != nil {
 		return nil, fmt.Errorf("make_cocktail: %w", err)
 	}
 	if plan.glass != nil {

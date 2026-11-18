@@ -78,10 +78,24 @@ func unknownGlassRefs(recipes []Recipe, glasses []Glass) []string {
 	return out
 }
 
+// missingDoubleGlass lists recipes that name a glass and can be doubled but name no glass for the double.
+func missingDoubleGlass(recipes []Recipe) []string {
+	var out []string
+	for _, r := range recipes {
+		if r.Glass != "" && r.DoubleGlass == "" && canDouble(r) {
+			out = append(out, fmt.Sprintf("recipe %q needs a double_glass", r.ID))
+		}
+	}
+	return out
+}
+
 // servingGlass is the glass r is served in, or nil when the recipe names none.
 func servingGlass(r Recipe, double bool, glasses []Glass) (*Glass, error) {
 	id := r.Glass
 	if double {
+		if r.Glass != "" && r.DoubleGlass == "" {
+			return nil, errors.New("this drink names a glass but no double_glass, so it can't be doubled")
+		}
 		id = r.DoubleGlass
 	}
 	if id == "" {
@@ -92,6 +106,50 @@ func servingGlass(r Recipe, double bool, glasses []Glass) (*Glass, error) {
 		return nil, fmt.Errorf("glass %q is not in the bartender's glasses config", id)
 	}
 	return &g, nil
+}
+
+// Rough planning numbers, kept in step with web-app/app/lib/glasses.ts so the recipe editor and the
+// bartender agree on what fits.
+const (
+	meltFraction = 0.25
+	iceInGlassOz = 3.0
+)
+
+// glassNeedOz is about how much the serving glass has to hold for steps: the pours, melt water from
+// mixing over ice, and the shaker's ice when the drink isn't strained.
+func glassNeedOz(steps []RecipeStep) float64 {
+	var poured float64
+	var iced, mixed, strained bool
+	for _, s := range steps {
+		switch s.Kind {
+		case "pour":
+			poured += s.Oz
+		case "ice":
+			iced = true
+		case "mix":
+			mixed = true
+		case "strain":
+			strained = true
+		}
+	}
+	need := poured
+	if iced && mixed {
+		need += poured * meltFraction
+	}
+	if iced && !strained {
+		need += iceInGlassOz
+	}
+	return need
+}
+
+func checkGlassFits(glass *Glass, steps []RecipeStep) error {
+	if glass == nil {
+		return nil
+	}
+	if need := glassNeedOz(steps); need > glass.CapacityOz+1e-9 {
+		return fmt.Errorf("the drink needs about %.1f oz but the %s glass holds %g oz", need, glass.Name, glass.CapacityOz)
+	}
+	return nil
 }
 
 // glassObstacleNames lists every obstacle that models a glass at the serving station, sorted.

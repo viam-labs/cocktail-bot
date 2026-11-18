@@ -65,6 +65,59 @@ func TestServingGlass(t *testing.T) {
 	test.That(t, g, test.ShouldBeNil)
 	_, err = servingGlass(Recipe{Glass: "tiki"}, false, glasses)
 	test.That(t, err, test.ShouldNotBeNil)
+	_, err = servingGlass(Recipe{Glass: "martini"}, true, glasses)
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "double_glass")
+}
+
+func TestUpdateRecipesRequiresDoubleGlassForDoublableDrinks(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	b := &bartender{cfg: &Config{Glasses: testGlasses()}, dataStore: ds}
+	shaken := []any{map[string]any{"kind": "ice"}, map[string]any{"kind": "mix"}}
+	_, err = b.handleUpdateRecipes(map[string]any{"recipes": []any{
+		map[string]any{"id": "shaken", "name": "Shaken", "glass": "martini", "steps": shaken},
+	}})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, `recipe "shaken" needs a double_glass`)
+
+	built := []any{map[string]any{"kind": "pour", "ingredient": "vodka", "oz": 2}}
+	_, err = b.handleUpdateRecipes(map[string]any{"recipes": []any{
+		map[string]any{"id": "built", "name": "Built", "glass": "martini", "steps": built},
+	}})
+	test.That(t, err, test.ShouldBeNil)
+}
+
+func TestGlassNeedOzMatchesTheWebApp(t *testing.T) {
+	pours := []RecipeStep{{Kind: "pour", Oz: 2}, {Kind: "pour", Oz: 1}}
+	steps := func(kinds ...string) []RecipeStep {
+		out := append([]RecipeStep{}, pours...)
+		for _, k := range kinds {
+			out = append(out, RecipeStep{Kind: k})
+		}
+		return out
+	}
+	test.That(t, glassNeedOz(pours), test.ShouldEqual, 3.0)
+	test.That(t, glassNeedOz(steps("ice", "mix", "strain")), test.ShouldEqual, 3*(1+meltFraction))
+	test.That(t, glassNeedOz(steps("ice", "mix")), test.ShouldEqual, 3*(1+meltFraction)+iceInGlassOz)
+}
+
+func TestMakeCocktailRefusesDrinkTooBigForItsGlass(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	// Served unstrained, so the shaker's ice alone is more than the 2 oz glass holds.
+	r := Recipe{ID: "iced", Name: "Iced", Steps: []RecipeStep{{Kind: "ice"}, {Kind: "mix"}}, Glass: "shot", DoubleGlass: "highball"}
+	test.That(t, ds.UpdateRecipes([]Recipe{r}), test.ShouldBeNil)
+	glasses := append(testGlasses(), Glass{ID: "shot", Name: "Shot", CapacityOz: 2, PoseSwitcher: "serve-shot"})
+	b := &bartender{cfg: &Config{RecipeDefaults: &RecipeDefaults{}, Glasses: glasses}, dataStore: ds, queue: order.NewQueue()}
+
+	_, err = b.handleMakeCocktail(context.Background(), map[string]any{"drink_id": "iced"})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "the Shot glass holds 2 oz")
+	test.That(t, len(b.queue.State().Queue), test.ShouldEqual, 0)
+
+	_, err = b.handleMakeCocktail(context.Background(), map[string]any{"drink_id": "iced", "double": true})
+	test.That(t, err, test.ShouldBeNil)
 }
 
 func TestUpdateRecipesRefusesUnknownGlass(t *testing.T) {
