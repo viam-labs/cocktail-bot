@@ -1,6 +1,6 @@
 # Bartender
 
-Orchestrates the full drink cycle: ice → pour → mix → strain → serve → rotate shakers.
+Orchestrates the full drink cycle: ice → pour → mix → strain → serve → clean shaker (optional) → rotate shakers.
 
 ## Model `viam:cocktail-bot:bartender`
 
@@ -42,6 +42,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `save_motion_requests_dir` | string | Optional | When set, every motion-plan request + response is written here, tagged by order id. |  |
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
 | `machine_id` | string | Optional | Viam machine id; when set, failure alerts deep-link to app.viam.com machine logs. |  |
+| `shaker_cleaning` | object | Optional | v1 feature flag: rinse the shaker on the cleaner after `make_cocktail` serves it. See below. | off |
 
 ##### `held_bottle_geometry`, `held_shaker_geometry` and `held_stirrer_geometry`
 
@@ -72,6 +73,31 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
 | `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
 | `strain_dump_ms` | int | Optional | Dump dwell over garbage. | 0 |
+
+##### `shaker_cleaning`
+
+When enabled, `make_cocktail` rinses the shaker after serving instead of putting it straight back at shaker-home. The cleaner sprays water while the upside-down shaker is pressed onto it.
+
+| Name | Type | Inclusion | Description | Default |
+| --- | --- | --- | --- | --- |
+| `enabled` | bool | Optional | Turns the cleaning step on. | false |
+| `station` | string | Required when enabled | Pose switcher holding the cleaner poses below. Must be in `pose_switcher_names`. |  |
+| `dwell_ms` | int | Optional | How long the shaker stays pressed on the cleaner. | 0 |
+| `obstacle` | string | Optional | Obstacle name modeling the cleaner; the gripper, arm and held shaker may intersect it during the cleaning moves. |  |
+
+The `station` switch needs these poses:
+
+| Pose | Shaker |
+| --- | --- |
+| `cleaner-hover` | Upright, above the cleaner. |
+| `cleaner-flip-hover` | Upside down, same spot as `cleaner-hover`. |
+| `cleaner-approach` | Upside down, mouth just above the cleaner. Also where the shaker backs off to so the spray stops. |
+| `cleaner-press` | Upside down, pressed onto the cleaner so it sprays. |
+| `shaker-home-carry-hover`, `shaker-home-lift`, `shaker-home-approach`, `shaker-home-hover` | Same shaker-home poses the other station switches carry, used to put the shaker back. |
+
+```json
+"shaker_cleaning": {"enabled": true, "station": "shaker-cleaner", "dwell_ms": 3000, "obstacle": "cleaner-obstacle"}
+```
 
 #### Example Configuration
 
@@ -125,6 +151,8 @@ The queue makes one drink at a time. Every drink is served at the same station, 
 {"make_cocktail": {"drink_id": "espresso_martini"}}
 ```
 
+With `shaker_cleaning` enabled, every drink served from the shaker runs `clean_shaker` at `shaker_cleaning.station` after the pour, shown as the `Cleaning shaker` step, and the order finishes once the shaker is back home.
+
 A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. A recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
 
 Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
@@ -165,6 +193,7 @@ Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_
 | `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — `stir-storage-hover` → open → linear down to `stir-storage-place` → close (stirrer held) → linear up to `stir-storage-hover` → `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover` → `stir-storage-hover` → linear down to `stir-storage-place` → open (stirrer released) → linear up to `stir-storage-hover`. `stir-storage-hover` must be high enough that the held stirrer clears its storage. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
 | `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
+| `clean_shaker` | `{"station": "shaker-cleaner", "dwell_ms": 3000}` — shaker must already be held (e.g. after `grab_shaker`). Carry level to `cleaner-hover` → flip to `cleaner-flip-hover` → linear down to `cleaner-approach` → linear down to `cleaner-press` → wait `dwell_ms` → linear up to `cleaner-approach` (stops the spray) → linear up to `cleaner-flip-hover` → flip upright at `cleaner-hover` → return to shaker-home using the station's `shaker-home-*` poses. Runs regardless of `shaker_cleaning.enabled`, so poses can be tuned before turning it on. |
 | `rotate_shakers` | `{"strain_flow": "strain-flow"}` |
 | `pickup_pour_return` | `{"bottle": "vodka", "pour_ms": 1500}` |
 | `pour_into_glasses` | `{"bottle": "vodka", "pours": [{"glass": "serving-glass-center", "pour_ms": 1500}]}` |
