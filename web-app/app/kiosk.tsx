@@ -949,7 +949,7 @@ function PickupDialog({
         </p>
         <p className={styles.pickupNote}>
           {!next
-            ? "Then put an empty glass at the station for the next order."
+            ? "No one else is waiting. When the next order comes in, you’ll be told which glass to place."
             : nextGlass
               ? "Then place this glass at the station for the next drink:"
               : "Then put an empty glass at the station for the next drink."}
@@ -964,7 +964,7 @@ function PickupDialog({
           </div>
         )}
         <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.pickupBtn}`} onClick={onStartNext}>
-          {next ? "Glass ready, start next" : "Glass is ready"}
+          {next ? "Glass ready, start next" : "Drink taken"}
         </button>
       </div>
     </div>
