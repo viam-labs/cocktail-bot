@@ -78,7 +78,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 					return fmt.Errorf("step %d pour %s into shaker: %w", i+1, step.Ingredient, err)
 				}
 			} else {
-				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz); err != nil {
+				if err := b.pourIntoGlass(ctx, step.Ingredient, step.Oz, plan.glass); err != nil {
 					return fmt.Errorf("step %d pour %s into glass: %w", i+1, step.Ingredient, err)
 				}
 			}
@@ -146,8 +146,12 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
+		serveStation, glassAllow := d.ServeStation, []AllowedCollision(nil)
+		if plan.glass != nil {
+			serveStation, glassAllow = plan.glass.PoseSwitcher, b.heldVsObstacleAllowed(plan.glass.Obstacle)
+		}
 		b.setPhase(plan.servePhase)
-		if err := b.pourFromShaker(ctx, d.ServeStation, d.ServeMs); err != nil {
+		if err := b.pourFromShaker(ctx, serveStation, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
 		// rotateShakers resets the strain-flow bookkeeping (shaker-B back to

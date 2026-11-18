@@ -19,6 +19,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`, `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
 | `bottle_pourer_oz` | object | Optional | Map of bottle switch name → oz delivered per pour-tilt. Each recipe pour oz must be an integer multiple of this. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
+| `glasses` | []object | Optional | Glass types staff can place at the serving station. Recipes pick one by `id`. See below. |  |
 | `serving_station` | string | Optional | Switch holding the shaker and serve poses used by `find_and_pour_from_shaker`. | `serving-glass-center` |
 | `pour_mouth_offset_mm` | number | Optional | Horizontal gripper-to-bottle-mouth distance while pouring, on the side the bottle tips. Negative flips the side. | 100 |
 | `max_pour_offset_mm` | number | Optional | Max world-frame shift of `serve-approach`/`serve-tilt` from their saved positions; glasses beyond fail before pickup. | 300 |
@@ -53,6 +54,28 @@ Capsule attached as a child of the gripper frame while the object is held.
 | `radius_mm` | number | Required | Cylinder radius. |  |
 | `length_mm` | number | Required | Cylinder length. |  |
 | `z_offset_mm` | number | Optional | Offset in gripper +z. | 0 |
+
+##### `glasses`
+
+Each glass names the pose switcher holding its taught poses, the same way each bottle slot does.
+
+| Name | Type | Inclusion | Description | Default |
+| --- | --- | --- | --- | --- |
+| `id` | string | Required | What recipes store in `glass` and `double_glass`. |  |
+| `name` | string | Required | Shown to staff, e.g. "Highball". |  |
+| `capacity_oz` | number | Required | How much the glass holds. The recipe editor hides glasses too small for the drink. |  |
+| `image` | string | Optional | Outline the web app draws: `highball`, `martini`, `rocks`, `coupe` or `wine` (stemless). | `rocks` |
+| `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
+| `obstacle` | string | Optional | Obstacle modeling this glass. The gripper and held shaker or bottle may intersect it while pouring into the glass. |  |
+
+```json
+"glasses": [
+  {"id": "martini", "name": "Martini", "capacity_oz": 7, "image": "martini", "pose_switcher": "serve-martini", "obstacle": "martini-glass"},
+  {"id": "highball", "name": "Highball", "capacity_oz": 12, "image": "highball", "pose_switcher": "serve-highball", "obstacle": "highball-glass"}
+]
+```
+
+A recipe with no glass serves at `recipe_defaults.serve_station`, and its direct pours use the first pose switcher that defines the `direct-pour-*` poses.
 
 ##### `recipe_defaults`
 
@@ -115,7 +138,7 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 
 ##### `make_cocktail`
 
-Adds a full recipe to the order queue and returns immediately with `{order_id, title, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it. Watch progress via `get_queue`.
+Adds a full recipe to the order queue and returns immediately with `{order_id, title, glass, ahead, enqueued_at, ...}`, where `ahead` is how many orders are in front of it and `glass` is the name of the glass staff should place: the recipe's `double_glass` for a double, otherwise its `glass`, or empty if the recipe names none. The drink is poured using that glass's poses. Fails if the glass isn't in `glasses`. Watch progress via `get_queue`.
 
 The queue is saved to `order_queue.json` in `data_dir` on every change, so waiting orders survive a restart or reconfigure. An order is rejected if it can't be saved. If the module stops while a drink is being made, that drink isn't remade on restart: it's recorded as failed ("interrupted"), reported to the order sensor and Slack, and the queue holds until `start_next`. A corrupt queue file stops the service from starting, with an error naming the file.
 
@@ -135,7 +158,7 @@ Pass `"recipe"` instead of `"drink_id"` to run an unsaved recipe:
 
 ##### `get_queue`
 
-`{is_busy, count, current?, awaiting_pickup?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
+`{is_busy, count, current?, awaiting_pickup?, queue: [...], recent: [...]}`. Each order is `{id, drink, double, quantity, glass?, enqueued_at, started_at, raw_step, completed_at, error?}`. `awaiting_pickup` is the finished order holding the queue; `recent` keeps finished orders for two minutes so clients can look up their outcome by `id`.
 
 ##### `start_next`
 
@@ -209,7 +232,8 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | Command | Shape |
 | --- | --- |
 | `get_recipes` | `{}` → `{recipes: [...]}` |
-| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "pours": [{"ingredient": "...", "oz": N}]}]}` |
+| `update_recipes` | `{"recipes": [{"id": "...", "name": "...", "image": "...", "on_menu": true, "glass": "martini", "double_glass": "highball", "pours": [{"ingredient": "...", "oz": N}]}]}` — `glass` and `double_glass` must be ids from the `glasses` config. |
+| `get_glasses` | `{}` → `{glasses: [...]}`, the `glasses` config. |
 | `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |
 | `delete_inventory_item` | `{"ingredient": "vodka"}` |

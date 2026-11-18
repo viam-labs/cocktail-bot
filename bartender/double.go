@@ -8,6 +8,8 @@ type drinkPlan struct {
 	steps      []RecipeStep
 	servePhase string
 	double     bool
+	// nil serves at recipe_defaults.serve_station with the shared direct-pour poses.
+	glass *Glass
 }
 
 func usesShaker(steps []RecipeStep) bool {

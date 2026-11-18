@@ -413,7 +413,11 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 // would otherwise be the obstacle's volume. Returns nil when no obstacle is
 // configured — the move then plans with no override.
 func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
-	obstacle := b.cfg.PickupObstacles[key]
+	return b.heldVsObstacleAllowed(b.cfg.PickupObstacles[key])
+}
+
+// heldVsObstacleAllowed lets the claws and the held object enter obstacle, e.g. a shaker lip over a glass rim.
+func (b *bartender) heldVsObstacleAllowed(obstacle string) []AllowedCollision {
 	if obstacle == "" {
 		return nil
 	}

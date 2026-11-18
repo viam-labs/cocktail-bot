@@ -15,6 +15,7 @@ type cocktailJob struct {
 	ServePhase string       `json:"serve_phase"`
 	Double     bool         `json:"double"`
 	Quantity   int          `json:"quantity"`
+	Glass      *Glass       `json:"glass,omitempty"`
 }
 
 func newCocktailJob(plan drinkPlan, quantity int) (json.RawMessage, error) {
@@ -24,6 +25,7 @@ func newCocktailJob(plan drinkPlan, quantity int) (json.RawMessage, error) {
 		ServePhase: plan.servePhase,
 		Double:     plan.double,
 		Quantity:   quantity,
+		Glass:      plan.glass,
 	})
 }
 
@@ -35,7 +37,7 @@ func (b *bartender) prepareDrink(ctx context.Context, o order.Order) error {
 	if err := json.Unmarshal(o.Payload, &job); err != nil {
 		return fmt.Errorf("order %s: decode recipe: %w", o.ID, err)
 	}
-	plan := drinkPlan{title: job.Title, steps: job.Steps, servePhase: job.ServePhase, double: job.Double}
+	plan := drinkPlan{title: job.Title, steps: job.Steps, servePhase: job.ServePhase, double: job.Double, glass: job.Glass}
 	b.logger.Infow("starting order", "order_id", o.ID, "drink", o.Drink)
 	for i := 0; i < job.Quantity; i++ {
 		if err := ctx.Err(); err != nil {
