@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -384,8 +385,9 @@ type AllowedCollision struct {
 	Frame2 string
 }
 
-// withAllowedCollisions returns constraints with ac added to its collision-spec
-// allow list. Nil constraints becomes a fresh one; empty ac is a no-op. Allow
+// withAllowedCollisions returns a copy of constraints with ac added to its
+// collision-spec allow list, so callers can reuse constraints across moves
+// without allows leaking between them. Empty ac is a no-op. Allow
 // entries that reference the held-object frame when nothing is attached, or a
 // glass obstacle that isn't at the station, are dropped, since the planner
 // rejects allow entries whose frame doesn't exist in the current frame system.
@@ -404,15 +406,16 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 	if len(filtered) == 0 {
 		return constraints
 	}
-	if constraints == nil {
-		constraints = &motionplan.Constraints{}
+	out := &motionplan.Constraints{}
+	if constraints != nil {
+		*out = *constraints
 	}
 	allows := make([]motionplan.CollisionSpecificationAllowedFrameCollisions, len(filtered))
 	for i, a := range filtered {
 		allows[i] = motionplan.CollisionSpecificationAllowedFrameCollisions{Frame1: a.Frame1, Frame2: a.Frame2}
 	}
-	constraints.CollisionSpecification = append(constraints.CollisionSpecification, motionplan.CollisionSpecification{Allows: allows})
-	return constraints
+	out.CollisionSpecification = append(slices.Clip(out.CollisionSpecification), motionplan.CollisionSpecification{Allows: allows})
+	return out
 }
 
 // pickupAllowedCollisions returns the frame pairs whose collision should be

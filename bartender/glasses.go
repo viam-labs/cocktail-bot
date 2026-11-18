@@ -115,15 +115,24 @@ func (c *Config) glassObstacleNames() []string {
 }
 
 // stationObstacleFor is the obstacle at the station while a drink in glass is made.
-// A glass with no obstacle leaves the station unmodeled.
+// A glass with no obstacle of its own uses the default, so the station is never left unmodeled.
 func (c *Config) stationObstacleFor(glass *Glass) string {
-	if glass != nil {
+	if glass != nil && glass.Obstacle != "" {
 		return glass.Obstacle
 	}
 	if c == nil {
 		return ""
 	}
 	return c.DefaultGlassObstacle
+}
+
+// glassServe is the switch holding the poses for pouring into glass, and the allows that let the claws and
+// held object into the glass's obstacle. A nil glass serves at defaultSwitch with no extra allows.
+func (b *bartender) glassServe(glass *Glass, defaultSwitch string) (string, []AllowedCollision) {
+	if glass == nil {
+		return defaultSwitch, nil
+	}
+	return glass.PoseSwitcher, b.heldVsObstacleAllowed(b.cfg.stationObstacleFor(glass))
 }
 
 // absentGlassObstacles are the glass obstacles left out of planning because another glass is at the station.

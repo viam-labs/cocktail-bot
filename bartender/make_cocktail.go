@@ -146,10 +146,7 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("pickup shaker before serve: %w", err)
 			}
 		}
-		serveStation, glassAllow := d.ServeStation, []AllowedCollision(nil)
-		if plan.glass != nil {
-			serveStation, glassAllow = plan.glass.PoseSwitcher, b.heldVsObstacleAllowed(plan.glass.Obstacle)
-		}
+		serveStation, glassAllow := b.glassServe(plan.glass, d.ServeStation)
 		b.setPhase(plan.servePhase)
 		if err := b.pourFromShaker(ctx, serveStation, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)

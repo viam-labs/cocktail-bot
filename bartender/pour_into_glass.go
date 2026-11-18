@@ -23,12 +23,11 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 
 	poses := map[string]*poseData{}
 	var glassSw toggleswitch.Switch
-	var glassAllow []AllowedCollision
-	if glass != nil {
-		if glassSw, err = b.findSwitch(glass.PoseSwitcher); err != nil {
+	glassSwName, glassAllow := b.glassServe(glass, "")
+	if glassSwName != "" {
+		if glassSw, err = b.findSwitch(glassSwName); err != nil {
 			return fmt.Errorf("glass %q: %w", glass.ID, err)
 		}
-		glassAllow = b.heldVsObstacleAllowed(glass.Obstacle)
 	}
 	for _, name := range []string{posePourGlassApproach, posePourGlassTilt, posePourGlassRecover} {
 		var pd *poseData

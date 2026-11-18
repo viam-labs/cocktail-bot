@@ -3,10 +3,12 @@ package bartender
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/components/gripper"
+	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/robot/framesystem"
@@ -149,8 +151,74 @@ func TestStationObstacleForGlass(t *testing.T) {
 	cfg := &Config{DefaultGlassObstacle: "glass-center"}
 	glasses := testGlasses()
 	test.That(t, cfg.stationObstacleFor(&glasses[0]), test.ShouldEqual, "martini-glass")
-	test.That(t, cfg.stationObstacleFor(&glasses[1]), test.ShouldEqual, "")
+	test.That(t, cfg.stationObstacleFor(&glasses[1]), test.ShouldEqual, "glass-center")
 	test.That(t, cfg.stationObstacleFor(nil), test.ShouldEqual, "glass-center")
+}
+
+func TestGlassServe(t *testing.T) {
+	b := stationTestBartender(t, "glass-center")
+	glasses := testGlasses()
+
+	sw, allow := b.glassServe(&glasses[0], "serving-glass-center")
+	test.That(t, sw, test.ShouldEqual, "serve-martini")
+	test.That(t, allow, test.ShouldResemble, b.heldVsObstacleAllowed("martini-glass"))
+
+	sw, allow = b.glassServe(&glasses[1], "serving-glass-center")
+	test.That(t, sw, test.ShouldEqual, "serve-highball")
+	test.That(t, allow, test.ShouldResemble, b.heldVsObstacleAllowed("glass-center"))
+
+	sw, allow = b.glassServe(nil, "serving-glass-center")
+	test.That(t, sw, test.ShouldEqual, "serving-glass-center")
+	test.That(t, allow, test.ShouldBeNil)
+}
+
+func TestWithAllowedCollisionsLeavesInputUnchanged(t *testing.T) {
+	b := stationTestBartender(t, "martini-glass")
+	overGlass := b.withAllowedCollisions(nil, b.heldVsObstacleAllowed("martini-glass"))
+	before := len(overGlass.CollisionSpecification)
+
+	tilt := b.withAllowedCollisions(overGlass, []AllowedCollision{{Frame1: "claws-middle", Frame2: "table"}})
+	test.That(t, len(tilt.CollisionSpecification), test.ShouldEqual, before+1)
+	test.That(t, len(overGlass.CollisionSpecification), test.ShouldEqual, before)
+
+	approach := b.withAllowedCollisions(overGlass, []AllowedCollision{{Frame1: "claws-middle", Frame2: "shelf"}})
+	test.That(t, approach.CollisionSpecification[before].Allows[0].Frame2, test.ShouldEqual, "shelf")
+	test.That(t, tilt.CollisionSpecification[before].Allows[0].Frame2, test.ShouldEqual, "table")
+}
+
+func TestPourIntoGlassUsesGlassPosesAndChecksThemBeforePickup(t *testing.T) {
+	ds, err := newDataStore(t.TempDir())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ds.UpdateSlotAssignment("vodka", "vodka"), test.ShouldBeNil)
+	test.That(t, ds.UpdatePourerOz("vodka", 1), test.ShouldBeNil)
+
+	asked := map[string][]any{}
+	poseSwitch := func(name string, missing string) *inject.Switch {
+		sw := inject.NewSwitch(name)
+		sw.DoFunc = func(_ context.Context, cmd map[string]any) (map[string]any, error) {
+			asked[name] = append(asked[name], cmd["get_pose_by_name"])
+			if cmd["get_pose_by_name"] == missing {
+				return nil, errors.New("no such pose")
+			}
+			return map[string]any{}, nil
+		}
+		return sw
+	}
+	b := stationTestBartender(t, "glass-center")
+	b.dataStore = ds
+	b.poseSwitches = []toggleswitch.Switch{
+		poseSwitch("vodka", ""),
+		poseSwitch("stations", ""),
+		poseSwitch("serve-highball", posePourGlassRecover),
+	}
+	glasses := testGlasses()
+
+	err = b.pourIntoGlass(context.Background(), "vodka", 1, &glasses[1])
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "no such pose")
+	test.That(t, asked["serve-highball"], test.ShouldResemble, []any{posePourGlassApproach, posePourGlassTilt, posePourGlassRecover})
+	test.That(t, asked["stations"], test.ShouldBeNil)
+	test.That(t, asked["vodka"], test.ShouldBeNil)
 }
 
 func TestPrepareDrinkPlacesOrderGlassAtStation(t *testing.T) {
