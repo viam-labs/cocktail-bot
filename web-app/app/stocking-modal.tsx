@@ -200,7 +200,8 @@ function ConfirmBody({
         <button type="button" className={styles.btnGhost} onClick={onClose}>
           Close
         </button>
-        <button type="button" className={styles.btnGhost} onClick={onManual}>
+        <span className={styles.spacer} aria-hidden />
+        <button type="button" className={styles.btnSecondary} onClick={onManual}>
           I moved it manually
         </button>
         <button type="button" className={styles.btnPrimary} onClick={onConfirm}>
@@ -261,7 +262,8 @@ function SwapPauseBody({
         <button type="button" className={styles.btnGhost} onClick={onClose}>
           Close
         </button>
-        <button type="button" className={styles.btnGhost} onClick={onManual}>
+        <span className={styles.spacer} aria-hidden />
+        <button type="button" className={styles.btnSecondary} onClick={onManual}>
           I moved it manually
         </button>
         <button type="button" className={styles.btnPrimary} onClick={onContinue}>
