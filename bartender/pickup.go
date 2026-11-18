@@ -81,36 +81,56 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 	return nil
 }
 
+// shakerGrip names the poses one way of gripping the shaker at shaker-home
+// uses. prestage is an optional joint-space pose passed through before the grab.
+type shakerGrip struct {
+	prestage, hover, approach, lift, carryHover string
+}
+
+func (b *bartender) shakerHomeGrip() shakerGrip {
+	return shakerGrip{
+		prestage:   b.cfg.MixPrestagePose,
+		hover:      poseShakerHomeHover,
+		approach:   poseShakerHomeApproach,
+		lift:       poseShakerHomeLift,
+		carryHover: poseShakerHomeCarryHover,
+	}
+}
+
 // grabShakerAtHome picks up the shaker from shaker-home using the
 // shaker-home-* poses on sw and leaves it held at shaker-home-carry-hover.
 // mix and strain_shaker share it so both grab the shaker the same way.
 func (b *bartender) grabShakerAtHome(ctx context.Context, sw toggleswitch.Switch) error {
+	return b.grabShakerAtHomeUsing(ctx, sw, b.shakerHomeGrip(), b.cfg.HeldShakerGeometry)
+}
+
+func (b *bartender) grabShakerAtHomeUsing(ctx context.Context, sw toggleswitch.Switch, grip shakerGrip, held *HeldObjectGeometry) error {
 	shakerAllow := b.pickupAllowedCollisions("shaker")
 
-	if name := b.cfg.MixPrestagePose; name != "" {
-		if _, err := b.moveArmToJointGoalOnSwitch(ctx, sw, name); err != nil {
+	if grip.prestage != "" {
+		if _, err := b.moveArmToJointGoalOnSwitch(ctx, sw, grip.prestage); err != nil {
 			return fmt.Errorf("prestage before shaker pickup: %w", err)
 		}
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseShakerHomeHover); err != nil {
+	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, grip.hover); err != nil {
 		return fmt.Errorf("shaker-hover: %w", err)
 	}
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("open gripper before shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sw, grip.approach, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-to shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sw, grip.lift, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-lift shaker before closing: %w", err)
 	}
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on shaker: %w", err)
 	}
-	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeld(ctx, held); err != nil {
 		return fmt.Errorf("attach held shaker: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
+	if _, err := b.carryHeldLevel(ctx, sw, grip.carryHover, shakerAllow...); err != nil {
 		return fmt.Errorf("carry to shaker carry-hover: %w", err)
 	}
 	return nil
@@ -120,21 +140,25 @@ func (b *bartender) grabShakerAtHome(ctx context.Context, sw toggleswitch.Switch
 // down at shaker-home using the shaker-home-* poses on sw and backs the empty
 // gripper out to shaker-home-hover.
 func (b *bartender) returnShakerHome(ctx context.Context, sw toggleswitch.Switch) error {
+	return b.returnShakerHomeUsing(ctx, sw, b.shakerHomeGrip())
+}
+
+func (b *bartender) returnShakerHomeUsing(ctx context.Context, sw toggleswitch.Switch, grip shakerGrip) error {
 	shakerAllow := b.pickupAllowedCollisions("shaker")
 
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
+	if _, err := b.carryHeldLevel(ctx, sw, grip.carryHover, shakerAllow...); err != nil {
 		return fmt.Errorf("carry back to shaker carry-hover: %w", err)
 	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
+	if _, err := b.linearCarryToPose(ctx, sw, grip.lift, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-descend to shaker lift: %w", err)
 	}
 	if err := b.gripperOpen(ctx); err != nil {
 		return fmt.Errorf("release shaker grip at lift: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sw, grip.approach, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
 	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
+	if _, err := b.linearMoveToPose(ctx, sw, grip.hover, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-retreat from shaker: %w", err)
 	}
 	return nil
