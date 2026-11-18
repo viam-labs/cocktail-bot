@@ -487,6 +487,13 @@ func (b *bartender) iceProtectorAllowed() []AllowedCollision {
 	return b.gripperAllowedVsObstacle(b.cfg.IceProtectorObstacle)
 }
 
+func (b *bartender) cleanerAllowed() []AllowedCollision {
+	if b.cfg.ShakerCleaning == nil || b.cfg.ShakerCleaning.Obstacle == "" {
+		return nil
+	}
+	return b.gripperAllowedVsObstacle(b.cfg.ShakerCleaning.Obstacle)
+}
+
 // poseAllowedCollisions expands a pose's allowed_obstacles list into the same
 // frame pairs the protector helpers use.
 func (b *bartender) poseAllowedCollisions(pd *poseData) []AllowedCollision {

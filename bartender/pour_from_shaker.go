@@ -14,11 +14,20 @@ const (
 	poseServeTilt     = "serve-tilt"
 )
 
-func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string, pourMs int, glassAllow ...AllowedCollision) error {
+func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string, pourMs int) error {
 	sw, err := b.findSwitch(stationSwitchName)
 	if err != nil {
 		return err
 	}
+	if err := b.serveFromShaker(ctx, sw, pourMs); err != nil {
+		return err
+	}
+	return b.returnShakerHome(ctx, sw)
+}
+
+// serveFromShaker pours the held shaker into the glass at sw and leaves it held at serve-approach.
+// glassAllow lets the held shaker into the glass's obstacle over the glass.
+func (b *bartender) serveFromShaker(ctx context.Context, sw toggleswitch.Switch, pourMs int, glassAllow ...AllowedCollision) error {
 	approach, err := fetchPose(ctx, sw, poseServeApproach)
 	if err != nil {
 		return err
@@ -27,18 +36,23 @@ func (b *bartender) pourFromShaker(ctx context.Context, stationSwitchName string
 	if err != nil {
 		return err
 	}
-	return b.pourFromShakerAt(ctx, sw, pourMs, approach, tilt, glassAllow...)
+	return b.serveFromShakerAt(ctx, sw, pourMs, approach, tilt, glassAllow...)
 }
 
 // pourFromShakerAt runs the pour_from_shaker sequence with the given serve-approach and serve-tilt poses,
 // so callers can move the serve point (e.g. to a glass found by vision).
-// glassAllow lets the held shaker into the glass's obstacle over the glass.
-func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, tilt *poseData, glassAllow ...AllowedCollision) error {
+func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, tilt *poseData) error {
+	if err := b.serveFromShakerAt(ctx, sw, pourMs, approach, tilt); err != nil {
+		return err
+	}
+	return b.returnShakerHome(ctx, sw)
+}
+
+func (b *bartender) serveFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, tilt *poseData, glassAllow ...AllowedCollision) error {
 	if b.heldGeomFrame == nil {
 		return errors.New("pour_from_shaker: shaker must already be in the gripper (call strain_shaker first in a chain)")
 	}
 	station := sw.Name().ShortName()
-	shakerAllow := b.pickupAllowedCollisions("shaker")
 
 	if _, err := b.carryHeldLevelToResolved(ctx, approach, station+":"+poseServeApproach+":carry", glassAllow...); err != nil {
 		return fmt.Errorf("carry to serve-approach: %w", err)
@@ -53,22 +67,6 @@ func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch
 	}
 	if _, err := b.moveToResolvedPose(ctx, approach, station+":"+poseServeApproach, overGlass, serveOpts); err != nil {
 		return fmt.Errorf("untilt shaker over glass: %w", err)
-	}
-
-	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
-		return fmt.Errorf("carry back to shaker carry-hover: %w", err)
-	}
-	if _, err := b.linearCarryToPose(ctx, sw, poseShakerHomeLift, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-descend to shaker lift: %w", err)
-	}
-	if err := b.gripperOpen(ctx); err != nil {
-		return fmt.Errorf("release shaker grip at lift: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeApproach, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-descend further to shaker grab: %w", err)
-	}
-	if _, err := b.linearMoveToPose(ctx, sw, poseShakerHomeHover, shakerAllow...); err != nil {
-		return fmt.Errorf("linear-retreat from shaker: %w", err)
 	}
 	return nil
 }
