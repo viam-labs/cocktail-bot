@@ -281,18 +281,18 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
             </div>
           )}
         </main>
+        {stockingPlan && (
+          <StockingModal
+            conn={conn}
+            plan={stockingPlan}
+            onClose={() => setStockingPlan(null)}
+            onDone={() => {
+              setStockingPlan(null);
+              load();
+            }}
+          />
+        )}
       </div>
-      {stockingPlan && (
-        <StockingModal
-          conn={conn}
-          plan={stockingPlan}
-          onClose={() => setStockingPlan(null)}
-          onDone={() => {
-            setStockingPlan(null);
-            load();
-          }}
-        />
-      )}
     </>
   );
 }
