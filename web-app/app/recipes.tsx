@@ -12,7 +12,10 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { ViamConnection } from "./lib/viamClient";
-import { getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
+import { getGlasses, getInventory, getRecipes, updateRecipes } from "./lib/viamClient";
+import type { Glass, GlassNeed } from "./lib/glasses";
+import { fits, glassNeed, usesShaker } from "./lib/glasses";
+import { GlassIcon } from "./glass_icon";
 import type { Recipe } from "./lib/recipes";
 import {
   BASE_SPIRITS,
@@ -100,15 +103,17 @@ function recipeStatus(recipe: Recipe, inventory: Inventory | null): RecipeStatus
 export function RecipesPage({ conn }: { conn: ViamConnection }) {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [glasses, setGlasses] = useState<Glass[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ index: number | null; recipe: Recipe } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    Promise.all([getRecipes(conn), getInventory(conn)])
-      .then(([r, inv]) => {
+    Promise.all([getRecipes(conn), getInventory(conn), getGlasses(conn)])
+      .then(([r, inv, g]) => {
         setRecipes(r);
         setInventory(inv);
+        setGlasses(g);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, [conn]);
@@ -214,6 +219,7 @@ export function RecipesPage({ conn }: { conn: ViamConnection }) {
           existingIndex={editing.index}
           ingredientNames={ingredientNames}
           inventory={inventory}
+          glasses={glasses}
           busy={busy}
           onClose={() => setEditing(null)}
           onSave={onSaveEditing}
@@ -488,6 +494,7 @@ function RecipeEditor({
   existingIndex,
   ingredientNames,
   inventory,
+  glasses,
   busy,
   onClose,
   onSave,
@@ -497,6 +504,7 @@ function RecipeEditor({
   existingIndex: number | null;
   ingredientNames: string[];
   inventory: Inventory | null;
+  glasses: Glass[];
   busy: boolean;
   onClose: () => void;
   onSave: (recipe: Recipe) => void;
@@ -511,6 +519,8 @@ function RecipeEditor({
   const [flavors, setFlavors] = useState<Flavor[]>(() =>
     (initial.flavors ?? []).filter((f): f is Flavor => (FLAVORS as readonly string[]).includes(f)),
   );
+  const [glass, setGlass] = useState(initial.glass ?? "");
+  const [doubleGlass, setDoubleGlass] = useState(initial.double_glass ?? "");
   const [sortOrder, setSortOrder] = useState<string>(
     initial.sort_order != null ? String(initial.sort_order) : "",
   );
@@ -538,6 +548,11 @@ function RecipeEditor({
       (x): x is { id: string; step: Extract<RecipeStep, { kind: "pour" }> } => x.step.kind === "pour",
     )
     .reduce((sum, x) => sum + (Number.isFinite(x.step.oz) ? x.step.oz : 0), 0);
+
+  const plainSteps = steps.map((x) => x.step);
+  const need = glassNeed(plainSteps);
+  const doubleNeed = glassNeed(plainSteps, true);
+  const doublable = usesShaker(plainSteps);
 
   function updateStep(id: string, patch: Partial<RecipeStep>) {
     setSteps((prev) =>
@@ -585,6 +600,20 @@ function RecipeEditor({
       alert("Recipe id is required");
       return;
     }
+    const single = glasses.find((g) => g.id === glass);
+    if (single && !fits(single, need)) {
+      alert(`The ${single.name} glass holds ${single.capacity_oz} oz, but this drink needs about ${fmtOz(need.totalOz)} oz. Pick a bigger glass.`);
+      return;
+    }
+    if (doublable && glass && !doubleGlass) {
+      alert("Pick a glass for a double, since this drink can be doubled.");
+      return;
+    }
+    const forDouble = glasses.find((g) => g.id === doubleGlass);
+    if (doublable && forDouble && !fits(forDouble, doubleNeed)) {
+      alert(`The ${forDouble.name} glass holds ${forDouble.capacity_oz} oz, but a double needs about ${fmtOz(doubleNeed.totalOz)} oz. Pick a bigger glass for the double.`);
+      return;
+    }
     const next: Recipe = {
       id: effectiveId,
       name: trimmedName,
@@ -598,6 +627,8 @@ function RecipeEditor({
     if (trimmedTag) next.tag = trimmedTag;
     if (baseSpirit) next.base_spirit = baseSpirit as BaseSpirit;
     if (flavors.length > 0) next.flavors = flavors;
+    if (glass) next.glass = glass;
+    if (doubleGlass && doublable) next.double_glass = doubleGlass;
     const parsedOrder = Number(sortOrder);
     if (sortOrder !== "" && Number.isFinite(parsedOrder)) next.sort_order = parsedOrder;
     onSave(next);
@@ -781,6 +812,32 @@ function RecipeEditor({
               <AddStepMenu onPick={addStep} />
             </div>
           </div>
+
+          <div className={styles.pourSection}>
+            <div className={styles.pourSectionHead}>
+              <h3 className={styles.pourSectionTitle}>Glass</h3>
+              <span className={styles.pourTotal}>Needs about {fmtOz(need.totalOz)} oz</span>
+            </div>
+            <GlassPicker glasses={glasses} need={need} value={glass} onChange={setGlass} noneLabel="No glass" />
+            <NeedHint need={need} />
+          </div>
+
+          {doublable && (
+            <div className={styles.pourSection}>
+              <div className={styles.pourSectionHead}>
+                <h3 className={styles.pourSectionTitle}>Glass for a double</h3>
+                <span className={styles.pourTotal}>Needs about {fmtOz(doubleNeed.totalOz)} oz</span>
+              </div>
+              <GlassPicker
+                glasses={glasses}
+                need={doubleNeed}
+                value={doubleGlass}
+                onChange={setDoubleGlass}
+                noneLabel="No glass"
+              />
+              <NeedHint need={doubleNeed} />
+            </div>
+          )}
         </div>
 
         <div className={styles.dlgBtns}>
@@ -803,5 +860,84 @@ function RecipeEditor({
         </div>
       </form>
     </div>
+  );
+}
+
+function NeedHint({ need }: { need: GlassNeed }) {
+  const parts = [`${fmtOz(need.pouredOz)} oz poured`];
+  if (need.meltOz > 0) parts.push(`${fmtOz(need.meltOz)} oz melt from mixing over ice`);
+  if (need.iceOz > 0) parts.push(`${fmtOz(need.iceOz)} oz of ice, since it isn't strained`);
+  return <p className={styles.chipHint}>{parts.join(" + ")}.</p>;
+}
+
+function GlassPicker({
+  glasses,
+  need,
+  value,
+  onChange,
+  noneLabel,
+}: {
+  glasses: Glass[];
+  need: GlassNeed;
+  value: string;
+  onChange: (id: string) => void;
+  noneLabel: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const tooSmall = glasses.filter((g) => !fits(g, need));
+  // Keep the chosen glass visible even after the recipe outgrows it, so the warning is seen.
+  const shown = glasses.filter((g) => showAll || fits(g, need) || g.id === value);
+  const hidden = tooSmall.filter((g) => g.id !== value).length;
+  const missing = value && !glasses.some((g) => g.id === value);
+
+  if (glasses.length === 0) {
+    return <p className={styles.chipHint}>No glasses yet. Add them to the bartender service&rsquo;s <code>glasses</code> config.</p>;
+  }
+
+  return (
+    <>
+      <div className={styles.chipRow} role="radiogroup">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value === ""}
+          className={`${styles.chip} ${value === "" ? styles.chipActive : ""}`.trim()}
+          onClick={() => onChange("")}
+        >
+          {noneLabel}
+        </button>
+        {shown.map((g) => {
+          const fit = fits(g, need);
+          return (
+            <button
+              key={g.id}
+              type="button"
+              role="radio"
+              aria-checked={value === g.id}
+              className={`${styles.chip} ${styles.glassChip} ${value === g.id ? styles.chipActive : ""} ${fit ? "" : styles.glassChipSmall}`.trim()}
+              onClick={() => onChange(g.id)}
+              title={fit ? undefined : `${g.capacity_oz} oz is too small for this drink`}
+            >
+              <GlassIcon image={g.image} size={22} />
+              {g.name}
+              <span className={styles.muted}>{g.capacity_oz} oz</span>
+            </button>
+          );
+        })}
+        {missing && (
+          <button type="button" role="radio" aria-checked className={`${styles.chip} ${styles.chipActive}`}>
+            {value} (deleted)
+          </button>
+        )}
+      </div>
+      {value && !missing && tooSmall.some((g) => g.id === value) && (
+        <p className={styles.glassWarn}>This glass is too small for the drink.</p>
+      )}
+      {hidden > 0 && (
+        <button type="button" className={styles.linkBtn} onClick={() => setShowAll((v) => !v)}>
+          {showAll ? "Hide glasses that are too small" : `Show ${hidden} glass${hidden === 1 ? "" : "es"} that ${hidden === 1 ? "is" : "are"} too small`}
+        </button>
+      )}
+    </>
   );
 }

@@ -593,3 +593,28 @@
   justify-content: flex-end;
   gap: 12px;
 }
+
+.glassChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.glassChipSmall {
+  border-style: dashed;
+  border-color: var(--bad);
+}
+.glassWarn {
+  color: var(--bad);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+.linkBtn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--verm);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}

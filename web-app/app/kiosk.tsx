@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { ViamConnection } from "./lib/viamClient";
 import {
+  getGlasses,
   getInventory,
   getPourMenus,
   getRecipes,
@@ -21,7 +22,9 @@ import { BASE_SPIRITS, FLAVORS, recipePours } from "./lib/recipes";
 import type { Inventory, WhiskeyProfile } from "./lib/inventory";
 import { isAvailable, WHISKEY_TRAITS } from "./lib/inventory";
 import type { PourMenu, PourServe, PourSize } from "./lib/pour_menus";
+import type { Glass, GlassImage } from "./lib/glasses";
 import { titleCase } from "./lib/display";
+import { GlassIcon } from "./glass_icon";
 import { Nav } from "./nav";
 import styles from "./kiosk.module.css";
 
@@ -87,6 +90,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [menus, setMenus] = useState<PourMenu[] | null>(null);
+  const [glasses, setGlasses] = useState<Glass[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myOrders, setMyOrdersState] = useState<MyOrder[]>([]);
   const myOrdersRef = useRef<MyOrder[]>([]);
@@ -144,6 +148,10 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     getMachineName(conn)
       .then((n) => !cancelled && setMachineName(n))
       .catch(() => {});
+    // Only used for outlines in the queue; orders still name their glass without it.
+    getGlasses(conn)
+      .then((g) => !cancelled && setGlasses(g))
+      .catch(() => {});
     Promise.all([getRecipes(conn), getInventory(conn), getPourMenus(conn)])
       .then(([r, i, m]) => {
         if (cancelled) return;
@@ -192,9 +200,11 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         steps.push({ kind: "ice", type: "crushed" });
       }
       steps.push({ kind: "pour", ingredient: entry.ingredient, oz: size.oz });
-      return placeOrder(label, () => makeInlineOrder(conn, { name: label, steps }));
+      // Pour menus predate the glasses config; only send a glass the bartender knows, or it refuses the order.
+      const glass = glasses.some((g) => g.id === serve.glass) ? serve.glass : undefined;
+      return placeOrder(label, () => makeInlineOrder(conn, { name: label, steps, glass }));
     },
-    [conn, placeOrder],
+    [conn, placeOrder, glasses],
   );
 
   useEffect(() => {
@@ -386,7 +396,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
             <KioskQueue
               state={queue.state}
               mine={myOrders}
-              onStartNext={onStartNext}
+              glasses={glasses}
               onCancelOrder={onCancelOrder}
             />
           </div>
@@ -422,6 +432,19 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
             entry={pourPreview}
             onClose={() => setPourPreview(null)}
           />
+        )}
+
+        {queue.state?.awaiting_pickup && (
+          <PickupDialog
+            held={queue.state.awaiting_pickup}
+            next={queue.state.queue[0]}
+            glasses={glasses}
+            onStartNext={onStartNext}
+          />
+        )}
+
+        {queue.state?.awaiting_glass && (
+          <PlaceGlassDialog next={queue.state.awaiting_glass} glasses={glasses} onStartNext={onStartNext} />
         )}
 
         {placed && !failure && (
@@ -892,62 +915,164 @@ function waitText(position: number): string {
   return `#${position} · ~${position * MINUTES_PER_DRINK} min`;
 }
 
+// Blocks the menu until staff confirm the finished drink was taken and the next glass is in place.
+function PickupDialog({
+  held,
+  next,
+  glasses,
+  onStartNext,
+}: {
+  held: QueueOrder;
+  next?: QueueOrder;
+  glasses: Glass[];
+  onStartNext: () => void;
+}) {
+  const nextGlass = next?.glass;
+  const image = glasses.find((g) => g.name === nextGlass)?.image;
+  return (
+    <div className={`${styles.scrim} ${styles.pickupScrim}`}>
+      <div
+        className={styles.pickup}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="pickup-title"
+      >
+        <h3 id="pickup-title" className={held.error ? styles.pickupTitleBad : styles.pickupTitle}>
+          {held.error ? `${held.drink} didn’t finish` : `${held.drink} is ready`}
+        </h3>
+        <p className={styles.pickupNote}>
+          {held.error
+            ? "Ask a staff member to clear the station."
+            : held.double
+              ? `Both drinks come in one ${held.glass ? held.glass.toLowerCase() + " glass" : "large glass"}. Grab an extra glass to split it.`
+              : "Take your drink from the station."}
+        </p>
+        <p className={styles.pickupNote}>
+          {!next
+            ? "Then put an empty glass at the station for the next order."
+            : nextGlass
+              ? "Then place this glass at the station for the next drink:"
+              : "Then put an empty glass at the station for the next drink."}
+        </p>
+        {nextGlass && (
+          <div className={styles.pickupGlass}>
+            <GlassIcon image={image} size={120} />
+            <span>
+              {nextGlass}
+              <span className={styles.kqPlaceFor}>for {next.drink}</span>
+            </span>
+          </div>
+        )}
+        <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.pickupBtn}`} onClick={onStartNext}>
+          {next ? "Glass ready, start next" : "Glass is ready"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PlaceGlassDialog({
+  next,
+  glasses,
+  onStartNext,
+}: {
+  next: QueueOrder;
+  glasses: Glass[];
+  onStartNext: () => void;
+}) {
+  const image = glasses.find((g) => g.name === next.glass)?.image;
+  return (
+    <div className={`${styles.scrim} ${styles.pickupScrim}`}>
+      <div
+        className={styles.pickup}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="place-glass-title"
+      >
+        <h3 id="place-glass-title" className={styles.pickupTitle}>
+          Place the glass for the next drink
+        </h3>
+        <p className={styles.pickupNote}>The bartender starts once this glass is at the station:</p>
+        <div className={styles.pickupGlass}>
+          <GlassIcon image={image} size={120} />
+          <span>
+            {next.glass}
+            <span className={styles.kqPlaceFor}>for {next.drink}</span>
+          </span>
+        </div>
+        <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.pickupBtn}`} onClick={onStartNext}>
+          Glass ready, start
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GlassTag({ name, images }: { name?: string; images: Map<string, GlassImage | undefined> }) {
+  if (!name) return null;
+  return (
+    <span className={styles.kqGlass}>
+      <GlassIcon image={images.get(name)} size={18} />
+      {name}
+    </span>
+  );
+}
+
 function KioskQueue({
   state,
   mine,
-  onStartNext,
+  glasses,
   onCancelOrder,
 }: {
   state: QueueState | null;
   mine: MyOrder[];
-  onStartNext: () => void;
+  glasses: Glass[];
   onCancelOrder: (id: string) => void;
 }) {
   const mineIds = new Set(mine.map((o) => o.id));
   const held = state?.awaiting_pickup;
+  const holdingForGlass = held || state?.awaiting_glass;
   const waiting: QueueOrder[] = state?.queue ?? [];
+  const images = new Map(glasses.map((g) => [g.name, g.image]));
+  const current = state?.current;
 
   return (
     <aside className={styles.kq} aria-label="Queue">
       <h2>In line</h2>
 
-      {held && (
-        <div className={held.error ? styles.kqHelp : styles.kqReady} role="status">
-          {held.error ? `${held.drink} didn’t finish` : `${held.drink} is ready`}
-          <p className={styles.kqReadyNote}>
-            {held.error
-              ? "Ask a staff member to clear the station."
-              : held.double
-                ? "Both drinks come in one large glass. Grab an extra glass to split it."
-                : "Take your drink from the station."}
-          </p>
-          <p className={styles.kqReadyNote}>
-            {waiting.length > 0
-              ? "Then put an empty glass in its place to start the next drink."
-              : "Then put an empty glass in its place for the next order."}
-          </p>
-          <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.kqNext}`} onClick={onStartNext}>
-            {waiting.length > 0 ? "Glass ready, start next" : "Glass is ready"}
-          </button>
+      {!held && current?.glass && (
+        <div className={styles.kqStart} role="status">
+          Glass at the station
+          <div className={styles.kqPlace}>
+            <GlassIcon image={images.get(current.glass)} size={84} />
+            <span>
+              {current.glass}
+              <span className={styles.kqPlaceFor}>for {current.drink}</span>
+            </span>
+          </div>
         </div>
       )}
 
-      {state?.current || waiting.length > 0 ? (
+      {current || waiting.length > 0 ? (
         <div className={styles.rows}>
-          {state?.current && (
+          {current && (
             <div className={styles.kqRow}>
               <span className={styles.kqName}>
-                {state.current.drink}
-                {state.current.raw_step && <span className={styles.kqStep}>{state.current.raw_step}</span>}
+                {current.drink}
+                {current.raw_step && <span className={styles.kqStep}>{current.raw_step}</span>}
+                <GlassTag name={current.glass} images={images} />
               </span>
               <span className={styles.kqTag}>Making now</span>
             </div>
           )}
           {waiting.map((o, i) => (
             <div key={o.id} className={styles.kqRow}>
-              <span className={styles.kqName}>{o.drink}</span>
+              <span className={styles.kqName}>
+                {o.drink}
+                <GlassTag name={o.glass} images={images} />
+              </span>
               <span className={styles.kqWait}>
-                {held && i === 0 ? "Waiting for glass" : waitText(i + 1)}
+                {holdingForGlass && i === 0 ? "Waiting for glass" : waitText(i + 1)}
                 {mineIds.has(o.id) && (
                   <button type="button" className={styles.kqCancel} onClick={() => onCancelOrder(o.id)}>
                     Cancel

@@ -14,6 +14,8 @@ export interface Recipe {
   shake?: boolean;
   strain?: boolean;
   can_double?: boolean;
+  glass?: string;
+  double_glass?: string;
 }
 
 export const BASE_SPIRITS = [

@@ -3,6 +3,7 @@ export interface QueueOrder {
   drink: string;
   double: boolean;
   quantity: number;
+  glass?: string;
   enqueued_at: string;
   started_at: string;
   raw_step: string;
@@ -15,6 +16,7 @@ export interface QueueState {
   count: number;
   current?: QueueOrder;
   awaiting_pickup?: QueueOrder;
+  awaiting_glass?: QueueOrder;
   queue: QueueOrder[];
   recent: QueueOrder[];
 }
@@ -22,6 +24,7 @@ export interface QueueState {
 export interface PlacedOrder {
   order_id: string;
   title: string;
+  glass?: string;
   ahead: number;
 }
 
@@ -59,10 +62,11 @@ export class DevQueue {
   private pending: { order: QueueOrder; ms: number }[] = [];
   private current: { order: QueueOrder; endsAt: number } | null = null;
   private held: QueueOrder | null = null;
+  private glassReadyFor = "";
   private recent: QueueOrder[] = [];
   private seq = 0;
 
-  enqueue(title: string, double: boolean, ms: number, now = Date.now()): PlacedOrder {
+  enqueue(title: string, double: boolean, ms: number, glass = "", now = Date.now()): PlacedOrder {
     this.advance(now);
     const ahead = this.pending.length + (this.current ? 1 : 0);
     const order: QueueOrder = {
@@ -70,6 +74,7 @@ export class DevQueue {
       drink: title,
       double,
       quantity: 1,
+      glass: glass || undefined,
       enqueued_at: new Date(now).toISOString(),
       started_at: "",
       raw_step: "",
@@ -77,12 +82,15 @@ export class DevQueue {
     };
     this.pending.push({ order, ms });
     this.advance(now);
-    return { order_id: order.id, title, ahead };
+    return { order_id: order.id, title, glass: order.glass, ahead };
   }
 
   startNext(now = Date.now()): boolean {
-    const released = this.held !== null;
-    this.held = null;
+    const released = this.held !== null || this.awaitingGlass() !== null;
+    if (released) {
+      this.held = null;
+      if (this.pending.length > 0) this.glassReadyFor = this.pending[0].order.id;
+    }
     this.advance(now);
     return released;
   }
@@ -100,9 +108,16 @@ export class DevQueue {
       count: this.pending.length + (this.current ? 1 : 0),
       current: this.current ? { ...this.current.order, raw_step: "Pouring" } : undefined,
       awaiting_pickup: this.held ?? undefined,
+      awaiting_glass: this.awaitingGlass() ?? undefined,
       queue: this.pending.map((p) => p.order),
       recent: [...this.recent],
     };
+  }
+
+  private awaitingGlass(): QueueOrder | null {
+    if (this.current || this.held || this.pending.length === 0) return null;
+    const next = this.pending[0].order;
+    return next.glass && next.id !== this.glassReadyFor ? next : null;
   }
 
   private advance(now: number) {
@@ -112,8 +127,9 @@ export class DevQueue {
       this.held = done;
       this.current = null;
     }
-    if (!this.current && !this.held && this.pending.length > 0) {
+    if (!this.current && !this.held && this.pending.length > 0 && !this.awaitingGlass()) {
       const next = this.pending.shift()!;
+      this.glassReadyFor = "";
       this.current = {
         order: { ...next.order, started_at: new Date(now).toISOString() },
         endsAt: now + next.ms,

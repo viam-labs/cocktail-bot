@@ -37,11 +37,15 @@ test("guestErrorMessage hides raw errors", () => {
 
 test("DevQueue makes one drink at a time and holds until startNext", () => {
   const q = new DevQueue();
-  const a = q.enqueue("A", false, 100, 0);
-  const b = q.enqueue("B", false, 100, 0);
+  const a = q.enqueue("A", false, 100, "Martini", 0);
+  const b = q.enqueue("B", false, 100, "", 0);
   assert.equal(a.ahead, 0);
   assert.equal(b.ahead, 1);
+  assert.equal(q.state(0).awaiting_glass?.id, a.order_id);
+  assert.equal(q.startNext(0), true);
   assert.equal(q.state(50).current?.id, a.order_id);
+  assert.equal(q.state(50).current?.glass, "Martini");
+  assert.equal(q.state(50).queue[0].glass, undefined);
 
   const held = q.state(150);
   assert.equal(held.current, undefined);
@@ -50,4 +54,21 @@ test("DevQueue makes one drink at a time and holds until startNext", () => {
 
   assert.equal(q.startNext(160), true);
   assert.equal(q.state(160).current?.id, b.order_id);
+});
+
+test("DevQueue holds a glass order until its glass is confirmed", () => {
+  const q = new DevQueue();
+  q.enqueue("A", false, 100, "", 0);
+  const b = q.enqueue("B", false, 100, "Highball", 0);
+  assert.equal(q.state(150).awaiting_glass, undefined);
+  assert.equal(q.startNext(150), true);
+  assert.equal(q.state(160).current?.id, b.order_id);
+
+  assert.equal(q.state(300).awaiting_pickup?.id, b.order_id);
+  assert.equal(q.startNext(300), true);
+  const c = q.enqueue("C", false, 100, "Martini", 310);
+  assert.equal(q.state(320).current, undefined);
+  assert.equal(q.state(320).awaiting_glass?.id, c.order_id);
+  assert.equal(q.startNext(330), true);
+  assert.equal(q.state(340).current?.id, c.order_id);
 });

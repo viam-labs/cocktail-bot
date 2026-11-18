@@ -3,6 +3,8 @@ import type { ViamClient, RobotClient } from "@viamrobotics/sdk";
 import type { Recipe, RecipeStep } from "./recipes";
 import type { Inventory, WhiskeyProfile } from "./inventory";
 import type { PlacedOrder, QueueState } from "./queue";
+import type { Glass } from "./glasses";
+import { glassName } from "./glasses";
 import { DevQueue } from "./queue";
 
 const BARTENDER_SERVICE_NAME = "bartender";
@@ -40,11 +42,21 @@ const DEV_RECIPES: Recipe[] = [
     id: "espresso_martini",
     name: "Espresso Martini",
     can_double: true,
+    glass: "martini",
+    double_glass: "highball",
     pours: [
       { ingredient: "vodka", oz: 2 },
       { ingredient: "coffee-liquor", oz: 1 },
     ],
   },
+];
+
+const DEV_GLASSES: Glass[] = [
+  { id: "martini", name: "Martini", capacity_oz: 7, image: "martini" },
+  { id: "highball", name: "Highball", capacity_oz: 12, image: "highball" },
+  { id: "wine-stemless", name: "Stemless wine", capacity_oz: 12, image: "wine" },
+  { id: "rocks", name: "Rocks", capacity_oz: 10, image: "rocks" },
+  { id: "rocks-small", name: "Small rocks", capacity_oz: 6, image: "rocks" },
 ];
 
 const DEV_INVENTORY: Inventory = {
@@ -351,6 +363,12 @@ export async function updateRecipes(
   });
 }
 
+export async function getGlasses(conn: ViamConnection): Promise<Glass[]> {
+  if (conn.isDev) return structuredClone(DEV_GLASSES);
+  const resp = await doCommand<{ glasses: Glass[] }>(conn, BARTENDER_SERVICE_NAME, { get_glasses: true });
+  return resp.glasses ?? [];
+}
+
 export async function getPourMenus(conn: ViamConnection): Promise<import("./pour_menus").PourMenu[]> {
   if (conn.isDev) return DEV_POUR_MENUS;
   const resp = await doCommand<{ pour_menus: import("./pour_menus").PourMenu[] }>(
@@ -452,7 +470,8 @@ export async function makeCocktail(
     const recipe = DEV_RECIPES.find((r) => r.id === drinkId);
     const name = recipe?.name ?? drinkId;
     const phases = (recipe?.pours?.length ?? 0) + 5;
-    return devQueue.enqueue(double ? `2 × ${name}` : name, double, DEV_VERB_DELAY_MS * phases * q);
+    const glass = glassName(DEV_GLASSES, double ? recipe?.double_glass : recipe?.glass);
+    return devQueue.enqueue(double ? `2 × ${name}` : name, double, DEV_VERB_DELAY_MS * phases * q, glass);
   }
   return doCommand<PlacedOrder>(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { drink_id: drinkId, quantity: q, double },
@@ -461,10 +480,11 @@ export async function makeCocktail(
 
 export async function makeInlineOrder(
   conn: ViamConnection,
-  recipe: { name: string; steps: RecipeStep[] },
+  recipe: { name: string; steps: RecipeStep[]; glass?: string },
 ): Promise<PlacedOrder> {
   if (conn.isDev) {
-    return devQueue.enqueue(recipe.name, false, DEV_VERB_DELAY_MS * (recipe.steps.length + 2));
+    const glass = glassName(DEV_GLASSES, recipe.glass);
+    return devQueue.enqueue(recipe.name, false, DEV_VERB_DELAY_MS * (recipe.steps.length + 2), glass);
   }
   return doCommand<PlacedOrder>(conn, BARTENDER_SERVICE_NAME, {
     make_cocktail: { recipe: recipe as unknown as import("@bufbuild/protobuf").JsonValue },
