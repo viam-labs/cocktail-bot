@@ -338,3 +338,23 @@ func TestAllowsForAbsentGlassesAreDropped(t *testing.T) {
 	}
 	test.That(t, kept, test.ShouldResemble, []string{"martini-glass", "table"})
 }
+
+func TestPutShakerAwayUsesDefaultServeStationNotGlassSwitch(t *testing.T) {
+	asked := map[string][]any{}
+	poseSwitch := func(name string) *inject.Switch {
+		sw := inject.NewSwitch(name)
+		sw.DoFunc = func(_ context.Context, cmd map[string]any) (map[string]any, error) {
+			asked[name] = append(asked[name], cmd["get_pose_by_name"])
+			return nil, errors.New("stop before motion")
+		}
+		return sw
+	}
+	b := stationTestBartender(t, "glass-center")
+	b.poseSwitches = []toggleswitch.Switch{poseSwitch("serving-glass-center"), poseSwitch("serve-highball")}
+
+	err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "return shaker home")
+	test.That(t, asked["serving-glass-center"], test.ShouldResemble, []any{poseShakerHomeCarryHover})
+	test.That(t, asked["serve-highball"], test.ShouldBeNil)
+}
