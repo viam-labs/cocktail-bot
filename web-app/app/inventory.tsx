@@ -26,6 +26,8 @@ import styles from "./inventory.module.css";
 
 const COMMON_CATEGORIES = ["Spirits", "Liqueurs", "Juices & mixers", "Syrups & bitters"];
 const UNCATEGORIZED = "Uncategorized";
+// Not a plain label so it can't collide with a category someone names "Refrigerated".
+const REFRIGERATED_FILTER = "__refrigerated__";
 
 export function InventoryPage({ conn }: { conn: ViamConnection }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
@@ -1064,7 +1066,14 @@ function AllIngredientsSection({
     return a.localeCompare(b);
   });
 
-  const filteredItems = filter === "All" ? items : items.filter(([, s]) => categoryOf(s) === filter);
+  const refrigeratedCount = items.filter(([, s]) => s.refrigerated).length;
+
+  const filteredItems =
+    filter === "All"
+      ? items
+      : filter === REFRIGERATED_FILTER
+        ? items.filter(([, s]) => s.refrigerated)
+        : items.filter(([, s]) => categoryOf(s) === filter);
   const grouped = new Map<string, IngredientEntry[]>();
   for (const entry of filteredItems) {
     const cat = categoryOf(entry[1]);
@@ -1084,6 +1093,14 @@ function AllIngredientsSection({
         <h2>All ingredients</h2>
         <div className={styles.chips}>
           <FilterChip label="All" count={items.length} active={filter === "All"} onClick={() => onFilter("All")} />
+          {(refrigeratedCount > 0 || filter === REFRIGERATED_FILTER) && (
+            <FilterChip
+              label="Refrigerated"
+              count={refrigeratedCount}
+              active={filter === REFRIGERATED_FILTER}
+              onClick={() => onFilter(REFRIGERATED_FILTER)}
+            />
+          )}
           {activeCategories.map((cat) => (
             <FilterChip
               key={cat}
