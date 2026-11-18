@@ -37,11 +37,13 @@ test("guestErrorMessage hides raw errors", () => {
 
 test("DevQueue makes one drink at a time and holds until startNext", () => {
   const q = new DevQueue();
-  const a = q.enqueue("A", false, 100, 0);
-  const b = q.enqueue("B", false, 100, 0);
+  const a = q.enqueue("A", false, 100, "Martini", 0);
+  const b = q.enqueue("B", false, 100, "", 0);
   assert.equal(a.ahead, 0);
   assert.equal(b.ahead, 1);
   assert.equal(q.state(50).current?.id, a.order_id);
+  assert.equal(q.state(50).current?.glass, "Martini");
+  assert.equal(q.state(50).queue[0].glass, undefined);
 
   const held = q.state(150);
   assert.equal(held.current, undefined);

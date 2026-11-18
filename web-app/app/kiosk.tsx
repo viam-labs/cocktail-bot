@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { ViamConnection } from "./lib/viamClient";
 import {
+  getGlasses,
   getInventory,
   getPourMenus,
   getRecipes,
@@ -21,14 +22,16 @@ import { BASE_SPIRITS, FLAVORS, recipePours } from "./lib/recipes";
 import type { Inventory, WhiskeyProfile } from "./lib/inventory";
 import { isAvailable, WHISKEY_TRAITS } from "./lib/inventory";
 import type { PourMenu, PourServe, PourSize } from "./lib/pour_menus";
+import type { Glass, GlassImage } from "./lib/glasses";
 import { titleCase } from "./lib/display";
+import { GlassIcon } from "./glass_icon";
 import { Nav } from "./nav";
 import styles from "./kiosk.module.css";
 
 // Orders placed from this screen, so it can confirm them and report failures.
 type MyOrder = { id: string; label: string };
 
-type Placed = { label: string; ahead: number; at: number };
+type Placed = { label: string; ahead: number; glass?: string; at: number };
 
 type OrderFailure = { label: string; message: string };
 
@@ -87,6 +90,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [menus, setMenus] = useState<PourMenu[] | null>(null);
+  const [glasses, setGlasses] = useState<Glass[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myOrders, setMyOrdersState] = useState<MyOrder[]>([]);
   const myOrdersRef = useRef<MyOrder[]>([]);
@@ -144,6 +148,10 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
     getMachineName(conn)
       .then((n) => !cancelled && setMachineName(n))
       .catch(() => {});
+    // Only used for outlines in the queue; orders still name their glass without it.
+    getGlasses(conn)
+      .then((g) => !cancelled && setGlasses(g))
+      .catch(() => {});
     Promise.all([getRecipes(conn), getInventory(conn), getPourMenus(conn)])
       .then(([r, i, m]) => {
         if (cancelled) return;
@@ -167,7 +175,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         const resp = await submit();
         const title = resp.title || label;
         setMyOrders([...myOrdersRef.current, { id: resp.order_id, label: title }]);
-        setPlaced({ label: title, ahead: resp.ahead, at: Date.now() });
+        setPlaced({ label: title, ahead: resp.ahead, glass: resp.glass, at: Date.now() });
         queue.refresh();
       } catch (err) {
         setFailure({ label, message: err instanceof Error ? err.message : String(err) });
@@ -192,9 +200,11 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
         steps.push({ kind: "ice", type: "crushed" });
       }
       steps.push({ kind: "pour", ingredient: entry.ingredient, oz: size.oz });
-      return placeOrder(label, () => makeInlineOrder(conn, { name: label, steps }));
+      // Pour menus predate the glasses config; only send a glass the bartender knows, or it refuses the order.
+      const glass = glasses.some((g) => g.id === serve.glass) ? serve.glass : undefined;
+      return placeOrder(label, () => makeInlineOrder(conn, { name: label, steps, glass }));
     },
-    [conn, placeOrder],
+    [conn, placeOrder, glasses],
   );
 
   useEffect(() => {
@@ -386,7 +396,7 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
             <KioskQueue
               state={queue.state}
               mine={myOrders}
-              onStartNext={onStartNext}
+              glasses={glasses}
               onCancelOrder={onCancelOrder}
             />
           </div>
@@ -421,6 +431,15 @@ export function Kiosk({ conn, connected }: { conn: ViamConnection; connected: bo
           <PourPreviewSheet
             entry={pourPreview}
             onClose={() => setPourPreview(null)}
+          />
+        )}
+
+        {queue.state?.awaiting_pickup && (
+          <PickupDialog
+            held={queue.state.awaiting_pickup}
+            next={queue.state.queue[0]}
+            glasses={glasses}
+            onStartNext={onStartNext}
           />
         )}
 
@@ -892,60 +911,125 @@ function waitText(position: number): string {
   return `#${position} · ~${position * MINUTES_PER_DRINK} min`;
 }
 
+// Blocks the menu until staff confirm the finished drink was taken and the next glass is in place.
+function PickupDialog({
+  held,
+  next,
+  glasses,
+  onStartNext,
+}: {
+  held: QueueOrder;
+  next?: QueueOrder;
+  glasses: Glass[];
+  onStartNext: () => void;
+}) {
+  const nextGlass = next?.glass;
+  const image = glasses.find((g) => g.name === nextGlass)?.image;
+  return (
+    <div className={`${styles.scrim} ${styles.pickupScrim}`}>
+      <div
+        className={styles.pickup}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="pickup-title"
+      >
+        <h3 id="pickup-title" className={held.error ? styles.pickupTitleBad : styles.pickupTitle}>
+          {held.error ? `${held.drink} didn’t finish` : `${held.drink} is ready`}
+        </h3>
+        <p className={styles.pickupNote}>
+          {held.error
+            ? "Ask a staff member to clear the station."
+            : held.double
+              ? `Both drinks come in one ${held.glass ? held.glass.toLowerCase() + " glass" : "large glass"}. Grab an extra glass to split it.`
+              : "Take your drink from the station."}
+        </p>
+        <p className={styles.pickupNote}>
+          {!next
+            ? "Then put an empty glass at the station for the next order."
+            : nextGlass
+              ? "Then place this glass at the station for the next drink:"
+              : "Then put an empty glass at the station for the next drink."}
+        </p>
+        {nextGlass && (
+          <div className={styles.pickupGlass}>
+            <GlassIcon image={image} size={120} />
+            <span>
+              {nextGlass}
+              <span className={styles.kqPlaceFor}>for {next.drink}</span>
+            </span>
+          </div>
+        )}
+        <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.pickupBtn}`} onClick={onStartNext}>
+          {next ? "Glass ready, start next" : "Glass is ready"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GlassTag({ name, images }: { name?: string; images: Map<string, GlassImage | undefined> }) {
+  if (!name) return null;
+  return (
+    <span className={styles.kqGlass}>
+      <GlassIcon image={images.get(name)} size={18} />
+      {name}
+    </span>
+  );
+}
+
 function KioskQueue({
   state,
   mine,
-  onStartNext,
+  glasses,
   onCancelOrder,
 }: {
   state: QueueState | null;
   mine: MyOrder[];
-  onStartNext: () => void;
+  glasses: Glass[];
   onCancelOrder: (id: string) => void;
 }) {
   const mineIds = new Set(mine.map((o) => o.id));
   const held = state?.awaiting_pickup;
   const waiting: QueueOrder[] = state?.queue ?? [];
+  const images = new Map(glasses.map((g) => [g.name, g.image]));
+  const current = state?.current;
 
   return (
     <aside className={styles.kq} aria-label="Queue">
       <h2>In line</h2>
 
-      {held && (
-        <div className={held.error ? styles.kqHelp : styles.kqReady} role="status">
-          {held.error ? `${held.drink} didn’t finish` : `${held.drink} is ready`}
-          <p className={styles.kqReadyNote}>
-            {held.error
-              ? "Ask a staff member to clear the station."
-              : held.double
-                ? "Both drinks come in one large glass. Grab an extra glass to split it."
-                : "Take your drink from the station."}
-          </p>
-          <p className={styles.kqReadyNote}>
-            {waiting.length > 0
-              ? "Then put an empty glass in its place to start the next drink."
-              : "Then put an empty glass in its place for the next order."}
-          </p>
-          <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.kqNext}`} onClick={onStartNext}>
-            {waiting.length > 0 ? "Glass ready, start next" : "Glass is ready"}
-          </button>
+      {!held && current?.glass && (
+        <div className={styles.kqStart} role="status">
+          Glass at the station
+          <div className={styles.kqPlace}>
+            <GlassIcon image={images.get(current.glass)} size={84} />
+            <span>
+              {current.glass}
+              <span className={styles.kqPlaceFor}>for {current.drink}</span>
+            </span>
+          </div>
+          <p className={styles.kqReadyNote}>Make sure this glass is at the station before the drink is served.</p>
         </div>
       )}
 
-      {state?.current || waiting.length > 0 ? (
+      {current || waiting.length > 0 ? (
         <div className={styles.rows}>
-          {state?.current && (
+          {current && (
             <div className={styles.kqRow}>
               <span className={styles.kqName}>
-                {state.current.drink}
-                {state.current.raw_step && <span className={styles.kqStep}>{state.current.raw_step}</span>}
+                {current.drink}
+                {current.raw_step && <span className={styles.kqStep}>{current.raw_step}</span>}
+                <GlassTag name={current.glass} images={images} />
               </span>
               <span className={styles.kqTag}>Making now</span>
             </div>
           )}
           {waiting.map((o, i) => (
             <div key={o.id} className={styles.kqRow}>
-              <span className={styles.kqName}>{o.drink}</span>
+              <span className={styles.kqName}>
+                {o.drink}
+                <GlassTag name={o.glass} images={images} />
+              </span>
               <span className={styles.kqWait}>
                 {held && i === 0 ? "Waiting for glass" : waitText(i + 1)}
                 {mineIds.has(o.id) && (
@@ -971,7 +1055,9 @@ function PlacedToast({ placed, onDismiss }: { placed: Placed; onDismiss: () => v
       <strong>{placed.label} is in line</strong>
       <span>
         {placed.ahead === 0
-          ? "You’re first in line."
+          ? placed.glass
+            ? `You’re first in line. Make sure a ${placed.glass.toLowerCase()} glass is at the station.`
+            : "You’re first in line."
           : `You’re #${position}, about ${position * MINUTES_PER_DRINK} min.`}{" "}
         Watch the line for your drink.
       </span>

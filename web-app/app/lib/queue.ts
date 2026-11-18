@@ -3,6 +3,7 @@ export interface QueueOrder {
   drink: string;
   double: boolean;
   quantity: number;
+  glass?: string;
   enqueued_at: string;
   started_at: string;
   raw_step: string;
@@ -22,6 +23,7 @@ export interface QueueState {
 export interface PlacedOrder {
   order_id: string;
   title: string;
+  glass?: string;
   ahead: number;
 }
 
@@ -62,7 +64,7 @@ export class DevQueue {
   private recent: QueueOrder[] = [];
   private seq = 0;
 
-  enqueue(title: string, double: boolean, ms: number, now = Date.now()): PlacedOrder {
+  enqueue(title: string, double: boolean, ms: number, glass = "", now = Date.now()): PlacedOrder {
     this.advance(now);
     const ahead = this.pending.length + (this.current ? 1 : 0);
     const order: QueueOrder = {
@@ -70,6 +72,7 @@ export class DevQueue {
       drink: title,
       double,
       quantity: 1,
+      glass: glass || undefined,
       enqueued_at: new Date(now).toISOString(),
       started_at: "",
       raw_step: "",
@@ -77,7 +80,7 @@ export class DevQueue {
     };
     this.pending.push({ order, ms });
     this.advance(now);
-    return { order_id: order.id, title, ahead };
+    return { order_id: order.id, title, glass: order.glass, ahead };
   }
 
   startNext(now = Date.now()): boolean {

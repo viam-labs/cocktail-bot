@@ -7,6 +7,8 @@
   --blush: #fbedee;
   --tile: #f5f5f7;
   --ok: #1e8e3e;
+  --okFill: #1e8e3e;
+  --mint: #e6f4ea;
   --bad: #c5221f;
   --scrim: rgba(0, 0, 0, 0.28);
   color: var(--ink);
@@ -29,6 +31,8 @@
     --blush: #2b1316;
     --tile: #1c1c1e;
     --ok: #34c759;
+    --okFill: #248a3d;
+    --mint: #12261a;
     --bad: #ff453a;
     --scrim: rgba(0, 0, 0, 0.55);
   }
@@ -131,40 +135,46 @@
   letter-spacing: -0.015em;
   margin: 0 0 16px;
 }
-.kqReady {
-  background: var(--blush);
-  color: var(--verm);
-  font-weight: 600;
-  border-radius: 14px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  font-size: 18px;
-}
 .kqReadyNote {
-  margin: 6px 0 0;
-  font-size: 15px;
+  margin: 10px 0 0;
+  font-size: 19px;
   font-weight: 500;
+  line-height: 1.35;
 }
-.kqHelp {
+.kqStart {
   background: var(--tile);
-  color: var(--bad);
-  font-weight: 600;
-  border-radius: 14px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  font-size: 18px;
-}
-.kqHelp .kqReadyNote {
   color: var(--ink);
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  font-size: 22px;
 }
-.kqNext {
-  margin-top: 12px;
-  width: 100%;
-  height: auto;
-  min-height: 52px;
-  padding: 10px 18px;
-  white-space: normal;
+.kqStart .kqReadyNote {
+  color: var(--smoke);
+}
+.kqGlass {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--smoke);
+}
+.kqPlace {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--paper);
+  font-size: 26px;
+}
+.kqPlaceFor {
+  display: block;
   font-size: 17px;
+  font-weight: 500;
+  color: var(--smoke);
 }
 .kqStep {
   display: block;
@@ -995,4 +1005,63 @@
   .filterHead {
     font-size: 18px;
   }
+}
+
+.pickupScrim {
+  z-index: 30;
+}
+.pickup {
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 28px;
+  padding: 40px;
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pickupTitle,
+.pickupTitleBad {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ok);
+}
+.pickupTitleBad {
+  color: var(--bad);
+}
+.pickupNote {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+}
+.pickupGlass {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 24px 28px;
+  border-radius: 20px;
+  background: var(--mint);
+  color: var(--ok);
+  font-size: 40px;
+  font-weight: 700;
+}
+.pickupGlass .kqPlaceFor {
+  font-size: 20px;
+}
+.btn.pickupBtn {
+  background: var(--okFill);
+  color: #fff;
+  margin-top: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  padding: 16px 24px;
+  border-radius: 20px;
+  white-space: normal;
+  font-size: 28px;
 }

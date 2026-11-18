@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ViamConnection } from "./lib/viamClient";
-import { getPourMenus, updatePourMenus } from "./lib/viamClient";
+import { getGlasses, getPourMenus, updatePourMenus } from "./lib/viamClient";
+import type { Glass } from "./lib/glasses";
 import type { PourMenu, PourServe, PourSize } from "./lib/pour_menus";
 import { slugifyMenuId } from "./lib/pour_menus";
 import { Nav } from "./nav";
@@ -12,12 +13,16 @@ export function PoursPage({ conn }: { conn: ViamConnection }) {
   const [menus, setMenus] = useState<PourMenu[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  const [glasses, setGlasses] = useState<Glass[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     getPourMenus(conn)
       .then((m) => !cancelled && setMenus(m))
       .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
+    getGlasses(conn)
+      .then((g) => !cancelled && setGlasses(g))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -98,6 +103,7 @@ export function PoursPage({ conn }: { conn: ViamConnection }) {
         {menus && editing !== null && menus[editing] && (
           <MenuEditor
             menu={menus[editing]}
+            glasses={glasses}
             onChange={(patch) => update(editing, patch)}
             onClose={() => setEditing(null)}
             onDelete={() => remove(editing)}
@@ -130,11 +136,13 @@ function MenuCard({ menu, onEdit }: { menu: PourMenu; onEdit: () => void }) {
 
 function MenuEditor({
   menu,
+  glasses,
   onChange,
   onClose,
   onDelete,
 }: {
   menu: PourMenu;
+  glasses: Glass[];
   onChange: (patch: Partial<PourMenu>) => void;
   onClose: () => void;
   onDelete: () => void;
@@ -244,12 +252,15 @@ function MenuEditor({
                 onChange={(e) => updateServe(i, { label: e.target.value })}
                 placeholder="Label (e.g. Neat)"
               />
-              <input
-                type="text"
-                value={s.glass ?? ""}
-                onChange={(e) => updateServe(i, { glass: e.target.value })}
-                placeholder="Glass"
-              />
+              <select value={s.glass ?? ""} onChange={(e) => updateServe(i, { glass: e.target.value })}>
+                <option value="">No glass</option>
+                {glasses.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+                {s.glass && !glasses.some((g) => g.id === s.glass) && <option value={s.glass}>{s.glass}</option>}
+              </select>
               <label className={styles.checkbox}>
                 <input
                   type="checkbox"
