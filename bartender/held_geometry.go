@@ -89,7 +89,9 @@ func (b *bartender) detachHeld() {
 	b.heldGeomFrame = nil
 }
 
-func (b *bartender) attachParked(gripperReleasePose spatialmath.Pose) error {
+// attachParked models the parked bottle as standing upright on the table at
+// gripPoint, wherever the gripper happened to point when it let go.
+func (b *bartender) attachParked(gripPoint r3.Vector) error {
 	g := b.cfg.ParkedBottleGeometry
 	if g == nil {
 		g = b.cfg.HeldBottleGeometry
@@ -100,20 +102,60 @@ func (b *bartender) attachParked(gripperReleasePose spatialmath.Pose) error {
 	if b.parkedGeomFrame != nil {
 		return errors.New("attachParked: parked geometry already set; detach first")
 	}
-	localPose := spatialmath.NewPose(
-		r3.Vector{X: 0, Y: 0, Z: -g.ZOffsetMM},
-		&spatialmath.OrientationVectorDegrees{OZ: 1},
-	)
-	geom, err := spatialmath.NewCapsule(localPose, g.RadiusMM, g.LengthMM, parkedObjectFrameName)
+	center := gripPoint.Add(r3.Vector{Z: -g.ZOffsetMM})
+	geom, err := spatialmath.NewCapsule(spatialmath.NewPoseFromPoint(center), g.RadiusMM, g.LengthMM, parkedObjectFrameName)
 	if err != nil {
 		return fmt.Errorf("build parked-bottle geometry: %w", err)
 	}
-	frame, err := referenceframe.NewStaticFrameWithGeometry(parkedObjectFrameName, gripperReleasePose, geom)
+	// rdk places a static frame's geometry at its parent, ignoring the frame's own pose; see CLAUDE.md.
+	frame, err := referenceframe.NewStaticFrameWithGeometry(parkedObjectFrameName, spatialmath.NewZeroPose(), geom)
 	if err != nil {
 		return err
 	}
 	b.parkedGeomFrame = frame
 	return nil
+}
+
+// gripPointAtPose is where the claws close when pd's component reaches pd.
+// Poses usually target the arm's flange, which sits a tool length short of the bottle.
+func (b *bartender) gripPointAtPose(ctx context.Context, pd *poseData) (r3.Vector, error) {
+	pd, err := b.cartesianPose(ctx, pd)
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	li := fsInputs.ToLinearInputs()
+	worldPose := func(frame string, pose spatialmath.Pose) (spatialmath.Pose, error) {
+		tf, err := fs.Transform(li, referenceframe.NewPoseInFrame(frame, pose), referenceframe.World)
+		if err != nil {
+			return nil, fmt.Errorf("transform %q to world: %w", frame, err)
+		}
+		return tf.(*referenceframe.PoseInFrame).Pose(), nil
+	}
+	componentName := pd.componentName
+	if componentName == "" {
+		componentName = b.cfg.ArmName
+	}
+	gripFrame := gripPointFrameName
+	if fs.Frame(gripFrame) == nil {
+		gripFrame = b.cfg.GripperName
+	}
+	goal, err := worldPose(pd.refFrame, pd.pose)
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	component, err := worldPose(componentName, spatialmath.NewZeroPose())
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	grip, err := worldPose(gripFrame, spatialmath.NewZeroPose())
+	if err != nil {
+		return r3.Vector{}, err
+	}
+	return spatialmath.Compose(goal, spatialmath.PoseBetween(component, grip)).Point(), nil
 }
 
 func (b *bartender) detachParked() {

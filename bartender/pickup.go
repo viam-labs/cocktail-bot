@@ -379,7 +379,11 @@ func (b *bartender) shuffleBlockerToParking(ctx context.Context, blockerName str
 	if err != nil {
 		return fmt.Errorf("fetch parking grab pose: %w", err)
 	}
-	if err := b.attachParked(parkingGrab.pose); err != nil {
+	gripPoint, err := b.gripPointAtPose(ctx, parkingGrab)
+	if err != nil {
+		return fmt.Errorf("locate parked bottle: %w", err)
+	}
+	if err := b.attachParked(gripPoint); err != nil {
 		return fmt.Errorf("attach parked-bottle geometry: %w", err)
 	}
 	return nil
