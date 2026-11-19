@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/components/arm"
@@ -183,6 +184,52 @@ func TestCarryToJointPoseEndsAtThoseJoints(t *testing.T) {
 	last := (*executed)[len(*executed)-1]
 	for i, want := range degsToInputs(poseDegs) {
 		test.That(t, last[i], test.ShouldAlmostEqual, want, 1e-6)
+	}
+}
+
+// The wrist is level, so a full turn of J6 rolls a shaker gripped from the side upside down and back.
+func TestCarryToJointPoseKeepsASideHeldObjectLevel(t *testing.T) {
+	startDegs := []float64{0, -90, 90, 0, -90, -90}
+	poseDegs := []float64{0, -90, 90, 0, -90, 270}
+	b, sw, executed := jointPoseBartender(t, startDegs, poseDegs)
+	fsSvc := inject.NewFrameSystemService("fs")
+	fsSvc.FrameSystemConfigFunc = func(context.Context) (*framesystem.Config, error) {
+		return &framesystem.Config{Parts: heldServeFrameSystem(t)}, nil
+	}
+	b.fsSvc = fsSvc
+	b.cfg.GripperName = "gripper"
+	ctx := context.Background()
+	test.That(t, b.attachHeld(ctx, &HeldObjectGeometry{Type: "cylinder", RadiusMM: 10, LengthMM: 50}), test.ShouldBeNil)
+	fs, inputs, err := b.currentInputs(ctx)
+	test.That(t, err, test.ShouldBeNil)
+	heldAxis := func(joints []referenceframe.Input) r3.Vector {
+		inputs[b.cfg.ArmName] = joints
+		tf, err := fs.Transform(inputs.ToLinearInputs(), referenceframe.NewZeroPoseInFrame(heldObjectFrameName), referenceframe.World)
+		test.That(t, err, test.ShouldBeNil)
+		return tf.(*referenceframe.PoseInFrame).Pose().Orientation().OrientationVectorRadians().Vector()
+	}
+	upright := heldAxis(degsToInputs(startDegs))
+	midway := degsToInputs([]float64{0, -90, 90, 0, -90, 90})
+	test.That(t, upright.Angle(heldAxis(midway)).Degrees(), test.ShouldAlmostEqual, 180, 1)
+
+	planCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := b.carryHeldLevel(planCtx, sw, "cleaner-hover"); err != nil {
+		// Refusing is fine; failing before the planner searched is not.
+		test.That(t, planCtx.Err(), test.ShouldNotBeNil)
+		return
+	}
+	prev := degsToInputs(startDegs)
+	for _, next := range *executed {
+		for step := 0; step <= 20; step++ {
+			joints := make([]referenceframe.Input, len(next))
+			for i := range next {
+				joints[i] = prev[i] + (next[i]-prev[i])*float64(step)/20
+			}
+			tiltDegs := upright.Angle(heldAxis(joints)).Degrees()
+			test.That(t, tiltDegs, test.ShouldBeLessThan, defaultNoSpillOrientationToleranceDegs+5)
+		}
+		prev = next
 	}
 }
 
