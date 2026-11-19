@@ -125,7 +125,7 @@ The `station` switch needs these poses:
 | Pose | Shaker |
 | --- | --- |
 | `cleaner-grab-hover`, `cleaner-grab-approach`, `cleaner-grab-lift`, `cleaner-grab-carry-hover` | The lower grip on the shaker at shaker-home, used the same way as the `shaker-home-*` poses to pick it up and set it back down. |
-| `cleaner-hover` | Upright, above the cleaner. |
+| `cleaner-hover` | Upright, above the cleaner. The carry there and back keeps the shaker within `no_spill_orientation_tolerance_degs` (default 15°) of upright, so if the carry fails to plan, re-teach `cleaner-hover` by driving there from `cleaner-grab-carry-hover` with the shaker kept upright. |
 | `cleaner-flip-hover` | Upside down, same spot as `cleaner-hover`. |
 | `cleaner-approach` | Upside down, mouth just above the cleaner. Also where the shaker backs off to so the spray stops. |
 | `cleaner-press` | Upside down, pressed onto the cleaner so it sprays. |
