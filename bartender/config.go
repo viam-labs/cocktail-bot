@@ -61,6 +61,14 @@ type Config struct {
 	LoadingSpotSwitchName    string   `json:"loading_spot_switch_name,omitempty"`
 	MixPrestagePose          string   `json:"mix_prestage_pose,omitempty"`
 	RotatePrestagePose       string   `json:"rotate_prestage_pose,omitempty"`
+	// Joint-space poses on the loading-spot switch the arm snaps to before each
+	// bottle pickup or return, split by which side of the rack the slot is on.
+	// Pins the elbow branch so hover/grab/lift plan from a known-good config
+	// instead of whatever branch IK picked up from the prior move — cbirrt can
+	// otherwise fail on mid-array slots. Letters a-e hit left, f-j hit right;
+	// empty on either side skips the prestage for that side.
+	BottlePrestageLeftPose  string `json:"bottle_prestage_left_pose,omitempty"`
+	BottlePrestageRightPose string `json:"bottle_prestage_right_pose,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.

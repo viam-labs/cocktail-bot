@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	toggleswitch "go.viam.com/rdk/components/switch"
@@ -103,6 +104,9 @@ func (b *bartender) bottleSpotAllowed(name string, extra []AllowedCollision) []A
 
 func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
+	if err := b.sidePrestage(ctx, name); err != nil {
+		return err
+	}
 	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
@@ -126,6 +130,39 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 		return fmt.Errorf("carry-hover %s: %w", name, err)
 	}
 	return nil
+}
+
+// sidePrestage snaps the arm to the joint-space pose configured for the side
+// of the rack the given slot is on, so hover/grab/lift plan from a known-good
+// configuration. Letters a-e take the left pose, f-j take the right pose; any
+// other name, or an empty pose on the matching side, is a no-op. The pose lives
+// on the loading-spot switch.
+func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
+	pose := b.sidePrestagePose(slotName)
+	if pose == "" {
+		return nil
+	}
+	loadingSw, err := b.findSwitch(b.cfg.LoadingSpotSwitchName)
+	if err != nil {
+		return fmt.Errorf("find loading spot for side prestage: %w", err)
+	}
+	if _, err := b.moveArmToJointGoalOnSwitch(ctx, loadingSw, pose); err != nil {
+		return fmt.Errorf("side prestage %q: %w", pose, err)
+	}
+	return nil
+}
+
+func (b *bartender) sidePrestagePose(slotName string) string {
+	if !strings.HasPrefix(slotName, "slot-") || len(slotName) < len("slot-x") {
+		return ""
+	}
+	switch slotName[len("slot-")] {
+	case 'a', 'b', 'c', 'd', 'e':
+		return b.cfg.BottlePrestageLeftPose
+	case 'f', 'g', 'h', 'i', 'j':
+		return b.cfg.BottlePrestageRightPose
+	}
+	return ""
 }
 
 // shakerGrip names the poses one way of gripping the shaker at shaker-home
@@ -314,6 +351,9 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
+	if err := b.sidePrestage(ctx, name); err != nil {
+		return err
+	}
 	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
