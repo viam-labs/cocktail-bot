@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/viam-labs/cocktail-bot/bartender/order"
 	toggleswitch "go.viam.com/rdk/components/switch"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/testutils/inject"
@@ -122,20 +123,33 @@ func TestCleanShakerStartsWithCleanerGrab(t *testing.T) {
 	}
 }
 
-func TestPutShakerAwayReturnsHomeBeforeCleaning(t *testing.T) {
-	asked := map[string][]any{}
-	b := stationTestBartender(t, "glass-center")
-	b.cfg.ShakerCleaning = &ShakerCleaning{Enabled: true, Station: "shaker-cleaner"}
-	b.poseSwitches = []toggleswitch.Switch{
-		recordingPoseSwitch("serving-glass-center", asked),
-		recordingPoseSwitch("shaker-cleaner", asked),
-	}
+func TestPutShakerAway(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		cleaning             bool
+		wantErr              string
+		wantServe, wantClean []any
+	}{
+		{"cleans the served shaker before returning it home", true, "clean shaker", nil, []any{poseCleanerHover}},
+		{"returns it home when cleaning is off", false, "return shaker home", []any{poseShakerHomeCarryHover}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := map[string][]any{}
+			b := stationTestBartender(t, "glass-center")
+			b.queue = order.NewQueue()
+			b.cfg.ShakerCleaning = &ShakerCleaning{Enabled: tc.cleaning, Station: "shaker-cleaner"}
+			b.poseSwitches = []toggleswitch.Switch{
+				recordingPoseSwitch("serving-glass-center", asked),
+				recordingPoseSwitch("shaker-cleaner", asked),
+			}
 
-	err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"})
-	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, "return shaker home")
-	test.That(t, asked["serving-glass-center"], test.ShouldResemble, []any{poseShakerHomeCarryHover})
-	test.That(t, asked["shaker-cleaner"], test.ShouldBeNil)
+			err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"})
+			test.That(t, err, test.ShouldNotBeNil)
+			test.That(t, err.Error(), test.ShouldContainSubstring, tc.wantErr)
+			test.That(t, asked["serving-glass-center"], test.ShouldResemble, tc.wantServe)
+			test.That(t, asked["shaker-cleaner"], test.ShouldResemble, tc.wantClean)
+		})
+	}
 }
 
 func TestCleanerHeldShakerGeometryFallsBack(t *testing.T) {

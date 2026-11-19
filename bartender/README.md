@@ -106,7 +106,7 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 
 ##### `shaker_cleaning`
 
-When enabled, `make_cocktail` puts the shaker back at shaker-home after serving, then picks it up again with a lower grip so it can be flipped, rinses it on the cleaner and sets it back down at shaker-home. The cleaner sprays water while the upside-down shaker is pressed onto it.
+When enabled, `make_cocktail` carries the served shaker straight from the glass to the cleaner, rinses it and then sets it down at shaker-home. The cleaner sprays water while the upside-down shaker is pressed onto it. Serving holds the shaker in the `shaker-home-*` grip, so that grip must be low enough to flip the shaker: the same height as `cleaner-grab-*`.
 
 | Name | Type | Inclusion | Description | Default |
 | --- | --- | --- | --- | --- |
@@ -117,15 +117,15 @@ When enabled, `make_cocktail` puts the shaker back at shaker-home after serving,
 | `power_switch_name` | string | Optional | Switch that powers the cleaner (e.g. a smart plug). When set, it turns on once the shaker is pressed onto the cleaner and off before the retreat. A failure to toggle fails the order and posts a Slack alert. When unset, the cleaner is expected to spray mechanically when pressed. |  |
 | `power_on_delay_ms` | int | Optional | Pause after pressing the shaker onto the cleaner before turning the cleaner on. | 0 |
 | `drain_ms` | int | Optional | Pause after cutting cleaner power before lifting the shaker off, so water can drip off. | 0 |
-| `prestage_pose` | string | Optional | Joint-space pose on `station` the empty arm passes through before the cleaner grab, like `mix_prestage_pose`. |  |
-| `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while the cleaner's lower grip holds the shaker. Same shape as `held_shaker_geometry`. | `held_shaker_geometry` |
+| `prestage_pose` | string | Optional | Joint-space pose on `station` the empty arm passes through before the cleaner grab, like `mix_prestage_pose`. Only `clean_shaker` grabs the shaker; after a serve it's already held. |  |
+| `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while `clean_shaker` holds the shaker with the `cleaner-grab-*` poses. Same shape as `held_shaker_geometry`. After a serve the shaker keeps the top-level `held_shaker_geometry`. | `held_shaker_geometry` |
 
 The `station` switch needs these poses:
 
 | Pose | Shaker |
 | --- | --- |
-| `cleaner-grab-hover`, `cleaner-grab-approach`, `cleaner-grab-lift`, `cleaner-grab-carry-hover` | The lower grip on the shaker at shaker-home, used the same way as the `shaker-home-*` poses to pick it up and set it back down. |
-| `cleaner-hover` | Upright, above the cleaner. The carry there and back keeps the shaker within `no_spill_orientation_tolerance_degs` (default 15°) of upright, so if the carry fails to plan, re-teach `cleaner-hover` by driving there from `cleaner-grab-carry-hover` with the shaker kept upright. |
+| `cleaner-grab-hover`, `cleaner-grab-approach`, `cleaner-grab-lift`, `cleaner-grab-carry-hover` | The grip `clean_shaker` uses to pick the shaker up from shaker-home and set it back down, used the same way as the `shaker-home-*` poses. Keep it at the same height as the `shaker-home-*` grip, since a served shaker reaches the cleaner in that grip. |
+| `cleaner-hover` | Upright, above the cleaner. The carries to and from it keep the shaker within `no_spill_orientation_tolerance_degs` (default 15°) of upright, so if one fails to plan, re-teach `cleaner-hover` so the arm reaches it without rolling the wrist. |
 | `cleaner-flip-hover` | Upside down, same spot as `cleaner-hover`. |
 | `cleaner-approach` | Upside down, mouth just above the cleaner. Also where the shaker backs off to so the spray stops. |
 | `cleaner-press` | Upside down, pressed onto the cleaner so it sprays. |
@@ -221,7 +221,7 @@ The queue makes one drink at a time. Every drink is served at the same station, 
 {"make_cocktail": {"drink_id": "espresso_martini"}}
 ```
 
-With `shaker_cleaning` enabled, every drink served from the shaker returns the shaker home and then runs `clean_shaker` at `shaker_cleaning.station`, shown as the `Cleaning shaker` step. The order finishes once the cleaned shaker is back home.
+With `shaker_cleaning` enabled, every drink served from the shaker carries the shaker from the glass straight to the cleaner at `shaker_cleaning.station`, shown as the `Cleaning shaker` step, then sets it down at shaker-home. The order finishes once the cleaned shaker is back home.
 
 A `mix` step with `"mode": "stir"` runs `stir` at `stir_station` instead of shaking. A recipe that stirs parks at `home` afterwards without picking up the shaker or serving.
 
