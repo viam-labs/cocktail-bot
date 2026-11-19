@@ -145,6 +145,7 @@ The arm opens the fridge by gripping the door handle and swinging it about the h
 | `swing_step_degs` | number | Optional | Largest door angle per planned step of the swing. | 10 |
 | `swing_vel_degs_per_sec` | number | Optional | Angular velocity of the swing. Arm default otherwise. |  |
 | `swing_acc_degs_per_sec2` | number | Optional | Angular acceleration of the swing. |  |
+| `slots` | []string | Optional | Bottle slots inside the fridge. Each must be in `slot_names`. |  |
 
 The `door_switch_name` switch needs these poses:
 
@@ -161,8 +162,10 @@ The swing angle is the angle between `closed-grab` and `open-grab` about the hin
 
 The door is recorded open before an opening swing starts moving and recorded shut only after a closing swing finishes. While it is recorded open outside a swing, for example after a failed swing, `make_cocktail` is refused. Shut the door by hand and press `cancel` with nothing running to record it shut. A `cancel` that stops a running command leaves the record alone, since the door may be partway open.
 
+Fridge slots take the same `hover`, `grab`, `lift` and `carry-hover` poses as shelf slots; list the fridge cabinet in their `allowed_obstacles` where the arm reaches inside. The fridge has one row, so a fridge slot's `hover` must not set `blocked_by`. Picking up a bottle from a fridge slot, for any pour, opens the door first, and putting it back closes the door again. If the door already stood open, it is left open. `grab_bottle` on a fridge slot leaves the door open, since the bottle is never put back. `stock_bottle`, `retrieve_bottle` and `move_bottle` refuse fridge slots for now.
+
 ```json
-"fridge": {"door_switch_name": "fridge-door-handle", "door_obstacle": "fridge-door", "hinge": {"x": 350, "y": -900}, "swing_vel_degs_per_sec": 20}
+"fridge": {"door_switch_name": "fridge-door-handle", "door_obstacle": "fridge-door", "hinge": {"x": 350, "y": -900}, "swing_vel_degs_per_sec": 20, "slots": ["slot-a-fridge-front", "slot-b-fridge-front"]}
 ```
 
 #### Example Configuration
@@ -269,7 +272,7 @@ Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_
 
 #### Stocking
 
-Move bottles between the shelf and the loading spot. The arm uses the existing blocker-shuffle flow if the target slot is behind an occupied blocker. The inventory data store updates only after the arm reports success.
+Move bottles between the shelf and the loading spot. The arm uses the existing blocker-shuffle flow if the target slot is behind an occupied blocker. The inventory data store updates only after the arm reports success. Fridge slots are refused; move those bottles by hand.
 
 | Command | Shape |
 | --- | --- |

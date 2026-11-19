@@ -201,7 +201,7 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 	}
 	if c.Fridge != nil {
-		if err := c.Fridge.validate(path+".fridge", switcherSet); err != nil {
+		if err := c.Fridge.validate(path+".fridge", switcherSet, seenSlot); err != nil {
 			return nil, nil, err
 		}
 	}

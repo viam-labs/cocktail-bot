@@ -23,7 +23,7 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 	if err != nil {
 		return err
 	}
-	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	trip, err := b.pickupBottle(ctx, bottleSw)
 	if err != nil {
 		return err
 	}
@@ -42,20 +42,53 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 		return fmt.Errorf("pour-upright: %w", err)
 	}
 
-	return b.returnBottle(ctx, bottleSw, parkedBlocker)
+	return b.returnBottle(ctx, bottleSw, trip)
 }
 
-// Ends holding the bottle at its carry-hover pose. Returns the blocker it
-// parked to reach the bottle, or "" when nothing was in the way.
-func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) (string, error) {
+// bottleTrip is what pickupBottle changed to reach a bottle, for returnBottle to undo.
+type bottleTrip struct {
+	// Blocker moved to parking, or "" when nothing was in the way.
+	parkedBlocker string
+	openedFridge  bool
+}
+
+// Ends holding the bottle at its carry-hover pose.
+func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) (bottleTrip, error) {
+	if b.cfg.isFridgeSlot(bottleSw.Name().ShortName()) {
+		return b.pickupFridgeBottle(ctx, bottleSw)
+	}
 	parkedBlocker, extraAllowed, err := b.prepareBlockerFor(ctx, bottleSw)
 	if err != nil {
-		return "", err
+		return bottleTrip{}, err
 	}
 	if err := b.pickupBottleAt(ctx, bottleSw, extraAllowed); err != nil {
-		return "", err
+		return bottleTrip{}, err
 	}
-	return parkedBlocker, nil
+	return bottleTrip{parkedBlocker: parkedBlocker}, nil
+}
+
+// pickupFridgeBottle opens the fridge unless it already stands open, then picks the bottle up
+// like any other. The fridge has one row, so there is never a blocker to park.
+func (b *bartender) pickupFridgeBottle(ctx context.Context, bottleSw toggleswitch.Switch) (bottleTrip, error) {
+	name := bottleSw.Name().ShortName()
+	blocker, err := b.blockerForTarget(ctx, bottleSw)
+	if err != nil {
+		return bottleTrip{}, err
+	}
+	if blocker != "" {
+		return bottleTrip{}, fmt.Errorf("fridge slot %q is blocked_by %q, but the fridge has one row and nothing to park", name, blocker)
+	}
+	var trip bottleTrip
+	if b.fridgeDoorOpenDegs() == 0 {
+		if err := b.openFridgeDoor(ctx); err != nil {
+			return bottleTrip{}, fmt.Errorf("open fridge for %s: %w", name, err)
+		}
+		trip.openedFridge = true
+	}
+	if err := b.pickupBottleAt(ctx, bottleSw, nil); err != nil {
+		return bottleTrip{}, err
+	}
+	return trip, nil
 }
 
 func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
@@ -249,9 +282,9 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 }
 
 // Starts from anywhere with the bottle held upright; ends empty-handed at home.
-// Only parkedBlocker comes back from parking: a blocker whose slot was empty
-// was never parked.
-func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch, parkedBlocker string) error {
+// Undoes only what trip did: a blocker whose slot was empty was never parked,
+// and a fridge that already stood open stays open.
+func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch, trip bottleTrip) error {
 	blockerName, err := b.blockerForTarget(ctx, bottleSw)
 	if err != nil {
 		return err
@@ -259,7 +292,15 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	if err := b.returnBottleAt(ctx, bottleSw, b.extraAllowedForBlocker(blockerName)); err != nil {
 		return err
 	}
-	return b.restoreBlocker(ctx, parkedBlocker)
+	if err := b.restoreBlocker(ctx, trip.parkedBlocker); err != nil {
+		return err
+	}
+	if trip.openedFridge {
+		if err := b.closeFridgeDoor(ctx); err != nil {
+			return fmt.Errorf("close fridge after returning %s: %w", bottleSw.Name().ShortName(), err)
+		}
+	}
+	return nil
 }
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
