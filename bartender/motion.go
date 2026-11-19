@@ -44,6 +44,9 @@ type poseData struct {
 	circlePointsPerRev              int
 	blockedBy                       string
 	jointPositionsDegs              []float64
+	// nearestTurn lets each joint of a joint-space pose reach its goal by whichever full turn is
+	// closest. Prestages leave it off: their exact angles leave the wrist room for what follows.
+	nearestTurn bool
 }
 
 const (
@@ -129,6 +132,7 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		}
 	}
 	blockedBy, _ := resp["blocked_by"].(string)
+	nearestTurn, _ := resp["nearest_turn"].(bool)
 	var jointPositionsDegs []float64
 	if raw, ok := resp["joint_positions_degs"].([]any); ok {
 		jointPositionsDegs = make([]float64, 0, len(raw))
@@ -155,6 +159,7 @@ func fetchPose(ctx context.Context, sw toggleswitch.Switch, poseName string) (*p
 		circlePointsPerRev:              circlePoints,
 		blockedBy:                       blockedBy,
 		jointPositionsDegs:              jointPositionsDegs,
+		nearestTurn:                     nearestTurn,
 	}, nil
 }
 
@@ -371,7 +376,7 @@ func (b *bartender) moveToJoints(ctx context.Context, pd *poseData, label string
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		StartState:  armplanning.NewPlanState(nil, fsInputs),
-		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, b.jointGoalInputs(fsInputs, pd))},
+		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, b.jointGoalInputs(fs, fsInputs, pd))},
 		Constraints: constraints,
 	}
 	plan, err := b.planMotion(ctx, req, label)
@@ -388,17 +393,50 @@ func (b *bartender) moveToJoints(ctx context.Context, pd *poseData, label string
 	return time.Since(start).Round(time.Millisecond), nil
 }
 
-func (b *bartender) jointGoalInputs(inputs referenceframe.FrameSystemInputs, pd *poseData) referenceframe.FrameSystemInputs {
+// jointGoalInputs puts the arm at pd's joint positions. When pd allows it, each joint takes whichever
+// full-turn equivalent of its goal is nearest where it is now: they are the same physical pose, and
+// the far one spins the arm a full turn to get there.
+func (b *bartender) jointGoalInputs(fs *referenceframe.FrameSystem, inputs referenceframe.FrameSystemInputs, pd *poseData) referenceframe.FrameSystemInputs {
 	out := make(referenceframe.FrameSystemInputs, len(inputs))
 	for k, v := range inputs {
 		out[k] = v
 	}
+	current := inputs[b.cfg.ArmName]
+	var limits []referenceframe.Limit
+	if f := fs.Frame(b.cfg.ArmName); f != nil {
+		limits = f.DoF()
+	}
 	joints := make([]referenceframe.Input, len(pd.jointPositionsDegs))
 	for i, d := range pd.jointPositionsDegs {
 		joints[i] = d * math.Pi / 180.0
+		if pd.nearestTurn && i < len(current) && i < len(limits) {
+			joints[i] = nearestTurn(joints[i], current[i], limits[i])
+		}
 	}
 	out[b.cfg.ArmName] = joints
 	return out
+}
+
+// nearestTurnLimitMargin keeps a shifted goal clear of the joint limit, so the moves after it,
+// like the stir insert and circle, still have room to turn.
+const nearestTurnLimitMargin = 45 * math.Pi / 180
+
+// nearestTurn returns the angle a whole number of turns from goal that is closest to current and
+// at least nearestTurnLimitMargin inside limit, or goal itself when no other turn is closer.
+func nearestTurn(goal, current float64, limit referenceframe.Limit) float64 {
+	best := goal
+	consider := func(c float64) {
+		if math.Abs(c-current) < math.Abs(best-current) {
+			best = c
+		}
+	}
+	for c := goal - 2*math.Pi; c >= limit.Min+nearestTurnLimitMargin; c -= 2 * math.Pi {
+		consider(c)
+	}
+	for c := goal + 2*math.Pi; c <= limit.Max-nearestTurnLimitMargin; c += 2 * math.Pi {
+		consider(c)
+	}
+	return best
 }
 
 // cartesianPose turns a joint-space pose into where those joints put its component, for moves that need a
@@ -415,7 +453,7 @@ func (b *bartender) cartesianPose(ctx context.Context, pd *poseData) (*poseData,
 	if componentName == "" {
 		componentName = b.cfg.ArmName
 	}
-	tf, err := fs.Transform(b.jointGoalInputs(fsInputs, pd).ToLinearInputs(), referenceframe.NewPoseInFrame(componentName, spatialmath.NewZeroPose()), referenceframe.World)
+	tf, err := fs.Transform(b.jointGoalInputs(fs, fsInputs, pd).ToLinearInputs(), referenceframe.NewPoseInFrame(componentName, spatialmath.NewZeroPose()), referenceframe.World)
 	if err != nil {
 		return nil, fmt.Errorf("pose of %q at joint positions: %w", componentName, err)
 	}
