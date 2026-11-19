@@ -18,7 +18,7 @@ func (b *bartender) validateSteps(steps []RecipeStep) error {
 				problems = append(problems, fmt.Sprintf("step %d: pour ingredient is required", i+1))
 				continue
 			}
-			if _, _, err := b.resolvePour(step.Ingredient, step.Oz); err != nil {
+			if _, err := b.resolvePour(step.Ingredient, step.Oz); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", step.Ingredient, err))
 			}
 		case "ice":

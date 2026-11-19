@@ -17,14 +17,14 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while the shaker is held. See below. |  |
 | `held_stirrer_geometry` | object | Optional | Cylinder attached to the gripper while the stirrer is held, from gripper close to gripper open in `stir`. See below. |  |
 | `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`, `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
-| `bottle_pourer_oz` | object | Optional | Map of bottle switch name → oz delivered per pour-tilt. Each recipe pour oz must be an integer multiple of this. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
 | `glasses` | []object | Optional | Glass types staff can place at the serving station. Recipes pick one by `id`. See below. |  |
 | `default_glass_obstacle` | string | Optional | Obstacle modeling the glass at the station for recipes with no glass, glasses with no `obstacle`, and before the first order. See `glasses`. |  |
 | `serving_station` | string | Optional | Switch holding the shaker and serve poses used by `find_and_pour_from_shaker`. | `serving-glass-center` |
 | `pour_mouth_offset_mm` | number | Optional | Horizontal gripper-to-bottle-mouth distance while pouring, on the side the bottle tips. Negative flips the side. | 100 |
 | `max_pour_offset_mm` | number | Optional | Max world-frame shift of `serve-approach`/`serve-tilt` from their saved positions; glasses beyond fail before pickup. | 300 |
-| `pour_into_shaker_dwell_ms` | int | Optional | Dwell at `pour-tilt` on each pour into the shaker. | 500 |
+| `pour_into_shaker_dwell_ms` | int | Optional | Dwell at the tilt on each pour from a bottle, into the shaker or a glass, when the bottle's pourer size is not in `pour_dwell_ms_by_pourer_oz`. | 500 |
+| `pour_dwell_ms_by_pourer_oz` | object | Optional | Map of pourer size in oz (string key, e.g. `"1.5"`) → dwell ms at the tilt on each pour from a bottle with that pourer. Pourer sizes are set per ingredient in the inventory. Example: `{"0.5": 1500, "1": 2500, "1.5": 3500}`. |  |
 | `pour_vel_degs_per_sec` | number | Optional | Angular velocity on pour-tilt moves. Arm default otherwise. |  |
 | `pour_acc_degs_per_sec2` | number | Optional | Angular acceleration on pour-tilt moves. |  |
 | `serve_vel_degs_per_sec` | number | Optional | Angular velocity on serve-tilt moves. When unset, falls back to per-pose vel on `serve-tilt`. |  |
@@ -145,7 +145,7 @@ The `station` switch needs these poses:
     "pose_switcher_names": ["coffee-liquor", "vodka", "stations", "mixer", "ice-station", "strain-flow", "serving-glass-center"],
     "held_bottle_geometry": {"type": "cylinder", "radius_mm": 35, "length_mm": 550},
     "held_shaker_geometry": {"type": "cylinder", "radius_mm": 45, "length_mm": 170, "z_offset_mm": 184},
-    "bottle_pourer_oz": {"vodka": 1.5, "coffee-liquor": 1},
+    "pour_dwell_ms_by_pourer_oz": {"0.5": 1500, "1": 2500, "1.5": 3500},
     "pickup_obstacles": {
       "vodka": "vodka-bottle",
       "coffee-liquor": "coffee-liquor-bottle",
@@ -276,4 +276,4 @@ Serve the shaker's contents into every glass found. Glasses farther than `max_po
 | `get_inventory` | `{}` → `{ingredients: {name: {in_stock: bool}}}` |
 | `update_inventory_item` | `{"ingredient": "vodka", "in_stock": true}` |
 | `delete_inventory_item` | `{"ingredient": "vodka"}` |
-| `get_bottles` | `{}` → `{bottles: [...]}` — switch names in `pose_switcher_names` that are also in `bottle_pourer_oz`. |
+| `get_bottles` | `{}` → `{bottles: [...]}` — ingredients currently assigned to a slot. |

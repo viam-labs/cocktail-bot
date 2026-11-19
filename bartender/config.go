@@ -65,6 +65,8 @@ type Config struct {
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.
 	MachineID      string          `json:"machine_id,omitempty"`
 	ShakerCleaning *ShakerCleaning `json:"shaker_cleaning,omitempty"`
+	// Pourer oz (string key, e.g. "1.5") → dwell ms at the tilt; sizes not listed use pour_into_shaker_dwell_ms.
+	PourDwellMsByPourerOz map[string]int `json:"pour_dwell_ms_by_pourer_oz,omitempty"`
 }
 
 // ShakerCleaning is the v1 feature flag for rinsing the shaker on the cleaner
@@ -137,6 +139,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	if c.ServeAccDegsPerSec2 < 0 {
 		return nil, nil, errors.New(path + ": serve_acc_degs_per_sec2 must be > 0 if set")
+	}
+	if _, err := parsePourDwells(c.PourDwellMsByPourerOz); err != nil {
+		return nil, nil, fmt.Errorf("%s: pour_dwell_ms_by_pourer_oz: %w", path, err)
 	}
 	if c.MaxPourOffsetMM < 0 {
 		return nil, nil, errors.New(path + ": max_pour_offset_mm must be > 0 if set")
