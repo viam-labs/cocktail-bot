@@ -257,6 +257,7 @@ export function InventoryPage({ conn }: { conn: ViamConnection }) {
                   stock={activeIngredientStock}
                   usedIn={usedIn.get(activeIngredient) ?? []}
                   busy={busy}
+                  onPourerOz={savePourerOz}
                   onCategory={saveCategory}
                   onSaveWhiskeyProfile={saveWhiskeyProfile}
                   onClearWhiskeyProfile={removeWhiskeyProfile}
@@ -448,7 +449,6 @@ function SlotPanel({
   const bottle = slot.ingredient;
   const hasBottle = Boolean(bottle);
   const inStock = Boolean(hasBottle && stock?.in_stock);
-  const pourerOz = stock?.pourer_oz;
 
   return (
     <aside className={styles.panel} aria-label={`Slot ${letter}`}>
@@ -516,29 +516,7 @@ function SlotPanel({
       )}
 
       {hasBottle && (
-        <fieldset className={styles.panelField}>
-          <legend className={styles.panelLabel}>Pourer</legend>
-          <div className={styles.segmented}>
-            {POURER_SIZES.map((oz) => {
-              const active = pourerOz === oz;
-              return (
-                <button
-                  key={oz}
-                  type="button"
-                  aria-pressed={active}
-                  className={`${styles.segment} ${active ? styles.segmentActive : ""}`}
-                  onClick={() => onPourerOz(bottle!, oz)}
-                  disabled={busy}
-                >
-                  {oz} oz
-                </button>
-              );
-            })}
-          </div>
-          {pourerOz != null && !POURER_SIZES.includes(pourerOz as typeof POURER_SIZES[number]) && (
-            <p className={styles.panelHint}>Currently set to {pourerOz} oz.</p>
-          )}
-        </fieldset>
+        <PourerField ingredient={bottle!} pourerOz={stock?.pourer_oz} busy={busy} onSave={onPourerOz} />
       )}
 
       {hasBottle && stock?.category === "Whiskey" && (
@@ -589,6 +567,7 @@ function IngredientPanel({
   stock,
   usedIn,
   busy,
+  onPourerOz,
   onCategory,
   onSaveWhiskeyProfile,
   onClearWhiskeyProfile,
@@ -599,6 +578,7 @@ function IngredientPanel({
   stock: { in_stock: boolean; pourer_oz?: number; category?: string; whiskey_profile?: WhiskeyProfile } | undefined;
   usedIn: string[];
   busy: boolean;
+  onPourerOz: (ingredient: string, oz: number) => void;
   onCategory: (ingredient: string, category: string) => void;
   onSaveWhiskeyProfile: (ingredient: string, profile: WhiskeyProfile) => void;
   onClearWhiskeyProfile: (ingredient: string) => void;
@@ -634,6 +614,8 @@ function IngredientPanel({
           </div>
         )}
 
+        <PourerField ingredient={name} pourerOz={stock?.pourer_oz} busy={busy} onSave={onPourerOz} />
+
         {stock?.category === "Whiskey" && (
           <WhiskeyProfileSection
             ingredient={name}
@@ -656,6 +638,44 @@ function IngredientPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+function PourerField({
+  ingredient,
+  pourerOz,
+  busy,
+  onSave,
+}: {
+  ingredient: string;
+  pourerOz: number | undefined;
+  busy: boolean;
+  onSave: (ingredient: string, oz: number) => void;
+}) {
+  return (
+    <fieldset className={styles.panelField}>
+      <legend className={styles.panelLabel}>Pourer</legend>
+      <div className={styles.segmented}>
+        {POURER_SIZES.map((oz) => {
+          const active = pourerOz === oz;
+          return (
+            <button
+              key={oz}
+              type="button"
+              aria-pressed={active}
+              className={`${styles.segment} ${active ? styles.segmentActive : ""}`}
+              onClick={() => onSave(ingredient, oz)}
+              disabled={busy}
+            >
+              {oz} oz
+            </button>
+          );
+        })}
+      </div>
+      {pourerOz != null && !POURER_SIZES.includes(pourerOz as typeof POURER_SIZES[number]) && (
+        <p className={styles.panelHint}>Currently set to {pourerOz} oz.</p>
+      )}
+    </fieldset>
   );
 }
 
