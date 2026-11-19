@@ -319,11 +319,43 @@ function categoryOf(stock: { category?: string }): string {
   return stock.category && stock.category.trim() ? stock.category : UNCATEGORIZED;
 }
 
-function parseSlotId(id: string): { letter: string; row: string } {
-  const parts = id.split("-");
-  const letter = (parts[1] ?? "").toUpperCase();
-  const row = parts.slice(2).join(" ");
-  return { letter, row };
+function parseSlotId(id: string): { letter: string; shelf: string; depth: string } {
+  const [, letter = "", shelf = "", ...depth] = id.split("-");
+  return { letter: letter.toUpperCase(), shelf, depth: depth.join("-") };
+}
+
+const SHELF_ORDER = ["top", "bottom"];
+const DEPTH_ORDER = ["back", "front"];
+
+function rank(order: string[], key: string): number {
+  const i = order.indexOf(key);
+  return i === -1 ? order.length : i;
+}
+
+function byRank(order: string[]) {
+  return (a: string, b: string) => rank(order, a) - rank(order, b) || a.localeCompare(b);
+}
+
+function shelfLabel(shelf: string): string {
+  return shelf ? `${titleCase(shelf)} shelf` : "Rack";
+}
+
+function depthLabel(depth: string): string {
+  return depth ? `${titleCase(depth)} row` : "Row";
+}
+
+function slotLocation(id: string): string {
+  const { letter, shelf, depth } = parseSlotId(id);
+  return `${shelfLabel(shelf)} · ${depthLabel(depth)} · Slot ${letter}`;
+}
+
+function splitBrand(ingredient: string): { name: string; brand?: string } {
+  const m = ingredient.match(/^(.*\S)\s*\(([^()]+)\)$/);
+  return m ? { name: titleCase(m[1]), brand: m[2].trim() } : { name: titleCase(ingredient) };
+}
+
+function filledCount(slots: Slot[]): number {
+  return slots.filter((s) => s.ingredient).length;
 }
 
 const POURER_SIZES = [0.5, 1, 1.5] as const;
@@ -339,82 +371,141 @@ function RackSection({
   selectedId: string | null;
   onSelect: (slotId: string) => void;
 }) {
-  const groups = new Map<string, Slot[]>();
+  const [showEmpty, setShowEmpty] = useState(true);
+
+  const shelves = new Map<string, Map<string, Slot[]>>();
   for (const slot of slots) {
-    const { row } = parseSlotId(slot.id);
-    const key = row || "other";
-    const list = groups.get(key) ?? [];
-    list.push(slot);
-    groups.set(key, list);
+    const { shelf, depth } = parseSlotId(slot.id);
+    const rows = shelves.get(shelf) ?? new Map<string, Slot[]>();
+    rows.set(depth, [...(rows.get(depth) ?? []), slot]);
+    shelves.set(shelf, rows);
   }
-  for (const list of groups.values()) {
-    list.sort((a, b) => a.id.localeCompare(b.id));
-  }
+  const columns = Math.max(...[...shelves.values()].flatMap((rows) => [...rows.values()].map((r) => r.length)));
 
   return (
     <section className={styles.section}>
-      <h2>
-        On the rack
-        <span className={styles.sectionCount}>{slots.length}</span>
-      </h2>
-      {[...groups.entries()].map(([row, rowSlots]) => (
-        <div key={row} className={styles.rackGroup}>
-          <h3 className={styles.rowLabel}>{titleCase(row)}</h3>
-          <div className={styles.rack}>
-            {rowSlots.map((slot) => (
-              <RackCard
-                key={slot.id}
-                slot={slot}
-                stock={slot.ingredient ? ingredients[slot.ingredient] : undefined}
-                selected={selectedId === slot.id}
-                onSelect={() => onSelect(slot.id)}
-              />
-            ))}
-          </div>
+      <div className={styles.rackSummary}>
+        <h2>
+          On the rack
+          <span className={styles.sectionCount}>
+            {filledCount(slots)} of {slots.length} filled
+          </span>
+        </h2>
+        <div className={styles.rackLegend}>
+          <span>
+            <span className={styles.dot} style={{ background: "var(--ok)" }} aria-hidden />
+            In stock
+          </span>
+          <span>
+            <span className={styles.dot} style={{ background: "var(--bad)" }} aria-hidden />
+            Out of stock
+          </span>
+          <span>
+            <span className={styles.emptySwatch} aria-hidden />
+            Empty
+          </span>
+          <label className={styles.rackToggle}>
+            <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
+            Show empty slots
+          </label>
         </div>
-      ))}
+      </div>
+
+      {[...shelves.keys()].sort(byRank(SHELF_ORDER)).map((shelf) => {
+        const rows = shelves.get(shelf)!;
+        const shelfSlots = [...rows.values()].flat();
+        return (
+          <section key={shelf} className={styles.shelf} aria-label={shelfLabel(shelf)}>
+            <div className={styles.shelfHead}>
+              <h3>{shelfLabel(shelf)}</h3>
+              <span className={styles.sectionCount}>
+                {filledCount(shelfSlots)} of {shelfSlots.length} filled
+              </span>
+            </div>
+            {[...rows.keys()].sort(byRank(DEPTH_ORDER)).map((depth) => {
+              const visible = rows
+                .get(depth)!
+                .filter((slot) => showEmpty || slot.ingredient)
+                .sort((a, b) => a.id.localeCompare(b.id));
+              if (visible.length === 0) return null;
+              return (
+                <div key={depth} className={styles.shelfRow}>
+                  <span className={styles.shelfRowLabel}>{depthLabel(depth)}</span>
+                  <div className={styles.shelfGrid} style={{ "--cols": columns } as React.CSSProperties}>
+                    {visible.map((slot) => (
+                      <SlotTile
+                        key={slot.id}
+                        slot={slot}
+                        stock={slot.ingredient ? ingredients[slot.ingredient] : undefined}
+                        selected={selectedId === slot.id}
+                        onSelect={() => onSelect(slot.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        );
+      })}
     </section>
   );
 }
 
-function RackCard({
+function SlotTile({
   slot,
   stock,
   selected,
   onSelect,
 }: {
   slot: Slot;
-  stock: { in_stock: boolean; pourer_oz?: number } | undefined;
+  stock: { in_stock: boolean } | undefined;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { letter } = parseSlotId(slot.id);
-  const hasBottle = Boolean(slot.ingredient);
-  const inStock = hasBottle && stock?.in_stock;
-  const statusLabel = !hasBottle ? "Empty" : inStock ? "In stock" : "Out of stock";
-  const dotColor = !hasBottle ? "var(--smoke)" : inStock ? "var(--ok)" : "var(--bad)";
+  const { letter, depth } = parseSlotId(slot.id);
+  const classes = [styles.slotTile];
+  if (selected) classes.push(styles.slotTileSelected);
 
+  if (!slot.ingredient) {
+    classes.push(styles.slotTileEmpty);
+    return (
+      <button
+        type="button"
+        aria-pressed={selected}
+        aria-label={`${depthLabel(depth)} ${letter}, empty. Add a bottle`}
+        className={classes.join(" ")}
+        onClick={onSelect}
+      >
+        <span className={styles.slotTag}>{letter}</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <span className={styles.slotEmptyText}>Empty</span>
+      </button>
+    );
+  }
+
+  const { name, brand } = splitBrand(slot.ingredient);
+  const inStock = Boolean(stock?.in_stock);
   return (
     <button
       type="button"
       aria-pressed={selected}
-      className={`${styles.rackCard} ${selected ? styles.rackCardSelected : ""}`}
+      aria-label={`${depthLabel(depth)} ${letter}, ${name}${brand ? ` (${brand})` : ""}, ${inStock ? "in stock" : "out of stock"}`}
+      className={classes.join(" ")}
       onClick={onSelect}
     >
-      <span className={styles.rackHead}>
-        <span className={styles.rackLetter}>{letter}</span>
+      <span className={styles.slotTag}>
+        <span className={styles.dot} style={{ background: inStock ? "var(--ok)" : "var(--bad)" }} aria-hidden />
+        {letter}
       </span>
-      <span className={styles.rackBottle}>{hasBottle ? titleCase(slot.ingredient!) : "Empty slot"}</span>
-      {hasBottle && stock?.pourer_oz != null && (
-        <span className={styles.rackPourer}>{stock.pourer_oz} oz pourer</span>
-      )}
-      <span className={styles.rackStatus}>
-        <span className={styles.dot} style={{ background: dotColor }} aria-hidden />
-        {statusLabel}
-      </span>
+      <span className={styles.slotName}>{name}</span>
+      {brand && <span className={styles.slotBrand}>{brand}</span>}
     </button>
   );
 }
+
 
 function SlotPanel({
   slot,
@@ -445,19 +536,15 @@ function SlotPanel({
   onClearWhiskeyProfile: (ingredient: string) => void;
   onClose: () => void;
 }) {
-  const { letter, row } = parseSlotId(slot.id);
   const bottle = slot.ingredient;
   const hasBottle = Boolean(bottle);
   const inStock = Boolean(hasBottle && stock?.in_stock);
 
   return (
-    <aside className={styles.panel} aria-label={`Slot ${letter}`}>
+    <aside className={styles.panel} aria-label={slotLocation(slot.id)}>
       <div className={styles.panelHead}>
         <div>
-          <p className={styles.panelCrumb}>
-            Slot {letter}
-            {row ? ` · ${titleCase(row)}` : ""}
-          </p>
+          <p className={styles.panelCrumb}>{slotLocation(slot.id)}</p>
           <h2 className={styles.panelTitle}>{hasBottle ? titleCase(bottle!) : "Empty slot"}</h2>
           {hasBottle && (
             <p className={styles.panelStatus}>
