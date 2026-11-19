@@ -67,8 +67,10 @@ Each glass names the pose switcher holding its taught poses, the same way each b
 | `name` | string | Required | Shown to staff, e.g. "Highball". |  |
 | `capacity_oz` | number | Required | How much the glass holds. `make_cocktail` refuses a drink that needs more, counting melt water from mixing over ice and the shaker's ice when the drink isn't strained. |  |
 | `image` | string | Optional | Outline the web app draws: `highball`, `martini`, `rocks`, `coupe` or `wine` (stemless). | `rocks` |
-| `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
+| `pose_switcher` | string | Required | Switch in `pose_switcher_names` holding this glass's `serve-approach`, optional `serve-pre-tilt` and `serve-tilt` (used by drinks made in the shaker) and `direct-pour-approach`, `direct-pour-tilt` and `direct-pour-recover` (used by drinks poured straight from the bottle). |  |
 | `obstacle` | string | Optional | Obstacle modeling this glass, a component such as `erh:vmodutils:obstacle`. The gripper and held shaker or bottle may intersect it while pouring into the glass. | `default_glass_obstacle` |
+
+A serve moves the shaker from `serve-approach` to `serve-tilt` at the serve speed (`serve_vel_degs_per_sec`, else `serve-tilt`'s own), since that tilt is the pour. Add an optional `serve-pre-tilt` pose on the same switch, tilted to just before liquid reaches the shaker lip, and the shaker gets there at `serve-pre-tilt`'s own speed (the arm's default when unset) and only tilts the rest of the way slowly.
 
 ```json
 "glasses": [

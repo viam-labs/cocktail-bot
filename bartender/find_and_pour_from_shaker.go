@@ -11,13 +11,15 @@ import (
 
 const defaultServingStation = "serving-glass-center"
 
-// withXY keeps a world-frame pose's z and orientation and moves it to x, y.
+// withXY keeps a world-frame pose's z, orientation and speed and moves it to x, y.
 func withXY(pd *poseData, x, y float64) *poseData {
 	p := pd.pose.Point()
 	return &poseData{
-		pose:          spatialmath.NewPose(r3.Vector{X: x, Y: y, Z: p.Z}, pd.pose.Orientation()),
-		refFrame:      referenceframe.World,
-		componentName: pd.componentName,
+		pose:           spatialmath.NewPose(r3.Vector{X: x, Y: y, Z: p.Z}, pd.pose.Orientation()),
+		refFrame:       referenceframe.World,
+		componentName:  pd.componentName,
+		velDegsPerSec:  pd.velDegsPerSec,
+		accDegsPerSec2: pd.accDegsPerSec2,
 	}
 }
 
@@ -47,12 +49,24 @@ func (b *bartender) findAndPourFromShaker(ctx context.Context, pourMs int) ([]fo
 	if err != nil {
 		return nil, nil, err
 	}
+	preTilt, err := fetchOptionalPose(ctx, sw, poseServePreTilt)
+	if err != nil {
+		return nil, nil, err
+	}
 	tilt, err := fetchPose(ctx, sw, poseServeTilt)
 	if err != nil {
 		return nil, nil, err
 	}
 	if approach, err = b.poseInWorld(ctx, approach); err != nil {
 		return nil, nil, err
+	}
+	if preTilt != nil {
+		worldPreTilt, err := b.poseInWorld(ctx, preTilt)
+		if err != nil {
+			return nil, nil, err
+		}
+		worldPreTilt.velDegsPerSec, worldPreTilt.accDegsPerSec2 = preTilt.velDegsPerSec, preTilt.accDegsPerSec2
+		preTilt = worldPreTilt
 	}
 	if tilt, err = b.poseInWorld(ctx, tilt); err != nil {
 		return nil, nil, err
@@ -81,8 +95,13 @@ func (b *bartender) findAndPourFromShaker(ctx context.Context, pourMs int) ([]fo
 	for i, g := range targets {
 		b.logger.Infow("serving into found glass", "glass", i+1, "of", len(targets), "x", g.center.X, "y", g.center.Y,
 			"saved_serve_tilt", tilt.pose.Point(), "station", sw.Name().ShortName())
+		var glassPreTilt *poseData
+		if preTilt != nil {
+			glassPreTilt = withXY(preTilt, g.center.X, g.center.Y)
+		}
 		if err := b.pourFromShakerAt(ctx, sw, pourMs,
 			withXY(approach, g.center.X, g.center.Y),
+			glassPreTilt,
 			withXY(tilt, g.center.X, g.center.Y)); err != nil {
 			return poured, skipped, fmt.Errorf("glass %d of %d at (%.0f, %.0f): %w", i+1, len(targets), g.center.X, g.center.Y, err)
 		}
