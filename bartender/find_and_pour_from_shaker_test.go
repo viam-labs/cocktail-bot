@@ -54,3 +54,11 @@ func TestServingStationDefault(t *testing.T) {
 	test.That(t, (&Config{}).servingStation(), test.ShouldEqual, "serving-glass-center")
 	test.That(t, (&Config{ServingStation: "serving"}).servingStation(), test.ShouldEqual, "serving")
 }
+
+func TestWithXYKeepsSpeed(t *testing.T) {
+	saved := savedServeTilt()
+	saved.velDegsPerSec, saved.accDegsPerSec2 = 90, 125
+	got := withXY(saved, 580, -87)
+	test.That(t, got.velDegsPerSec, test.ShouldEqual, 90.0)
+	test.That(t, got.accDegsPerSec2, test.ShouldEqual, 125.0)
+}
