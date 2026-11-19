@@ -26,11 +26,12 @@ test("built drink is just the pours", () => {
   assert.equal(glassNeed(pours).totalOz, 3);
 });
 
-test("double doubles the pours and melt but not the ice", () => {
+test("double doubles the pours but not the ice or its melt", () => {
   const need = glassNeed([{ kind: "ice" }, ...pours, { kind: "mix" }], true);
   assert.equal(need.pouredOz, 6);
+  assert.equal(need.meltOz, 3 * MELT_FRACTION);
   assert.equal(need.iceOz, ICE_IN_GLASS_OZ);
-  assert.equal(need.totalOz, 6 * (1 + MELT_FRACTION) + ICE_IN_GLASS_OZ);
+  assert.equal(need.totalOz, 6 + 3 * MELT_FRACTION + ICE_IN_GLASS_OZ);
 });
 
 test("fits compares capacity to the total need", () => {

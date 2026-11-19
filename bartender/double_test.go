@@ -74,6 +74,12 @@ func TestCanDouble(t *testing.T) {
 	off := false
 	pourOnly := Recipe{Pours: []Pour{{Ingredient: "vodka", Oz: 2}}, CrushedIce: &off, Shake: &off, Strain: &off}
 	test.That(t, canDouble(pourOnly), test.ShouldBeFalse)
+
+	noDoubleGlass := shakenRecipe()
+	noDoubleGlass.Glass = "martini"
+	test.That(t, canDouble(noDoubleGlass), test.ShouldBeFalse)
+	noDoubleGlass.DoubleGlass = "highball"
+	test.That(t, canDouble(noDoubleGlass), test.ShouldBeTrue)
 }
 
 func TestParseMakeCocktailDouble(t *testing.T) {

@@ -70,7 +70,7 @@ func TestServingGlass(t *testing.T) {
 	test.That(t, err.Error(), test.ShouldContainSubstring, "double_glass")
 }
 
-func TestUpdateRecipesRequiresDoubleGlassForDoublableDrinks(t *testing.T) {
+func TestUpdateRecipesAllowsDoublableDrinkWithoutDoubleGlass(t *testing.T) {
 	ds, err := newDataStore(t.TempDir())
 	test.That(t, err, test.ShouldBeNil)
 	b := &bartender{cfg: &Config{Glasses: testGlasses()}, dataStore: ds}
@@ -78,8 +78,10 @@ func TestUpdateRecipesRequiresDoubleGlassForDoublableDrinks(t *testing.T) {
 	_, err = b.handleUpdateRecipes(map[string]any{"recipes": []any{
 		map[string]any{"id": "shaken", "name": "Shaken", "glass": "martini", "steps": shaken},
 	}})
-	test.That(t, err, test.ShouldNotBeNil)
-	test.That(t, err.Error(), test.ShouldContainSubstring, `recipe "shaken" needs a double_glass`)
+	test.That(t, err, test.ShouldBeNil)
+	got, err := b.handleGetRecipes()
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got["recipes"].([]any)[0].(map[string]any)["can_double"], test.ShouldEqual, false)
 
 	built := []any{map[string]any{"kind": "pour", "ingredient": "vodka", "oz": 2}}
 	_, err = b.handleUpdateRecipes(map[string]any{"recipes": []any{
@@ -97,9 +99,13 @@ func TestGlassNeedOzMatchesTheWebApp(t *testing.T) {
 		}
 		return out
 	}
-	test.That(t, glassNeedOz(pours), test.ShouldEqual, 3.0)
-	test.That(t, glassNeedOz(steps("ice", "mix", "strain")), test.ShouldEqual, 3*(1+meltFraction))
-	test.That(t, glassNeedOz(steps("ice", "mix")), test.ShouldEqual, 3*(1+meltFraction)+iceInGlassOz)
+	test.That(t, glassNeedOz(pours, false), test.ShouldEqual, 3.0)
+	test.That(t, glassNeedOz(steps("ice", "mix", "strain"), false), test.ShouldEqual, 3*(1+meltFraction))
+	test.That(t, glassNeedOz(steps("ice", "mix"), false), test.ShouldEqual, 3*(1+meltFraction)+iceInGlassOz)
+
+	doubled, err := planDrink("d", Recipe{Steps: steps("ice", "mix")}, true)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, glassNeedOz(doubled.steps, true), test.ShouldEqual, 6+3*meltFraction+iceInGlassOz)
 }
 
 func TestMakeCocktailRefusesDrinkTooBigForItsGlass(t *testing.T) {
