@@ -6,6 +6,11 @@ import (
 	"testing"
 
 	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/components/arm/kinematics"
+	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/referenceframe"
+	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/rdk/testutils/inject"
 	"go.viam.com/test"
@@ -129,4 +134,77 @@ func TestFetchPoseCircleParams(t *testing.T) {
 			test.That(t, pd.circlePoints(), test.ShouldEqual, tc.wantPoints)
 		})
 	}
+}
+
+// jointPoseBartender has a UR5e at startDegs and a switch whose only pose is a joint-space pose at poseDegs.
+func jointPoseBartender(t *testing.T, startDegs, poseDegs []float64) (*bartender, *inject.Switch, *[][]referenceframe.Input) {
+	t.Helper()
+	model, err := kinematics.ModelFromName("ur5e", "arm")
+	test.That(t, err, test.ShouldBeNil)
+	fsSvc := inject.NewFrameSystemService("fs")
+	fsSvc.FrameSystemConfigFunc = func(context.Context) (*framesystem.Config, error) {
+		lif := referenceframe.NewLinkInFrame(referenceframe.World, spatialmath.NewZeroPose(), "arm", nil)
+		return &framesystem.Config{Parts: []*referenceframe.FrameSystemPart{{FrameConfig: lif, ModelFrame: model}}}, nil
+	}
+	a := inject.NewArm("arm")
+	a.CurrentInputsFunc = func(context.Context) ([]referenceframe.Input, error) { return degsToInputs(startDegs), nil }
+	var executed [][]referenceframe.Input
+	a.MoveThroughJointPositionsFunc = func(_ context.Context, positions [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]any) error {
+		executed = positions
+		return nil
+	}
+	sw := inject.NewSwitch("stir")
+	sw.DoFunc = func(context.Context, map[string]any) (map[string]any, error) {
+		joints := make([]any, len(poseDegs))
+		for i, d := range poseDegs {
+			joints[i] = d
+		}
+		return map[string]any{"joint_positions_degs": joints, "component_name": "arm", "reference_frame": "world"}, nil
+	}
+	b := &bartender{cfg: &Config{ArmName: "arm"}, fsSvc: fsSvc, arm: a, logger: logging.NewTestLogger(t)}
+	return b, sw, &executed
+}
+
+func degsToInputs(degs []float64) []referenceframe.Input {
+	out := make([]referenceframe.Input, len(degs))
+	for i, d := range degs {
+		out[i] = d * math.Pi / 180
+	}
+	return out
+}
+
+func TestCarryToJointPoseEndsAtThoseJoints(t *testing.T) {
+	poseDegs := []float64{40, -90, 90, -90, -90, -150}
+	b, sw, executed := jointPoseBartender(t, []float64{0, -90, 90, -90, -90, 0}, poseDegs)
+
+	_, err := b.carryHeldLevel(context.Background(), sw, "stir-hover")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, *executed, test.ShouldNotBeEmpty)
+	last := (*executed)[len(*executed)-1]
+	for i, want := range degsToInputs(poseDegs) {
+		test.That(t, last[i], test.ShouldAlmostEqual, want, 1e-6)
+	}
+}
+
+func TestCartesianPoseOfJointPoseIsWhereThoseJointsPutTheArm(t *testing.T) {
+	poseDegs := []float64{40, -90, 90, -90, -90, -150}
+	b, sw, _ := jointPoseBartender(t, []float64{0, -90, 90, -90, -90, 0}, poseDegs)
+	pd, err := fetchPose(context.Background(), sw, "stir-hover")
+	test.That(t, err, test.ShouldBeNil)
+
+	got, err := b.cartesianPose(context.Background(), pd)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got.jointPositionsDegs, test.ShouldBeEmpty)
+	test.That(t, got.refFrame, test.ShouldEqual, referenceframe.World)
+
+	model, err := kinematics.ModelFromName("ur5e", "arm")
+	test.That(t, err, test.ShouldBeNil)
+	want, err := model.Transform(degsToInputs(poseDegs))
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, spatialmath.PoseAlmostEqual(got.pose, want), test.ShouldBeTrue)
+
+	cartesian := &poseData{pose: want, refFrame: referenceframe.World}
+	same, err := b.cartesianPose(context.Background(), cartesian)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, same, test.ShouldEqual, cartesian)
 }
