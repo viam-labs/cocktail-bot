@@ -45,7 +45,7 @@ func (b *bartender) stir(ctx context.Context, stationSwitchName string, dwellMs 
 	if _, err := b.linearCarryToPose(ctx, sw, poseStirStorageHover, storageAllow...); err != nil {
 		return fmt.Errorf("linear-lift stirrer to stir-storage-hover: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, sw, poseStirHover); err != nil {
+	if _, err := b.carryHeld(ctx, sw, poseStirHover); err != nil {
 		return fmt.Errorf("carry stirrer to stir-hover: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseStirInsert, shakerAllow...); err != nil {
@@ -58,7 +58,7 @@ func (b *bartender) stir(ctx context.Context, stationSwitchName string, dwellMs 
 	if _, err := b.linearCarryToPose(ctx, sw, poseStirHover, shakerAllow...); err != nil {
 		return fmt.Errorf("linear-retract stirrer to stir-hover: %w", err)
 	}
-	if _, err := b.carryHeldLevel(ctx, sw, poseStirStorageHover, storageAllow...); err != nil {
+	if _, err := b.carryHeld(ctx, sw, poseStirStorageHover, storageAllow...); err != nil {
 		return fmt.Errorf("carry stirrer back to stir-storage-hover: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseStirStoragePlace, storageAllow...); err != nil {

@@ -611,6 +611,20 @@ func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switc
 	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
 }
 
+// Carry a held object without the no-spill orientation constraint. For rigid
+// held objects that can't spill (e.g. the stirrer): dropping the plan-wide
+// orientation bound lets the planner find a path in tens of ms where the
+// constrained search otherwise takes tens of seconds near cluttered goals.
+func (b *bartender) carryHeld(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
+	pd, err := fetchPose(ctx, sw, poseName)
+	if err != nil {
+		return 0, err
+	}
+	label := sw.Name().ShortName() + ":" + poseName + ":carry"
+	constraints := b.withAllowedCollisions(nil, allowed)
+	return b.moveHeldToResolvedPose(ctx, pd, label, constraints, nil)
+}
+
 // Carry = plan-wide orientation constraint on the held object's long axis, so
 // the shaker stays within ~15° of upright for the whole move and doesn't slosh.
 // IgnoreTheta so rotation about the shaker's own vertical axis is still free.
