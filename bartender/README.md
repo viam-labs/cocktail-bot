@@ -40,11 +40,12 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `glass_min_separation_mm` | number | Optional | Detections closer than this in x, y count as one glass. | 50 |
 | `order_sensor_name` | string | Optional | Order sensor to push each attempt reading to. |  |
 | `loading_spot_switch_name` | string | Optional | Pose-switcher component holding the loading-spot `hover`/`grab`/`lift`/`carry-hover` poses used by `stock_bottle`, `retrieve_bottle`, and `move_bottle`. Required for those commands. |  |
-| `data_dir` | string | Optional | Directory for persisted recipes, inventory and the order queue (`order_queue.json`). Falls back to `$VIAM_MODULE_DATA`. With neither set, the queue is kept in memory only. |  |
+| `data_dir` | string | Optional | Directory for persisted recipes, inventory, the order queue (`order_queue.json`) and whether the fridge door is open (`fridge_door.json`). Falls back to `$VIAM_MODULE_DATA`. With neither set, the queue is kept in memory only. |  |
 | `save_motion_requests_dir` | string | Optional | When set, every motion-plan request + response is written here, tagged by order id. |  |
 | `slack_webhook_url` | string | Optional | Incoming webhook URL for order outcome alerts. |  |
 | `machine_id` | string | Optional | Viam machine id; when set, failure alerts deep-link to app.viam.com machine logs. |  |
 | `shaker_cleaning` | object | Optional | v1 feature flag: rinse the shaker on the cleaner after `make_cocktail` serves it. See below. | off |
+| `fridge` | object | Optional | Fridge door the arm swings open by its handle. Needs `data_dir` or `$VIAM_MODULE_DATA` to remember whether the door is open. See below. |  |
 
 ##### `held_bottle_geometry`, `held_shaker_geometry` and `held_stirrer_geometry`
 
@@ -132,6 +133,38 @@ The `station` switch needs these poses:
 "shaker_cleaning": {"enabled": true, "station": "shaker-cleaner", "dwell_ms": 3000, "obstacle": "cleaner-obstacle", "prestage_pose": "cleaner-prestage"}
 ```
 
+##### `fridge`
+
+The arm opens the fridge by gripping the door handle and swinging it about the hinge, then leaves the door standing open until it closes it. While the door is open, every plan swings `door_obstacle` about the hinge to the door's angle, so moves avoid the open door.
+
+| Name | Type | Inclusion | Description | Default |
+| --- | --- | --- | --- | --- |
+| `door_switch_name` | string | Required | Pose switcher holding the handle poses below. Must be in `pose_switcher_names`. |  |
+| `door_obstacle` | string | Required | Obstacle modeling the door panel shut, parented to world. The gripper may touch it while grabbing, swinging and letting go of the handle. |  |
+| `hinge` | object | Required | `{"x", "y"}`: world position (mm) of the vertical hinge axis. |  |
+| `swing_step_degs` | number | Optional | Largest door angle per planned step of the swing. | 10 |
+| `swing_vel_degs_per_sec` | number | Optional | Angular velocity of the swing. Arm default otherwise. |  |
+| `swing_acc_degs_per_sec2` | number | Optional | Angular acceleration of the swing. |  |
+
+The `door_switch_name` switch needs these poses:
+
+| Pose | Door | Used for |
+| --- | --- | --- |
+| `closed-hover` | Shut | Above the handle before grabbing it to open. |
+| `closed-grab` | Shut | Gripper closes on the handle to open. Where closing ends. |
+| `open-retreat` | Open | Backed off from the handle after letting go of the open door. |
+| `open-hover` | Open | Above the handle before grabbing it to close. |
+| `open-grab` | Open | Where opening ends. Gripper closes on the handle to close. |
+| `closed-retreat` | Shut | Backed off from the handle after letting go of the shut door. |
+
+The swing angle is the angle between `closed-grab` and `open-grab` about the hinge. The gripper holds the handle rigidly, so `open-grab` must be `closed-grab` turned about the hinge: within 15 mm and 10°, or the swing errors before moving. Each step is a straight line within 9 mm and 9°, and all steps run as one arm move.
+
+The door is recorded open before an opening swing starts moving and recorded shut only after a closing swing finishes. While it is recorded open outside a swing, for example after a failed swing, `make_cocktail` is refused. Shut the door by hand and press `cancel` with nothing running to record it shut. A `cancel` that stops a running command leaves the record alone, since the door may be partway open.
+
+```json
+"fridge": {"door_switch_name": "fridge-door-handle", "door_obstacle": "fridge-door", "hinge": {"x": 350, "y": -900}, "swing_vel_degs_per_sec": 20}
+```
+
 #### Example Configuration
 
 ```json
@@ -208,11 +241,11 @@ Remove an order that hasn't started: `{"cancel_order": {"order_id": "..."}}`. Re
 
 ##### `cancel`
 
-Cancel the running order. Pending orders stay queued behind the pickup hold.
+Cancel the running order. Pending orders stay queued behind the pickup hold. With nothing running, it also records the fridge door shut; see `fridge`.
 
 ##### `get_status`
 
-Snapshot of the running or last order. Returns `{is_busy, count, current_step, drink, started_at, elapsed_ms, step_history, last_outcome: {drink, ended_at, error?}}`.
+Snapshot of the running or last order. Returns `{is_busy, count, current_step, drink, started_at, elapsed_ms, step_history, last_outcome: {drink, ended_at, error?}}`, plus `fridge_door_open_degs` (0 when shut) when `fridge` is configured.
 
 Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_action`, `stock_bottle`, `retrieve_bottle` and `move_bottle` return an error while a queued drink is being made rather than interrupting it.
 
@@ -227,6 +260,8 @@ Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_
 | `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
 | `clean_shaker` | `{"station": "shaker-cleaner", "dwell_ms": 3000, "power_on_delay_ms": 500, "drain_ms": 1000}` — gripper must be empty with the shaker at shaker-home. Optional `shaker_cleaning.prestage_pose` joint move → pick the shaker up with the `cleaner-grab-*` poses → carry level to `cleaner-hover` → flip to `cleaner-flip-hover` → linear down to `cleaner-approach` → linear down to `cleaner-press` → wait `power_on_delay_ms` → cleaner on → wait `dwell_ms` → cleaner off → wait `drain_ms` for drips → linear up to `cleaner-approach` → linear up to `cleaner-flip-hover` → flip upright at `cleaner-hover` → set the shaker back down at shaker-home with the `cleaner-grab-*` poses. The cleaner on/off steps only happen when `shaker_cleaning.power_switch_name` is set. `power_on_delay_ms` and `drain_ms` default to 0 and are optional. Runs regardless of `shaker_cleaning.enabled`, so poses can be tuned before turning it on. |
+| `open_fridge_door` | `{}` — gripper must be empty and the door recorded shut. `closed-hover` → open gripper → linear to `closed-grab` → close gripper → swing to `open-grab` → open gripper → linear to `open-retreat`. Leaves the door open. Returns `{open_degs, duration_ms}`. |
+| `close_fridge_door` | `{}` — gripper must be empty and the door recorded open. `open-hover` → open gripper → linear to `open-grab` → close gripper → swing to `closed-grab` → open gripper → linear to `closed-retreat`. Returns `{open_degs, duration_ms}`. |
 | `rotate_shakers` | `{"strain_flow": "strain-flow"}` |
 | `pickup_pour_return` | `{"bottle": "vodka", "pour_ms": 1500}` |
 | `pour_into_glasses` | `{"bottle": "vodka", "pours": [{"glass": "serving-glass-center", "pour_ms": 1500}]}` |

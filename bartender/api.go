@@ -66,6 +66,12 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["clean_shaker"]; ok {
 		return b.handleCleanShaker(ctx, raw)
 	}
+	if _, ok := cmd["open_fridge_door"]; ok {
+		return b.handleFridgeDoor(ctx, b.openFridgeDoor)
+	}
+	if _, ok := cmd["close_fridge_door"]; ok {
+		return b.handleFridgeDoor(ctx, b.closeFridgeDoor)
+	}
 	if raw, ok := cmd["pour_into_shaker"]; ok {
 		return b.handlePourIntoShaker(ctx, raw)
 	}
@@ -132,7 +138,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["move_bottle"]; ok {
 		return b.handleMoveBottle(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_glasses, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
+	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, open_fridge_door, close_fridge_door, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_glasses, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
 }
 
 func (b *bartender) handleGetQueue() (map[string]any, error) {
@@ -165,6 +171,10 @@ func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	b.detachHeld()
 	b.detachParked()
+	// Stopping a swing leaves the door partway; only a Cancel once nothing runs means it was shut by hand.
+	if !cancelled {
+		b.markFridgeDoorShut()
+	}
 	return map[string]any{"cancelled": cancelled}, nil
 }
 
@@ -191,6 +201,9 @@ func (b *bartender) handleGetStatus() (map[string]any, error) {
 		}
 	}
 	resp["step_history"] = history
+	if b.cfg.Fridge != nil {
+		resp["fridge_door_open_degs"] = b.fridgeDoorOpenDegs()
+	}
 	if snap.lastOutcome != nil {
 		out := map[string]any{
 			"drink":    snap.lastOutcome.Drink,
@@ -615,6 +628,23 @@ func (b *bartender) handleCleanShaker(ctx context.Context, raw any) (map[string]
 		"dwell_ms":          req.dwellMs,
 		"drain_ms":          req.drainMs,
 		"duration_ms":       time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func (b *bartender) handleFridgeDoor(ctx context.Context, swing func(context.Context) error) (map[string]any, error) {
+	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
+	ctx, done, err := b.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	start := time.Now()
+	if err := swing(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"open_degs":   b.fridgeDoorOpenDegs(),
+		"duration_ms": time.Since(start).Milliseconds(),
 	}, nil
 }
 
@@ -1289,6 +1319,9 @@ func parseRotateShakers(raw any) (string, error) {
 
 func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]any, error) {
 	if err := b.checkParkingClear(); err != nil {
+		return nil, err
+	}
+	if err := b.checkFridgeDoorShut(); err != nil {
 		return nil, err
 	}
 	drinkID, recipe, quantity, double, err := parseMakeCocktail(raw)
