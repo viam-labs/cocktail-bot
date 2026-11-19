@@ -45,7 +45,7 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		poses[name] = pd
 	}
 
-	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	trip, err := b.pickupBottle(ctx, bottleSw)
 	if err != nil {
 		return err
 	}
@@ -71,5 +71,5 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		return fmt.Errorf("%s: %w", posePourGlassRecover, err)
 	}
 
-	return b.returnBottle(ctx, bottleSw, parkedBlocker)
+	return b.returnBottle(ctx, bottleSw, trip)
 }

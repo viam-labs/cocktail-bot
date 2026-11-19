@@ -8,6 +8,9 @@ import (
 )
 
 func (b *bartender) stockBottle(ctx context.Context, slotName string) error {
+	if err := b.refuseFridgeSlots("stock_bottle", slotName); err != nil {
+		return err
+	}
 	slotSw, loadingSw, err := b.stockingSwitches(slotName)
 	if err != nil {
 		return err
@@ -26,6 +29,9 @@ func (b *bartender) stockBottle(ctx context.Context, slotName string) error {
 }
 
 func (b *bartender) retrieveBottle(ctx context.Context, slotName string) error {
+	if err := b.refuseFridgeSlots("retrieve_bottle", slotName); err != nil {
+		return err
+	}
 	slotSw, loadingSw, err := b.stockingSwitches(slotName)
 	if err != nil {
 		return err
@@ -44,6 +50,9 @@ func (b *bartender) retrieveBottle(ctx context.Context, slotName string) error {
 }
 
 func (b *bartender) moveBottle(ctx context.Context, fromName, toName string) error {
+	if err := b.refuseFridgeSlots("move_bottle", fromName, toName); err != nil {
+		return err
+	}
 	fromSw, err := b.findSwitch(fromName)
 	if err != nil {
 		return fmt.Errorf("from switch %q: %w", fromName, err)
@@ -142,4 +151,14 @@ func (b *bartender) extraAllowedForBlocker(blockerName string) []AllowedCollisio
 		return nil
 	}
 	return b.gripperAllowedVsObstacle(obs)
+}
+
+// refuseFridgeSlots keeps stocking out of the fridge until it opens and closes the door around its moves.
+func (b *bartender) refuseFridgeSlots(cmd string, slots ...string) error {
+	for _, slot := range slots {
+		if b.cfg.isFridgeSlot(slot) {
+			return fmt.Errorf("%s: %s is in the fridge, which the arm can't stock yet; move the bottle by hand and choose I moved it manually", cmd, slot)
+		}
+	}
+	return nil
 }

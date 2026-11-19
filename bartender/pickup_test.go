@@ -82,14 +82,14 @@ func TestReturnBottleRestoresOnlyAParkedBlocker(t *testing.T) {
 	t.Run("blocker was never parked", func(t *testing.T) {
 		asked := map[string][]any{}
 		b, back := returnTestBartender(t, asked)
-		test.That(t, b.returnBottle(context.Background(), back, ""), test.ShouldBeNil)
+		test.That(t, b.returnBottle(context.Background(), back, bottleTrip{}), test.ShouldBeNil)
 		test.That(t, asked, test.ShouldBeEmpty)
 	})
 
 	t.Run("blocker was parked", func(t *testing.T) {
 		asked := map[string][]any{}
 		b, back := returnTestBartender(t, asked)
-		err := b.returnBottle(context.Background(), back, "front")
+		err := b.returnBottle(context.Background(), back, bottleTrip{parkedBlocker: "front"})
 		test.That(t, err, test.ShouldNotBeNil)
 		test.That(t, err.Error(), test.ShouldContainSubstring, "retrieve blocker from parking")
 		test.That(t, asked["parking"], test.ShouldResemble, []any{poseHover})

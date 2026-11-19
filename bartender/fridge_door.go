@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/golang/geo/r3"
 	"go.viam.com/rdk/components/arm"
@@ -43,6 +44,8 @@ type Fridge struct {
 	// Vertical hinge axis, world mm.
 	Hinge         *FridgeHinge `json:"hinge"`
 	SwingStepDegs float64      `json:"swing_step_degs,omitempty"`
+	// Bottle slots inside the fridge, from slot_names. Picking one up opens the door first.
+	Slots []string `json:"slots,omitempty"`
 	// Arm default when unset.
 	SwingVelDegsPerSec  float64 `json:"swing_vel_degs_per_sec,omitempty"`
 	SwingAccDegsPerSec2 float64 `json:"swing_acc_degs_per_sec2,omitempty"`
@@ -53,7 +56,7 @@ type FridgeHinge struct {
 	Y float64 `json:"y"`
 }
 
-func (f *Fridge) validate(path string, switchers map[string]struct{}) error {
+func (f *Fridge) validate(path string, switchers, slots map[string]struct{}) error {
 	if f.DoorSwitchName == "" {
 		return errors.New(path + ".door_switch_name is required")
 	}
@@ -75,7 +78,16 @@ func (f *Fridge) validate(path string, switchers map[string]struct{}) error {
 	if f.SwingAccDegsPerSec2 < 0 {
 		return errors.New(path + ".swing_acc_degs_per_sec2 must be > 0 if set")
 	}
+	for _, slot := range f.Slots {
+		if _, ok := slots[slot]; !ok {
+			return fmt.Errorf("%s.slots[%q] is not in slot_names", path, slot)
+		}
+	}
 	return nil
+}
+
+func (c *Config) isFridgeSlot(slot string) bool {
+	return c.Fridge != nil && slices.Contains(c.Fridge.Slots, slot)
 }
 
 func (f *Fridge) swingStepDegs() float64 {

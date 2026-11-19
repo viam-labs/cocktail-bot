@@ -98,7 +98,7 @@ func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz fl
 	bottleSw, pours := rp.bottleSw, rp.pours
 	b.logger.CInfof(ctx, "pouring %v oz %s: %d tilt(s), %v dwell each", oz, ingredient, pours, rp.dwell)
 
-	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	trip, err := b.pickupBottle(ctx, bottleSw)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz fl
 		}
 	}
 
-	return b.returnBottle(ctx, bottleSw, parkedBlocker)
+	return b.returnBottle(ctx, bottleSw, trip)
 }
 
 func pourCount(oz, pourerOz float64) (int, error) {
