@@ -23,7 +23,11 @@ func usesShaker(steps []RecipeStep) bool {
 }
 
 // Drinks that skip the shaker pour straight into the serving glass, which a double would overflow.
+// A drink with a glass but no double_glass has nowhere to serve the double.
 func canDouble(r Recipe) bool {
+	if r.Glass != "" && r.DoubleGlass == "" {
+		return false
+	}
 	return usesShaker(stepsFor(r))
 }
 

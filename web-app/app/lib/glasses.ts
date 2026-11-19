@@ -21,16 +21,17 @@ export interface GlassNeed {
   totalOz: number;
 }
 
-// Volume the serving glass has to hold. A double doubles the pours but not the ice, matching the bartender.
+// Volume the serving glass has to hold. A double doubles the pours but not the ice or its melt, matching the bartender.
 export function glassNeed(steps: RecipeStep[], double = false): GlassNeed {
-  const poured = steps.reduce(
+  const single = steps.reduce(
     (sum, s) => sum + (s.kind === "pour" && Number.isFinite(s.oz) ? s.oz : 0),
     0,
-  ) * (double ? 2 : 1);
+  );
+  const poured = single * (double ? 2 : 1);
   const iced = steps.some((s) => s.kind === "ice");
   const mixed = steps.some((s) => s.kind === "mix");
   const strained = steps.some((s) => s.kind === "strain");
-  const meltOz = iced && mixed ? poured * MELT_FRACTION : 0;
+  const meltOz = iced && mixed ? single * MELT_FRACTION : 0;
   const iceOz = iced && !strained ? ICE_IN_GLASS_OZ : 0;
   return { pouredOz: poured, meltOz, iceOz, totalOz: poured + meltOz + iceOz };
 }

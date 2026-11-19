@@ -78,17 +78,6 @@ func unknownGlassRefs(recipes []Recipe, glasses []Glass) []string {
 	return out
 }
 
-// missingDoubleGlass lists recipes that name a glass and can be doubled but name no glass for the double.
-func missingDoubleGlass(recipes []Recipe) []string {
-	var out []string
-	for _, r := range recipes {
-		if r.Glass != "" && r.DoubleGlass == "" && canDouble(r) {
-			out = append(out, fmt.Sprintf("recipe %q needs a double_glass", r.ID))
-		}
-	}
-	return out
-}
-
 // servingGlass is the glass r is served in, or nil when the recipe names none.
 func servingGlass(r Recipe, double bool, glasses []Glass) (*Glass, error) {
 	id := r.Glass
@@ -116,8 +105,9 @@ const (
 )
 
 // glassNeedOz is about how much the serving glass has to hold for steps: the pours, melt water from
-// mixing over ice, and the shaker's ice when the drink isn't strained.
-func glassNeedOz(steps []RecipeStep) float64 {
+// mixing over ice, and the shaker's ice when the drink isn't strained. A double's ice is the same as a
+// single's, so its melt is figured from the single pours.
+func glassNeedOz(steps []RecipeStep, double bool) float64 {
 	var poured float64
 	var iced, mixed, strained bool
 	for _, s := range steps {
@@ -134,7 +124,11 @@ func glassNeedOz(steps []RecipeStep) float64 {
 	}
 	need := poured
 	if iced && mixed {
-		need += poured * meltFraction
+		single := poured
+		if double {
+			single /= 2
+		}
+		need += single * meltFraction
 	}
 	if iced && !strained {
 		need += iceInGlassOz
@@ -142,11 +136,11 @@ func glassNeedOz(steps []RecipeStep) float64 {
 	return need
 }
 
-func checkGlassFits(glass *Glass, steps []RecipeStep) error {
+func checkGlassFits(glass *Glass, steps []RecipeStep, double bool) error {
 	if glass == nil {
 		return nil
 	}
-	if need := glassNeedOz(steps); need > glass.CapacityOz+1e-9 {
+	if need := glassNeedOz(steps, double); need > glass.CapacityOz+1e-9 {
 		return fmt.Errorf("the drink needs about %.1f oz but the %s glass holds %g oz", need, glass.Name, glass.CapacityOz)
 	}
 	return nil
