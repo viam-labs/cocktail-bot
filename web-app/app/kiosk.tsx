@@ -945,15 +945,17 @@ function PickupDialog({
             ? "Ask a staff member to clear the station."
             : held.double
               ? `Both drinks come in one ${held.glass ? held.glass.toLowerCase() + " glass" : "large glass"}. Grab an extra glass to split it.`
-              : "Take your drink from the station."}
+              : next
+                ? "Take your drink from the station."
+                : "Please take your drink and enjoy!"}
         </p>
-        <p className={styles.pickupNote}>
-          {!next
-            ? "No one else is waiting. When the next order comes in, you’ll be told which glass to place."
-            : nextGlass
+        {next && (
+          <p className={styles.pickupNote}>
+            {nextGlass
               ? "Then place this glass at the station for the next drink:"
               : "Then put an empty glass at the station for the next drink."}
-        </p>
+          </p>
+        )}
         {nextGlass && (
           <div className={styles.pickupGlass}>
             <GlassIcon image={image} size={120} />
@@ -964,7 +966,7 @@ function PickupDialog({
           </div>
         )}
         <button type="button" className={`${styles.btn} ${styles.btnMain} ${styles.pickupBtn}`} onClick={onStartNext}>
-          {next ? "Glass ready, start next" : "Drink taken"}
+          {next ? "Glass ready, start next" : "Done"}
         </button>
       </div>
     </div>
