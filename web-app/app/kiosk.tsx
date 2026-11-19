@@ -947,7 +947,7 @@ function PickupDialog({
               ? `Both drinks come in one ${held.glass ? held.glass.toLowerCase() + " glass" : "large glass"}. Grab an extra glass to split it.`
               : next
                 ? "Take your drink from the station."
-                : "Please take your drink and enjoy!"}
+                : "Drink ready! Please take your drink."}
         </p>
         {next && (
           <p className={styles.pickupNote}>
