@@ -23,7 +23,8 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 	if err != nil {
 		return err
 	}
-	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	if err != nil {
 		return err
 	}
 
@@ -41,16 +42,20 @@ func (b *bartender) pickupPourReturn(ctx context.Context, bottleSwitchName strin
 		return fmt.Errorf("pour-upright: %w", err)
 	}
 
-	return b.returnBottle(ctx, bottleSw)
+	return b.returnBottle(ctx, bottleSw, parkedBlocker)
 }
 
-// Ends holding the bottle at its carry-hover pose.
-func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
-	_, extraAllowed, err := b.prepareBlockerFor(ctx, bottleSw)
+// Ends holding the bottle at its carry-hover pose. Returns the blocker it
+// parked to reach the bottle, or "" when nothing was in the way.
+func (b *bartender) pickupBottle(ctx context.Context, bottleSw toggleswitch.Switch) (string, error) {
+	parkedBlocker, extraAllowed, err := b.prepareBlockerFor(ctx, bottleSw)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return b.pickupBottleAt(ctx, bottleSw, extraAllowed)
+	if err := b.pickupBottleAt(ctx, bottleSw, extraAllowed); err != nil {
+		return "", err
+	}
+	return parkedBlocker, nil
 }
 
 func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
@@ -244,7 +249,9 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 }
 
 // Starts from anywhere with the bottle held upright; ends empty-handed at home.
-func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch) error {
+// Only parkedBlocker comes back from parking: a blocker whose slot was empty
+// was never parked.
+func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Switch, parkedBlocker string) error {
 	blockerName, err := b.blockerForTarget(ctx, bottleSw)
 	if err != nil {
 		return err
@@ -252,7 +259,7 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 	if err := b.returnBottleAt(ctx, bottleSw, b.extraAllowedForBlocker(blockerName)); err != nil {
 		return err
 	}
-	return b.restoreBlocker(ctx, blockerName)
+	return b.restoreBlocker(ctx, parkedBlocker)
 }
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {

@@ -43,7 +43,8 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		poses[name] = pd
 	}
 
-	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	if err != nil {
 		return err
 	}
 	if _, err := b.carryHeldLevelToResolved(ctx, poses[posePourGlassApproach], posePourGlassApproach+":carry", glassAllow...); err != nil {
@@ -68,5 +69,5 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		return fmt.Errorf("%s: %w", posePourGlassRecover, err)
 	}
 
-	return b.returnBottle(ctx, bottleSw)
+	return b.returnBottle(ctx, bottleSw, parkedBlocker)
 }

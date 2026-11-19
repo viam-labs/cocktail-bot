@@ -115,7 +115,8 @@ func (b *bartender) pourIntoGlasses(ctx context.Context, req pourIntoGlassesReq)
 		return err
 	}
 
-	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	if err != nil {
 		return err
 	}
 	pourOpts := b.pourMoveOptions()
@@ -136,7 +137,7 @@ func (b *bartender) pourIntoGlasses(ctx context.Context, req pourIntoGlassesReq)
 			return fmt.Errorf("%s pour-upright: %w", label, err)
 		}
 	}
-	return b.returnBottle(ctx, bottleSw)
+	return b.returnBottle(ctx, bottleSw, parkedBlocker)
 }
 
 func parsePourIntoGlasses(raw any) (pourIntoGlassesReq, error) {
