@@ -67,6 +67,7 @@ type Config struct {
 	ShakerCleaning *ShakerCleaning `json:"shaker_cleaning,omitempty"`
 	// Pourer oz (string key, e.g. "1.5") → dwell ms at the tilt; sizes not listed use pour_into_shaker_dwell_ms.
 	PourDwellMsByPourerOz map[string]int `json:"pour_dwell_ms_by_pourer_oz,omitempty"`
+	Fridge                *Fridge        `json:"fridge,omitempty"`
 }
 
 // ShakerCleaning is the v1 feature flag for rinsing the shaker on the cleaner
@@ -199,6 +200,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 			return nil, nil, errors.New(path + ": shaker_cleaning.drain_ms must be >= 0")
 		}
 	}
+	if c.Fridge != nil {
+		if err := c.Fridge.validate(path+".fridge", switcherSet); err != nil {
+			return nil, nil, err
+		}
+	}
 	deps := []string{
 		framesystem.PublicServiceName.String(),
 		arm.Named(c.ArmName).String(),
@@ -218,6 +224,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 	}
 	for _, name := range c.glassObstacleNames() {
 		deps = append(deps, gripper.Named(name).String())
+	}
+	if c.Fridge != nil {
+		deps = append(deps, gripper.Named(c.Fridge.DoorObstacle).String())
 	}
 
 	var optional []string

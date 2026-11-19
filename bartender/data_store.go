@@ -118,6 +118,7 @@ const (
 	whiskeyProfilesFileName = "whiskey_profiles.json"
 	pourMenusFileName       = "pour_menus.json"
 	queueFileName           = "order_queue.json"
+	fridgeDoorFileName      = "fridge_door.json"
 )
 
 var errDataStoreNotConfigured = errors.New("data_dir not configured; recipes and inventory DoCommands unavailable")
@@ -132,6 +133,11 @@ type dataStore struct {
 	categories      map[string]string
 	whiskeyProfiles map[string]WhiskeyProfile
 	pourMenus       []PourMenu
+	fridgeDoor      fridgeDoorState
+}
+
+type fridgeDoorState struct {
+	OpenDegs float64 `json:"open_degs"`
 }
 
 func newDataStore(dir string) (*dataStore, error) {
@@ -168,6 +174,9 @@ func newDataStore(dir string) (*dataStore, error) {
 		return nil, err
 	}
 	if err := ds.loadPourMenus(); err != nil {
+		return nil, err
+	}
+	if err := ds.loadFridgeDoor(); err != nil {
 		return nil, err
 	}
 	return ds, nil
@@ -610,6 +619,47 @@ func (ds *dataStore) persistInventoryLocked() error {
 		return fmt.Errorf("marshal inventory: %w", err)
 	}
 	path := filepath.Join(ds.dir, inventoryFileName)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, bytes, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
+	return nil
+}
+
+func (ds *dataStore) loadFridgeDoor() error {
+	path := filepath.Join(ds.dir, fridgeDoorFileName)
+	bytes, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if err := json.Unmarshal(bytes, &ds.fridgeDoor); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	return nil
+}
+
+// FridgeDoorOpenDegs is how far the fridge door was last recorded open; 0 is shut.
+func (ds *dataStore) FridgeDoorOpenDegs() float64 {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return ds.fridgeDoor.OpenDegs
+}
+
+func (ds *dataStore) SetFridgeDoorOpenDegs(degs float64) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.fridgeDoor.OpenDegs = degs
+	bytes, err := json.MarshalIndent(ds.fridgeDoor, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal fridge door: %w", err)
+	}
+	path := filepath.Join(ds.dir, fridgeDoorFileName)
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, bytes, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", tmp, err)

@@ -183,6 +183,11 @@ func (b *bartender) findSwitch(name string) (toggleswitch.Switch, error) {
 }
 
 func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSystem, referenceframe.FrameSystemInputs, error) {
+	return b.inputsWithFridgeDoorAt(ctx, b.fridgeDoorOpenDegs())
+}
+
+// inputsWithFridgeDoorAt is currentInputs with the fridge door obstacle swung doorDegs open.
+func (b *bartender) inputsWithFridgeDoorAt(ctx context.Context, doorDegs float64) (*referenceframe.FrameSystem, referenceframe.FrameSystemInputs, error) {
 	fsCfg, err := b.fsSvc.FrameSystemConfig(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get frame system config: %w", err)
@@ -194,6 +199,11 @@ func (b *bartender) currentInputs(ctx context.Context) (*referenceframe.FrameSys
 			if !absent[p.FrameConfig.Name()] {
 				parts = append(parts, p)
 			}
+		}
+	}
+	if b.cfg.Fridge != nil && doorDegs != 0 {
+		if parts, err = b.cfg.Fridge.swingDoorPart(parts, doorDegs); err != nil {
+			return nil, nil, err
 		}
 	}
 	fs, err := referenceframe.NewFrameSystem("bartender", parts, nil)
