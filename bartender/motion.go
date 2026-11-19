@@ -568,6 +568,13 @@ func (b *bartender) bottlesProtectorAllowed() []AllowedCollision {
 	return b.gripperAllowedVsObstacle(b.cfg.BottlesProtectorObstacle)
 }
 
+func (b *bartender) loadingProtectorAllowed() []AllowedCollision {
+	if b.cfg.LoadingProtectorObstacle == "" {
+		return nil
+	}
+	return b.gripperAllowedVsObstacle(b.cfg.LoadingProtectorObstacle)
+}
+
 func (b *bartender) iceProtectorAllowed() []AllowedCollision {
 	if b.cfg.IceProtectorObstacle == "" {
 		return nil

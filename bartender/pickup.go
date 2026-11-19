@@ -91,10 +91,19 @@ func (b *bartender) pickupFridgeBottle(ctx context.Context, bottleSw toggleswitc
 	return trip, nil
 }
 
+// bottleSpotAllowed is what moves to and from a bottle spot may touch: the spot's own bottle, the
+// bottles protector, and the loading protector, which only the loading spot opens.
+func (b *bartender) bottleSpotAllowed(name string, extra []AllowedCollision) []AllowedCollision {
+	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
+	if name == b.cfg.LoadingSpotSwitchName {
+		allowed = append(allowed, b.loadingProtectorAllowed()...)
+	}
+	return append(allowed, extra...)
+}
+
 func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
-	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
-	allowed = append(allowed, extra...)
+	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
 	}
@@ -305,8 +314,7 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
-	allowed := append(b.pickupAllowedCollisions(name), b.bottlesProtectorAllowed()...)
-	allowed = append(allowed, extra...)
+	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
 	}
