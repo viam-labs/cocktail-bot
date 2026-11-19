@@ -104,6 +104,7 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	}
 	// First pass: collect all names and check for duplicates.
 	allNames := make(map[string]bool, len(cfg.Poses))
+	jointPoses := make(map[string]bool)
 	for i, p := range cfg.Poses {
 		if p.PoseName == "" {
 			return nil, nil, fmt.Errorf("%s: poses[%d] is missing required field \"pose_name\"", path, i)
@@ -112,6 +113,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 			return nil, nil, fmt.Errorf("%s: poses[%d] has duplicate pose_name %q", path, i, p.PoseName)
 		}
 		allNames[p.PoseName] = true
+		if len(p.JointPositionsDegs) > 0 {
+			jointPoses[p.PoseName] = true
+		}
 	}
 
 	// Second pass: validate fields and baseline references.
@@ -154,6 +158,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 		if hasBaseline {
 			if !allNames[p.Baseline] {
 				return nil, nil, fmt.Errorf("%s: poses[%d] (%q) baseline %q not found in poses", path, i, p.PoseName, p.Baseline)
+			}
+			if jointPoses[p.Baseline] {
+				return nil, nil, fmt.Errorf("%s: poses[%d] (%q) baseline %q is a joint-space pose; give this pose its own \"pose_value\"", path, i, p.PoseName, p.Baseline)
 			}
 			baselineOf[p.PoseName] = p.Baseline
 		}

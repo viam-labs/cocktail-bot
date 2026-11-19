@@ -90,6 +90,17 @@ func TestValidate(t *testing.T) {
 			wantErr: "not valid on a joint-space pose",
 		},
 		{
+			name: "baseline on a joint pose",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{
+					{PoseName: "hover", JointPositionsDegs: []float64{0, 0, 0, 0, 0, 0}},
+					{PoseName: "insert", Baseline: "hover", Translation: &Translation{Z: -200}},
+				},
+			},
+			wantErr: "baseline \"hover\" is a joint-space pose",
+		},
+		{
 			name: "translation without baseline",
 			cfg: Config{
 				ComponentName: "arm", Motion: "builtin",
