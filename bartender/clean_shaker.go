@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
+
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 const (
@@ -46,7 +49,7 @@ func (b *bartender) cleanShaker(ctx context.Context, req cleanShakerRequest) err
 	if _, err := b.carryHeldLevel(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("carry to cleaner-hover: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseCleanerFlipHover, cleanerAllow...); err != nil {
+	if err := b.flipShaker(ctx, sw, poseCleanerFlipHover, 1, cleanerAllow); err != nil {
 		return fmt.Errorf("flip shaker upside down at cleaner-hover: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseCleanerApproach, cleanerAllow...); err != nil {
@@ -64,10 +67,36 @@ func (b *bartender) cleanShaker(ctx context.Context, req cleanShakerRequest) err
 	if _, err := b.linearCarryToPose(ctx, sw, poseCleanerFlipHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("linear-retreat to cleaner-flip-hover: %w", err)
 	}
-	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
+	if err := b.flipShaker(ctx, sw, poseCleanerHover, -1, cleanerAllow); err != nil {
 		return fmt.Errorf("flip shaker upright at cleaner-hover: %w", err)
 	}
 	return b.returnShakerHomeUsing(ctx, sw, grip)
+}
+
+// flipShaker turns the wrist by shaker_cleaning.flip_wrist_degs (times sign) so
+// the shaker always swings the same way; a goal pose given in space would leave
+// the direction up to the planner. Without it, the arm moves to poseName.
+func (b *bartender) flipShaker(ctx context.Context, sw toggleswitch.Switch, poseName string, sign float64, allowed []AllowedCollision) error {
+	sc := b.cfg.ShakerCleaning
+	if sc == nil || sc.FlipWristDegs == 0 {
+		_, err := b.moveArmToPoseOnSwitch(ctx, sw, poseName, allowed...)
+		return err
+	}
+	inputs, err := b.arm.CurrentInputs(ctx)
+	if err != nil {
+		return fmt.Errorf("get arm inputs: %w", err)
+	}
+	if len(inputs) == 0 {
+		return errors.New("arm reported no joints")
+	}
+	degs := make([]float64, len(inputs))
+	for i, in := range inputs {
+		degs[i] = in * 180.0 / math.Pi
+	}
+	degs[len(degs)-1] += sign * sc.FlipWristDegs
+	label := sw.Name().ShortName() + ":" + poseName + ":wrist-flip"
+	_, err = b.moveToResolvedPose(ctx, &poseData{jointPositionsDegs: degs}, label, b.withAllowedCollisions(nil, allowed), nil)
+	return err
 }
 
 func (b *bartender) rinse(ctx context.Context, req cleanShakerRequest) error {

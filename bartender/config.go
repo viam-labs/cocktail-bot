@@ -3,6 +3,7 @@ package bartender
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 
 	"go.viam.com/rdk/components/arm"
@@ -84,6 +85,8 @@ type ShakerCleaning struct {
 	DrainMs int `json:"drain_ms,omitempty"`
 	// Joint-space pose on station passed through before the cleaner grab, like mix_prestage_pose.
 	PrestagePose string `json:"prestage_pose,omitempty"`
+	// Wrist turn from cleaner-hover to cleaner-flip-hover; its sign sets which way the shaker swings. 0 lets the planner pick.
+	FlipWristDegs float64 `json:"flip_wrist_degs,omitempty"`
 	// Held shaker cylinder for the cleaner's lower grip; defaults to held_shaker_geometry.
 	HeldShakerGeometry *HeldObjectGeometry `json:"held_shaker_geometry,omitempty"`
 }
@@ -198,6 +201,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 		if sc.DrainMs < 0 {
 			return nil, nil, errors.New(path + ": shaker_cleaning.drain_ms must be >= 0")
+		}
+		if math.Abs(sc.FlipWristDegs) > 360 {
+			return nil, nil, errors.New(path + ": shaker_cleaning.flip_wrist_degs must be between -360 and 360")
 		}
 	}
 	if c.Fridge != nil {

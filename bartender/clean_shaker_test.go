@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -69,6 +70,8 @@ func TestConfigValidateShakerCleaning(t *testing.T) {
 		{"negative dwell", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", DwellMs: -1}, "dwell_ms must be >= 0"},
 		{"negative drain", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", DrainMs: -1}, "drain_ms must be >= 0"},
 		{"negative power-on delay", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", PowerOnDelayMs: -1}, "power_on_delay_ms must be >= 0"},
+		{"flip wrist", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", FlipWristDegs: -180}, ""},
+		{"flip wrist past a turn", &ShakerCleaning{Enabled: true, Station: "shaker-cleaner", FlipWristDegs: 361}, "flip_wrist_degs"},
 		{"bad held geometry while disabled", &ShakerCleaning{HeldShakerGeometry: &HeldObjectGeometry{Type: "box"}}, "shaker_cleaning.held_shaker_geometry.type"},
 	}
 	for _, tc := range cases {
@@ -193,4 +196,28 @@ func TestRinseCancelledDuringPowerOnDelayNeverTurnsCleanerOn(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "power-on delay")
 	test.That(t, sw.calls(), test.ShouldBeEmpty)
+}
+
+func TestFlipShakerTurnsWristBySignedDegs(t *testing.T) {
+	start := []float64{10, -60, -30, -80, 100, -20}
+	for _, tc := range []struct {
+		name   string
+		sign   float64
+		wantJ6 float64
+	}{
+		{"upside down", 1, -200},
+		{"upright", -1, 160},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, sw, executed := jointPoseBartender(t, start, start)
+			b.cfg.ShakerCleaning = &ShakerCleaning{FlipWristDegs: -180}
+			test.That(t, b.flipShaker(context.Background(), sw, poseCleanerFlipHover, tc.sign, nil), test.ShouldBeNil)
+			test.That(t, *executed, test.ShouldNotBeEmpty)
+			last := (*executed)[len(*executed)-1]
+			test.That(t, last[5]*180/math.Pi, test.ShouldAlmostEqual, tc.wantJ6, 1e-6)
+			for i := 0; i < 5; i++ {
+				test.That(t, last[i]*180/math.Pi, test.ShouldAlmostEqual, start[i], 1e-6)
+			}
+		})
+	}
 }
