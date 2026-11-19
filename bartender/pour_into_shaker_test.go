@@ -2,6 +2,7 @@ package bartender
 
 import (
 	"testing"
+	"time"
 
 	"go.viam.com/test"
 )
@@ -67,6 +68,47 @@ func TestParsePourIntoShaker(t *testing.T) {
 			test.That(t, err, test.ShouldBeNil)
 			test.That(t, bottle, test.ShouldEqual, tc.bottle)
 			test.That(t, oz, test.ShouldEqual, tc.oz)
+		})
+	}
+}
+
+func TestPourDwell(t *testing.T) {
+	b := &bartender{cfg: &Config{
+		PourIntoShakerDwellMs: 3500,
+		PourDwellMsByPourerOz: map[string]int{"0.5": 1500, "1": 2500, "1.50": 3600},
+	}}
+	test.That(t, b.pourDwell(0.5), test.ShouldEqual, 1500*time.Millisecond)
+	test.That(t, b.pourDwell(1), test.ShouldEqual, 2500*time.Millisecond)
+	test.That(t, b.pourDwell(1.5), test.ShouldEqual, 3600*time.Millisecond)
+	test.That(t, b.pourDwell(2), test.ShouldEqual, 3500*time.Millisecond)
+
+	b.cfg = &Config{}
+	test.That(t, b.pourDwell(1), test.ShouldEqual, defaultPourIntoShakerDwellMs*time.Millisecond)
+}
+
+func TestConfigValidatePourDwellMsByPourerOz(t *testing.T) {
+	cases := []struct {
+		name     string
+		dwells   map[string]int
+		errMatch string
+	}{
+		{"valid", map[string]int{"0.5": 1500, "1.5": 3500}, ""},
+		{"not a number", map[string]int{"big": 1500}, "pourer size"},
+		{"zero oz", map[string]int{"0": 1500}, "pourer size"},
+		{"zero dwell", map[string]int{"1": 0}, "> 0 ms"},
+		{"duplicate size", map[string]int{"1": 2500, "1.0": 2600}, "duplicates"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{ArmName: "arm", GripperName: "gripper", PoseSwitcherNames: []string{"bottle"}, PourDwellMsByPourerOz: tc.dwells}
+			_, _, err := cfg.Validate("svc")
+			if tc.errMatch == "" {
+				test.That(t, err, test.ShouldBeNil)
+				return
+			}
+			test.That(t, err, test.ShouldNotBeNil)
+			test.That(t, err.Error(), test.ShouldContainSubstring, "pour_dwell_ms_by_pourer_oz")
+			test.That(t, err.Error(), test.ShouldContainSubstring, tc.errMatch)
 		})
 	}
 }

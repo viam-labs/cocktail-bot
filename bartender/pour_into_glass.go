@@ -16,10 +16,12 @@ const (
 // pourIntoGlass pours straight from the bottle. With a glass it uses that glass's direct-pour poses;
 // without one, the first pose switcher that defines them.
 func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz float64, glass *Glass) error {
-	bottleSw, pours, err := b.resolvePour(ingredient, oz)
+	rp, err := b.resolvePour(ingredient, oz)
 	if err != nil {
 		return err
 	}
+	bottleSw, pours := rp.bottleSw, rp.pours
+	b.logger.CInfof(ctx, "pouring %v oz %s: %d tilt(s), %v dwell each", oz, ingredient, pours, rp.dwell)
 
 	poses := map[string]*poseData{}
 	var glassSw toggleswitch.Switch
@@ -56,7 +58,7 @@ func (b *bartender) pourIntoGlass(ctx context.Context, ingredient string, oz flo
 		if _, err := b.moveToResolvedPose(ctx, poses[posePourGlassTilt], posePourGlassTilt, overGlass, pourOpts); err != nil {
 			return fmt.Errorf("%s (pour %d/%d): %w", posePourGlassTilt, i+1, pours, err)
 		}
-		if err := sleepCtx(ctx, b.pourIntoShakerDwell()); err != nil {
+		if err := sleepCtx(ctx, rp.dwell); err != nil {
 			return fmt.Errorf("direct pour dwell: %w", err)
 		}
 		if _, err := b.moveToResolvedPose(ctx, poses[posePourGlassApproach], posePourGlassApproach, overGlass, pourOpts); err != nil {
