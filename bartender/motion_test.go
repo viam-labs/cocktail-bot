@@ -208,3 +208,57 @@ func TestCartesianPoseOfJointPoseIsWhereThoseJointsPutTheArm(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, same, test.ShouldEqual, cartesian)
 }
+
+func TestJointPoseGoal(t *testing.T) {
+	startDegs := []float64{-170, -90, 90, -90, -90, 170}
+	poseDegs := []float64{170, -90, 90, -90, -90, -170}
+	cases := []struct {
+		name        string
+		nearestTurn bool
+		wantDegs    []float64
+	}{
+		{"takes the nearest turn when the pose allows it", true, []float64{-190, -90, 90, -90, -90, 190}},
+		{"is exact otherwise", false, poseDegs},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, sw, executed := jointPoseBartender(t, startDegs, poseDegs)
+			plain := sw.DoFunc
+			sw.DoFunc = func(ctx context.Context, cmd map[string]any) (map[string]any, error) {
+				resp, err := plain(ctx, cmd)
+				resp["nearest_turn"] = tc.nearestTurn
+				return resp, err
+			}
+
+			_, err := b.moveArmToJointGoalOnSwitch(context.Background(), sw, "prestage")
+			test.That(t, err, test.ShouldBeNil)
+			test.That(t, *executed, test.ShouldNotBeEmpty)
+			last := (*executed)[len(*executed)-1]
+			for i, want := range degsToInputs(tc.wantDegs) {
+				test.That(t, last[i], test.ShouldAlmostEqual, want, 1e-6)
+			}
+		})
+	}
+}
+
+func TestNearestTurn(t *testing.T) {
+	fullTurns := referenceframe.Limit{Min: -2 * math.Pi, Max: 2 * math.Pi}
+	deg := func(d float64) float64 { return d * math.Pi / 180 }
+	cases := []struct {
+		name                string
+		goal, current, want float64
+		limit               referenceframe.Limit
+	}{
+		{"goal already nearest", deg(40), deg(0), deg(40), fullTurns},
+		{"a turn down is nearer", deg(170), deg(-170), deg(-190), fullTurns},
+		{"a turn up is nearer", deg(-170), deg(170), deg(190), fullTurns},
+		{"nearer turn is past the joint limit", deg(10), deg(355), deg(10), fullTurns},
+		{"nearer turn is too close to the joint limit", deg(-40), deg(330), deg(-40), fullTurns},
+		{"joint without a full turn of travel", deg(170), deg(-170), deg(170), referenceframe.Limit{Min: -math.Pi, Max: math.Pi}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			test.That(t, nearestTurn(tc.goal, tc.current, tc.limit), test.ShouldAlmostEqual, tc.want, 1e-9)
+		})
+	}
+}

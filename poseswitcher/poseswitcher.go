@@ -44,6 +44,7 @@ type PoseConf struct {
 	PoseName                        string         `json:"pose_name"`
 	PoseValue                       *commonpb.Pose `json:"pose_value,omitempty"`
 	JointPositionsDegs              []float64      `json:"joint_positions_degs,omitempty"`
+	NearestTurn                     bool           `json:"nearest_turn,omitempty"`
 	Baseline                        string         `json:"baseline,omitempty"`
 	Translation                     *Translation   `json:"translation,omitempty"`
 	Orientation                     *Orientation   `json:"orientation,omitempty"`
@@ -78,6 +79,7 @@ type poseValues struct {
 	OX, OY, OZ                      float64
 	Theta                           float64
 	JointPositionsDegs              []float64
+	NearestTurn                     bool
 	VelDegsPerSec                   float64
 	AccDegsPerSec2                  float64
 	LineToleranceMm                 float64
@@ -142,6 +144,9 @@ func (cfg *Config) Validate(path string) ([]string, []string, error) {
 			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) must have one of \"pose_value\", \"baseline\", or \"joint_positions_degs\"", path, i, p.PoseName)
 		}
 
+		if p.NearestTurn && !hasJoints {
+			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"nearest_turn\" only applies to a joint-space pose", path, i, p.PoseName)
+		}
 		if hasJoints && (p.Translation != nil || p.Orientation != nil) {
 			return nil, nil, fmt.Errorf("%s: poses[%d] (%q) \"translation\" and \"orientation\" are not valid on a joint-space pose", path, i, p.PoseName)
 		}
@@ -269,6 +274,7 @@ func resolvePoses(poses []PoseConf) []poseValues {
 		case len(p.JointPositionsDegs) > 0:
 			resolved[i] = poseValues{
 				JointPositionsDegs: append([]float64(nil), p.JointPositionsDegs...),
+				NearestTurn:        p.NearestTurn,
 			}
 		case p.PoseValue != nil:
 			resolved[i] = poseValues{
@@ -386,6 +392,9 @@ func (s *multiPosesExecutionSwitch) DoCommand(ctx context.Context, cmd map[strin
 						joints[i] = j
 					}
 					resp["joint_positions_degs"] = joints
+					if rp.NearestTurn {
+						resp["nearest_turn"] = true
+					}
 				} else {
 					resp["x"] = rp.X
 					resp["y"] = rp.Y

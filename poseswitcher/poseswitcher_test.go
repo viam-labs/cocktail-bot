@@ -90,6 +90,14 @@ func TestValidate(t *testing.T) {
 			wantErr: "not valid on a joint-space pose",
 		},
 		{
+			name: "nearest_turn on a pose in space",
+			cfg: Config{
+				ComponentName: "arm", Motion: "builtin",
+				Poses: []PoseConf{{PoseName: "a", PoseValue: basePose, NearestTurn: true}},
+			},
+			wantErr: "\"nearest_turn\" only applies to a joint-space pose",
+		},
+		{
 			name: "baseline on a joint pose",
 			cfg: Config{
 				ComponentName: "arm", Motion: "builtin",
@@ -301,6 +309,13 @@ func TestResolvePoses(t *testing.T) {
 			{PoseName: "a", JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}},
 		})
 		assertPoseEqual(t, resolved[0], poseValues{JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}})
+	})
+
+	t.Run("joint pose that takes the nearest turn", func(t *testing.T) {
+		resolved := resolvePoses([]PoseConf{
+			{PoseName: "a", JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}, NearestTurn: true},
+		})
+		assertPoseEqual(t, resolved[0], poseValues{JointPositionsDegs: []float64{0, -30, 90, 0, 45, 0}, NearestTurn: true})
 	})
 
 	t.Run("circle params", func(t *testing.T) {

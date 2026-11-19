@@ -97,7 +97,7 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `serve_station` | string | Required | Default `serving_station` for the serve step. |  |
 | `ice_dwell_ms` | int | Optional | Dwell at the ice lever. | 0 |
 | `mix_dwell_ms` | int | Optional | Mixing bob duration. | 0 |
-| `stir_station` | string | Optional | Switch holding `stir-storage-hover` / `stir-storage-place` / `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. Teach `stir-hover` as `joint_positions_degs` and give `stir-insert` its own `pose_value`: a `stir-hover` given as a pose lets the planner arrive with the wrist flipped and J6 near its limit, and the straight insert then fails with "no direct solutions found". | `stir` |
+| `stir_station` | string | Optional | Switch holding `stir-storage-hover` / `stir-storage-place` / `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. Teach `stir-hover` as `joint_positions_degs` and give `stir-insert` its own `pose_value`: a `stir-hover` given as a pose lets the planner arrive with the wrist flipped and J6 near its limit, and the straight insert then fails with "no direct solutions found". Set `nearest_turn: true` on `stir-hover` so the carry to it doesn't spin the base a full turn. | `stir` |
 | `stir_dwell_ms` | int | Optional | How long a `stir` step circles. | `mix_dwell_ms` |
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
 | `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
