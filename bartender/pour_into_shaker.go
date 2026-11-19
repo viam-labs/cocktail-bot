@@ -57,7 +57,8 @@ func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz fl
 		return err
 	}
 
-	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+	parkedBlocker, err := b.pickupBottle(ctx, bottleSw)
+	if err != nil {
 		return err
 	}
 	if _, err := b.carryHeldToUniversal(ctx, posePourApproach); err != nil {
@@ -77,7 +78,7 @@ func (b *bartender) pourIntoShaker(ctx context.Context, ingredient string, oz fl
 		}
 	}
 
-	return b.returnBottle(ctx, bottleSw)
+	return b.returnBottle(ctx, bottleSw, parkedBlocker)
 }
 
 func pourCount(oz, pourerOz float64) (int, error) {

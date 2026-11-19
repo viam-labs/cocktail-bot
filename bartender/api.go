@@ -263,7 +263,7 @@ func (b *bartender) handleGrabBottle(ctx context.Context, raw any) (map[string]a
 		return nil, err
 	}
 	start := time.Now()
-	if err := b.pickupBottle(ctx, bottleSw); err != nil {
+	if _, err := b.pickupBottle(ctx, bottleSw); err != nil {
 		return nil, err
 	}
 	return map[string]any{
