@@ -55,6 +55,7 @@ type Config struct {
 	MixerPowerSwitchName     string   `json:"mixer_power_switch_name,omitempty"`
 	BottlesProtectorObstacle string   `json:"bottles_protector_obstacle,omitempty"`
 	IceProtectorObstacle     string   `json:"ice_protector_obstacle,omitempty"`
+	LoadingProtectorObstacle string   `json:"loading_protector_obstacle,omitempty"`
 	SlotNames                []string `json:"slot_names,omitempty"`
 	ParkingSwitchName        string   `json:"parking_switch_name,omitempty"`
 	LoadingSpotSwitchName    string   `json:"loading_spot_switch_name,omitempty"`

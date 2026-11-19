@@ -95,3 +95,24 @@ func TestReturnBottleRestoresOnlyAParkedBlocker(t *testing.T) {
 		test.That(t, asked["parking"], test.ShouldResemble, []any{poseHover})
 	})
 }
+
+func TestBottleSpotAllowedOpensLoadingProtectorOnlyAtLoadingSpot(t *testing.T) {
+	b := &bartender{cfg: &Config{
+		ArmName:                  "arm",
+		GripperName:              "gripper",
+		LoadingSpotSwitchName:    "loading-spot",
+		LoadingProtectorObstacle: "loading-protector",
+	}}
+	shield := AllowedCollision{Frame1: heldObjectFrameName, Frame2: "loading-protector"}
+	extra := AllowedCollision{Frame1: "gripper:claws", Frame2: "slot-a-blocker"}
+
+	atLoading := b.bottleSpotAllowed("loading-spot", []AllowedCollision{extra})
+	test.That(t, atLoading, test.ShouldContain, shield)
+	test.That(t, atLoading, test.ShouldContain, AllowedCollision{Frame1: "arm:link6", Frame2: "loading-protector"})
+	test.That(t, atLoading, test.ShouldContain, extra)
+	test.That(t, b.bottleSpotAllowed("slot-a-bottom-back", nil), test.ShouldNotContain, shield)
+	test.That(t, b.bottleSpotAllowed("parking", nil), test.ShouldNotContain, shield)
+
+	b.cfg.LoadingProtectorObstacle = ""
+	test.That(t, b.bottleSpotAllowed("loading-spot", nil), test.ShouldNotContain, shield)
+}

@@ -32,6 +32,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `mixer_protector_obstacle` | string | Optional | Obstacle name whose collisions are allowed during `mix()` only. |  |
 | `mixer_power_switch_name` | string | Optional | Switch that powers the mixer, e.g. `viam:zigbee2mqtt:switch` on a smart plug. `mix()` turns it on once the shaker is seated and off before withdrawing (and on error, cancel, or close). When set, the switch is a required dependency. If switching fails, the order continues and a Slack warning asks for the mixer to be switched by hand. Empty leaves the mixer manual. |  |
 | `bottles_protector_obstacle` | string | Optional | Obstacle name whose collisions are allowed during `pickupBottle` and `returnBottle` only. |  |
+| `loading_protector_obstacle` | string | Optional | Obstacle covering the loading spot. Its collisions are allowed only on moves to and from the loading spot (`stock_bottle`, `retrieve_bottle`, and `move_bottle` to or from it), so every other flow keeps clear of it. |  |
 | `glass_finder_name` | string | Optional | Vision service returning world-frame glass point clouds, e.g. `viam:cocktail-bot:glass-finder` on the wrist camera. |  |
 | `glass_table_z_mm` | number | Optional | World z of the table surface; the search aims the camera where its `glass-look` view meets it. | 0 |
 | `glass_search_lower_mm` | []number | Optional | Mm below `glass-look` to lower the camera between search attempts. | `[0, 5, 10]` |
