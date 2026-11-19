@@ -75,6 +75,8 @@ type ShakerCleaning struct {
 	DwellMs         int    `json:"dwell_ms,omitempty"`
 	Obstacle        string `json:"obstacle,omitempty"`
 	PowerSwitchName string `json:"power_switch_name,omitempty"`
+	// Pause after pressing the shaker onto the cleaner before turning cleaner power on.
+	PowerOnDelayMs int `json:"power_on_delay_ms,omitempty"`
 	// Pause after cutting cleaner power before lifting the shaker, so water can drip off.
 	DrainMs int `json:"drain_ms,omitempty"`
 	// Joint-space pose on station passed through before the cleaner grab, like mix_prestage_pose.
@@ -184,6 +186,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 		if sc.DwellMs < 0 {
 			return nil, nil, errors.New(path + ": shaker_cleaning.dwell_ms must be >= 0")
+		}
+		if sc.PowerOnDelayMs < 0 {
+			return nil, nil, errors.New(path + ": shaker_cleaning.power_on_delay_ms must be >= 0")
 		}
 		if sc.DrainMs < 0 {
 			return nil, nil, errors.New(path + ": shaker_cleaning.drain_ms must be >= 0")

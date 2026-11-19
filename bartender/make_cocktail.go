@@ -186,7 +186,12 @@ func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults) error 
 	}
 	if sc := b.cfg.ShakerCleaning; sc.enabled() {
 		b.setPhase("Cleaning shaker")
-		if err := b.cleanShaker(ctx, sc.Station, sc.DwellMs, sc.DrainMs); err != nil {
+		if err := b.cleanShaker(ctx, cleanShakerRequest{
+			station:        sc.Station,
+			powerOnDelayMs: sc.PowerOnDelayMs,
+			dwellMs:        sc.DwellMs,
+			drainMs:        sc.DrainMs,
+		}); err != nil {
 			return fmt.Errorf("clean shaker: %w", err)
 		}
 	}
