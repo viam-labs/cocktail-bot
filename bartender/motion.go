@@ -298,6 +298,11 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
+	if b.heldGeomFrame != nil && (constraints == nil || len(constraints.OrientationConstraint) == 0) {
+		if err := heldTiltPastEndpoints(fs, fsInputs, b.cfg.ArmName, positions, heldTiltSlackDegs); err != nil {
+			return 0, fmt.Errorf("refusing %s: %w", label, err)
+		}
+	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
