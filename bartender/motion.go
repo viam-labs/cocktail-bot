@@ -301,10 +301,24 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
+	if err := b.checkHeldTilt(fs, fsInputs, positions, constraints, label); err != nil {
+		return 0, err
+	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
+}
+
+// checkHeldTilt guards held moves that have no orientation constraint; constrained ones are bounded by the planner.
+func (b *bartender) checkHeldTilt(fs *referenceframe.FrameSystem, start referenceframe.FrameSystemInputs, positions [][]referenceframe.Input, constraints *motionplan.Constraints, label string) error {
+	if b.heldGeomFrame == nil || (constraints != nil && len(constraints.OrientationConstraint) > 0) {
+		return nil
+	}
+	if err := heldTiltPastEndpoints(fs, start, b.cfg.ArmName, positions, heldTiltSlackDegs); err != nil {
+		return fmt.Errorf("refusing %s: %w", label, err)
+	}
+	return nil
 }
 
 func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Duration, error) {
@@ -371,6 +385,9 @@ func (b *bartender) moveToJoints(ctx context.Context, pd *poseData, label string
 	positions, err := plan.Trajectory().GetFrameInputs(b.cfg.ArmName)
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
+	}
+	if err := b.checkHeldTilt(fs, fsInputs, positions, constraints, label); err != nil {
+		return 0, err
 	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
