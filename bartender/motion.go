@@ -266,6 +266,9 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if heldAllowed := b.armAndGripperVsHeldAllowed(); len(heldAllowed) > 0 {
 		constraints = b.withAllowedCollisions(constraints, heldAllowed)
 	}
+	if len(pd.jointPositionsDegs) > 0 {
+		return b.moveToJoints(ctx, pd, label, constraints, opts)
+	}
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
@@ -298,15 +301,24 @@ func (b *bartender) moveToResolvedPose(ctx context.Context, pd *poseData, label 
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
-	if b.heldGeomFrame != nil && (constraints == nil || len(constraints.OrientationConstraint) == 0) {
-		if err := heldTiltPastEndpoints(fs, fsInputs, b.cfg.ArmName, positions, heldTiltSlackDegs); err != nil {
-			return 0, fmt.Errorf("refusing %s: %w", label, err)
-		}
+	if err := b.checkHeldTilt(fs, fsInputs, positions, constraints, label); err != nil {
+		return 0, err
 	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
+}
+
+// checkHeldTilt guards held moves that have no orientation constraint; constrained ones are bounded by the planner.
+func (b *bartender) checkHeldTilt(fs *referenceframe.FrameSystem, start referenceframe.FrameSystemInputs, positions [][]referenceframe.Input, constraints *motionplan.Constraints, label string) error {
+	if b.heldGeomFrame == nil || (constraints != nil && len(constraints.OrientationConstraint) > 0) {
+		return nil
+	}
+	if err := heldTiltPastEndpoints(fs, start, b.cfg.ArmName, positions, heldTiltSlackDegs); err != nil {
+		return fmt.Errorf("refusing %s: %w", label, err)
+	}
+	return nil
 }
 
 func (b *bartender) moveArmToPose(ctx context.Context, poseName string) (time.Duration, error) {
@@ -346,26 +358,25 @@ func (b *bartender) moveArmToJointGoalOnSwitch(ctx context.Context, sw toggleswi
 	if len(pd.jointPositionsDegs) == 0 {
 		return 0, fmt.Errorf("pose %q on %q is not a joint-space pose (joint_positions_degs is empty)", poseName, sw.Name().ShortName())
 	}
-	label := sw.Name().ShortName() + ":" + poseName + ":joint-goal"
-	opts := moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	return b.moveToJoints(ctx, pd, sw.Name().ShortName()+":"+poseName+":joint-goal", nil, nil)
+}
+
+// moveToJoints plans to pd's joint positions and executes, so the arm ends in exactly that
+// configuration rather than whichever IK solution the planner picks for a pose in space.
+func (b *bartender) moveToJoints(ctx context.Context, pd *poseData, label string, constraints *motionplan.Constraints, opts *arm.MoveOptions) (time.Duration, error) {
+	if opts == nil {
+		opts = moveOptionsFromCfg(pd.velDegsPerSec, pd.accDegsPerSec2)
+	}
 	start := time.Now()
 	fs, fsInputs, err := b.currentInputs(ctx)
 	if err != nil {
 		return 0, err
 	}
-	goalJoints := make([]referenceframe.Input, len(pd.jointPositionsDegs))
-	for i, d := range pd.jointPositionsDegs {
-		goalJoints[i] = d * math.Pi / 180.0
-	}
-	goalInputs := referenceframe.FrameSystemInputs{}
-	for k, v := range fsInputs {
-		goalInputs[k] = v
-	}
-	goalInputs[b.cfg.ArmName] = goalJoints
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		StartState:  armplanning.NewPlanState(nil, fsInputs),
-		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, goalInputs)},
+		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, b.jointGoalInputs(fsInputs, pd))},
+		Constraints: constraints,
 	}
 	plan, err := b.planMotion(ctx, req, label)
 	if err != nil {
@@ -375,10 +386,51 @@ func (b *bartender) moveArmToJointGoalOnSwitch(ctx context.Context, sw toggleswi
 	if err != nil {
 		return 0, fmt.Errorf("extract trajectory: %w", err)
 	}
+	if err := b.checkHeldTilt(fs, fsInputs, positions, constraints, label); err != nil {
+		return 0, err
+	}
 	if err := b.arm.MoveThroughJointPositions(ctx, positions, opts, nil); err != nil {
 		return 0, fmt.Errorf("execute %s: %w", label, err)
 	}
 	return time.Since(start).Round(time.Millisecond), nil
+}
+
+func (b *bartender) jointGoalInputs(inputs referenceframe.FrameSystemInputs, pd *poseData) referenceframe.FrameSystemInputs {
+	out := make(referenceframe.FrameSystemInputs, len(inputs))
+	for k, v := range inputs {
+		out[k] = v
+	}
+	joints := make([]referenceframe.Input, len(pd.jointPositionsDegs))
+	for i, d := range pd.jointPositionsDegs {
+		joints[i] = d * math.Pi / 180.0
+	}
+	out[b.cfg.ArmName] = joints
+	return out
+}
+
+// cartesianPose turns a joint-space pose into where those joints put its component, for moves that need a
+// target in space, like straight lines. Other poses come back unchanged.
+func (b *bartender) cartesianPose(ctx context.Context, pd *poseData) (*poseData, error) {
+	if len(pd.jointPositionsDegs) == 0 {
+		return pd, nil
+	}
+	fs, fsInputs, err := b.currentInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	componentName := pd.componentName
+	if componentName == "" {
+		componentName = b.cfg.ArmName
+	}
+	tf, err := fs.Transform(b.jointGoalInputs(fsInputs, pd).ToLinearInputs(), referenceframe.NewPoseInFrame(componentName, spatialmath.NewZeroPose()), referenceframe.World)
+	if err != nil {
+		return nil, fmt.Errorf("pose of %q at joint positions: %w", componentName, err)
+	}
+	out := *pd
+	out.pose = tf.(*referenceframe.PoseInFrame).Pose()
+	out.refFrame = referenceframe.World
+	out.jointPositionsDegs = nil
+	return &out, nil
 }
 
 // AllowedCollision names a pair of frames whose collision the planner should
@@ -537,6 +589,9 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 	if err != nil {
 		return 0, err
 	}
+	if pd, err = b.cartesianPose(ctx, pd); err != nil {
+		return 0, err
+	}
 	label := sw.Name().ShortName() + ":" + poseName + ":linear"
 	constraints := &motionplan.Constraints{
 		LinearConstraint: []motionplan.LinearConstraint{{
@@ -554,6 +609,9 @@ func (b *bartender) linearMoveToPose(ctx context.Context, sw toggleswitch.Switch
 func (b *bartender) linearCarryToPose(ctx context.Context, sw toggleswitch.Switch, poseName string, allowed ...AllowedCollision) (time.Duration, error) {
 	pd, err := fetchPose(ctx, sw, poseName)
 	if err != nil {
+		return 0, err
+	}
+	if pd, err = b.cartesianPose(ctx, pd); err != nil {
 		return 0, err
 	}
 	label := sw.Name().ShortName() + ":" + poseName + ":linear-carry"
@@ -603,6 +661,9 @@ func (b *bartender) moveHeldToResolvedPose(ctx context.Context, pd *poseData, la
 	}
 	if heldAllowed := b.armAndGripperVsHeldAllowed(); len(heldAllowed) > 0 {
 		constraints = b.withAllowedCollisions(constraints, heldAllowed)
+	}
+	if len(pd.jointPositionsDegs) > 0 {
+		return b.moveToJoints(ctx, pd, label, constraints, opts)
 	}
 	if b.heldGeomFrame == nil {
 		return b.moveToResolvedPose(ctx, pd, label, constraints, opts)
