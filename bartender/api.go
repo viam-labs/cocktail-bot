@@ -595,7 +595,7 @@ func (b *bartender) handlePourFromShaker(ctx context.Context, raw any) (map[stri
 }
 
 func (b *bartender) handleCleanShaker(ctx context.Context, raw any) (map[string]any, error) {
-	station, dwellMs, drainMs, err := parseCleanShaker(raw)
+	req, err := parseCleanShaker(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -606,52 +606,39 @@ func (b *bartender) handleCleanShaker(ctx context.Context, raw any) (map[string]
 	}
 	defer done()
 	start := time.Now()
-	if err := b.cleanShaker(ctx, station, dwellMs, drainMs); err != nil {
+	if err := b.cleanShaker(ctx, req); err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"station":     station,
-		"dwell_ms":    dwellMs,
-		"drain_ms":    drainMs,
-		"duration_ms": time.Since(start).Milliseconds(),
+		"station":           req.station,
+		"power_on_delay_ms": req.powerOnDelayMs,
+		"dwell_ms":          req.dwellMs,
+		"drain_ms":          req.drainMs,
+		"duration_ms":       time.Since(start).Milliseconds(),
 	}, nil
 }
 
-func parseCleanShaker(raw any) (string, int, int, error) {
+func parseCleanShaker(raw any) (cleanShakerRequest, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return "", 0, 0, fmt.Errorf("clean_shaker: expected object with 'station' and 'dwell_ms', got %T", raw)
+		return cleanShakerRequest{}, fmt.Errorf("clean_shaker: expected object with 'station' and 'dwell_ms', got %T", raw)
 	}
-	station, _ := m["station"].(string)
-	if station == "" {
-		return "", 0, 0, fmt.Errorf("clean_shaker: 'station' is required")
+	req := cleanShakerRequest{}
+	req.station, _ = m["station"].(string)
+	if req.station == "" {
+		return cleanShakerRequest{}, fmt.Errorf("clean_shaker: 'station' is required")
 	}
-	var dwellMs int
-	switch v := m["dwell_ms"].(type) {
-	case float64:
-		dwellMs = int(v)
-	case int:
-		dwellMs = v
-	default:
-		return "", 0, 0, fmt.Errorf("clean_shaker: 'dwell_ms' must be a number")
+	var err error
+	if req.dwellMs, err = intField(m, "dwell_ms"); err != nil {
+		return cleanShakerRequest{}, fmt.Errorf("clean_shaker: %w", err)
 	}
-	if dwellMs < 0 {
-		return "", 0, 0, fmt.Errorf("clean_shaker: 'dwell_ms' must be >= 0")
+	if req.powerOnDelayMs, err = optionalIntField(m, "power_on_delay_ms"); err != nil {
+		return cleanShakerRequest{}, fmt.Errorf("clean_shaker: %w", err)
 	}
-	var drainMs int
-	switch v := m["drain_ms"].(type) {
-	case nil:
-	case float64:
-		drainMs = int(v)
-	case int:
-		drainMs = v
-	default:
-		return "", 0, 0, fmt.Errorf("clean_shaker: 'drain_ms' must be a number")
+	if req.drainMs, err = optionalIntField(m, "drain_ms"); err != nil {
+		return cleanShakerRequest{}, fmt.Errorf("clean_shaker: %w", err)
 	}
-	if drainMs < 0 {
-		return "", 0, 0, fmt.Errorf("clean_shaker: 'drain_ms' must be >= 0")
-	}
-	return station, dwellMs, drainMs, nil
+	return req, nil
 }
 
 func (b *bartender) handleFindAndPourFromShaker(ctx context.Context, raw any) (map[string]any, error) {
@@ -1258,6 +1245,13 @@ func intField(m map[string]any, name string) (int, error) {
 	default:
 		return 0, fmt.Errorf("'%s' must be a number", name)
 	}
+}
+
+func optionalIntField(m map[string]any, name string) (int, error) {
+	if m[name] == nil {
+		return 0, nil
+	}
+	return intField(m, name)
 }
 
 func (b *bartender) handleRotateShakers(ctx context.Context, raw any) (map[string]any, error) {
