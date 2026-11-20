@@ -374,14 +374,25 @@ func (b *bartender) moveToJoints(ctx context.Context, pd *poseData, label string
 		return 0, err
 	}
 	goal := b.jointGoalInputs(fs, fsInputs, pd)
-	// Works around an RDK v1.17 bug (CLAUDE.md, platform shortcomings): armplanning treats a frame named
-	// in a joint goal with unchanged inputs as pinned, and orientation constraints skip it. The held object
-	// never has inputs, so naming it left it free to tip. Drop this once RDK constrains it anyway.
+	// Works around an RDK v1.17 bug (CLAUDE.md, platform shortcomings): a joint goal's orientation
+	// constraints bound the arm's own frame and skip the held object. Going first to the held object's
+	// pose at those joints constrains only the held object; the joint goal then settles onto the exact
+	// joints, with the held object left out of it so it isn't skipped there either. Drop this once RDK
+	// lets a constraint name its frame.
+	var goals []*armplanning.PlanState
+	if b.heldGeomFrame != nil && constraints != nil && len(constraints.OrientationConstraint) > 0 {
+		heldAt, err := fs.Transform(goal.ToLinearInputs(), referenceframe.NewZeroPoseInFrame(heldObjectFrameName), referenceframe.World)
+		if err != nil {
+			return 0, fmt.Errorf("held object at %s: %w", label, err)
+		}
+		goals = append(goals, armplanning.NewPlanState(referenceframe.FrameSystemPoses{heldObjectFrameName: heldAt.(*referenceframe.PoseInFrame)}, nil))
+	}
 	delete(goal, heldObjectFrameName)
+	goals = append(goals, armplanning.NewPlanState(nil, goal))
 	req := &armplanning.PlanRequest{
 		FrameSystem: fs,
 		StartState:  armplanning.NewPlanState(nil, fsInputs),
-		Goals:       []*armplanning.PlanState{armplanning.NewPlanState(nil, goal)},
+		Goals:       goals,
 		Constraints: constraints,
 	}
 	plan, err := b.planMotion(ctx, req, label)

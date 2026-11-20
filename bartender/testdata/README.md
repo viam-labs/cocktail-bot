@@ -1,0 +1,1 @@
+`xarm850_kinematics.json` is `arm/xarm850_kinematics.json` from [viam-modules/viam-ufactory-xarm](https://github.com/viam-modules/viam-ufactory-xarm) (blob 2dd7e7a), Apache License 2.0. Tests use it to plan moves on the bartender's real arm.
