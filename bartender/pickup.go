@@ -132,37 +132,52 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 	return nil
 }
 
-// sidePrestage snaps the arm to the joint-space pose configured for the side
-// of the rack the given slot is on, so hover/grab/lift plan from a known-good
-// configuration. Letters a-e take the left pose, f-j take the right pose; any
-// other name, or an empty pose on the matching side, is a no-op. The pose lives
-// on the loading-spot switch.
+// sidePrestage snaps the arm to the joint configuration for the zone the given
+// slot is on, so hover/grab/lift plan from a known-good config instead of
+// whichever IK branch the prior move's end pose happened to land in. Any slot
+// letter not covered by a configured zone, or a zone with an empty joint
+// array, is a no-op for that slot.
+//
+// TODO(bandaid): drop this once Dan G's motion planning improvements land.
+// The planner should pick the correct IK branch itself without the caller
+// pre-pinning the configuration.
 func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
-	pose := b.sidePrestagePose(slotName)
-	if pose == "" {
+	joints := b.sidePrestageJoints(slotName)
+	if len(joints) == 0 {
 		return nil
 	}
-	loadingSw, err := b.findSwitch(b.cfg.LoadingSpotSwitchName)
-	if err != nil {
-		return fmt.Errorf("find loading spot for side prestage: %w", err)
-	}
-	if _, err := b.moveArmToJointGoalOnSwitch(ctx, loadingSw, pose); err != nil {
-		return fmt.Errorf("side prestage %q: %w", pose, err)
+	pd := &poseData{jointPositionsDegs: joints}
+	label := "side-prestage:" + slotName
+	if _, err := b.moveToJoints(ctx, pd, label, nil, nil); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
 	}
 	return nil
 }
 
-func (b *bartender) sidePrestagePose(slotName string) string {
+func (b *bartender) sidePrestageJoints(slotName string) []float64 {
 	if !strings.HasPrefix(slotName, "slot-") || len(slotName) < len("slot-x") {
-		return ""
+		return nil
 	}
-	switch slotName[len("slot-")] {
-	case 'a', 'b', 'c', 'd', 'e':
-		return b.cfg.BottlePrestageLeftPose
-	case 'f', 'g', 'h', 'i', 'j':
-		return b.cfg.BottlePrestageRightPose
+	letter := slotName[len("slot-")]
+	left := defaultOr(b.cfg.BottlePrestageLeftLetters, "abcd")
+	middle := defaultOr(b.cfg.BottlePrestageMiddleLetters, "ef")
+	right := defaultOr(b.cfg.BottlePrestageRightLetters, "ghij")
+	switch {
+	case strings.IndexByte(left, letter) >= 0:
+		return b.cfg.BottlePrestageLeftJoints
+	case strings.IndexByte(middle, letter) >= 0:
+		return b.cfg.BottlePrestageMiddleJoints
+	case strings.IndexByte(right, letter) >= 0:
+		return b.cfg.BottlePrestageRightJoints
 	}
-	return ""
+	return nil
+}
+
+func defaultOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // shakerGrip names the poses one way of gripping the shaker at shaker-home
