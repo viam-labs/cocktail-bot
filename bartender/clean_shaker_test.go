@@ -143,7 +143,7 @@ func TestPutShakerAway(t *testing.T) {
 				recordingPoseSwitch("shaker-cleaner", asked),
 			}
 
-			err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"})
+			err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"}, false)
 			test.That(t, err, test.ShouldNotBeNil)
 			test.That(t, err.Error(), test.ShouldContainSubstring, tc.wantErr)
 			test.That(t, asked["serving-glass-center"], test.ShouldResemble, tc.wantServe)

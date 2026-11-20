@@ -1,6 +1,6 @@
 # Bartender
 
-Orchestrates the full drink cycle: ice → pour → mix → strain → serve → clean shaker (optional) → rotate shakers.
+Orchestrates the full drink cycle: ice → pour → mix → strain (fit the hand strainer) → serve → return the strainer and dump the ice (strained drinks) → clean shaker (optional).
 
 ## Model `viam:cocktail-bot:bartender`
 
@@ -16,7 +16,7 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `held_bottle_geometry` | object | Optional | Cylinder attached to the gripper while a bottle is held. See below. |  |
 | `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while the shaker is held. See below. |  |
 | `held_stirrer_geometry` | object | Optional | Cylinder attached to the gripper while the stirrer is held, from gripper close to gripper open in `stir`. See below. |  |
-| `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker`, `shaker-a`, `shaker-b`, `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
+| `pickup_obstacles` | object | Optional | Map of pickup key → obstacle name; the gripper and held frame may intersect that obstacle during pickup/release of that key. Keys are bottle switch names plus `shaker` and `stirrer`. `stir` also uses the `shaker` entry while the stirrer is inside the shaker. |  |
 | `recipe_defaults` | object | Optional | Default stations and dwell times for `make_cocktail`. See below. |  |
 | `glasses` | []object | Optional | Glass types staff can place at the serving station. Recipes pick one by `id`. See below. |  |
 | `default_glass_obstacle` | string | Optional | Obstacle modeling the glass at the station for recipes with no glass, glasses with no `obstacle`, and before the first order. See `glasses`. |  |
@@ -33,6 +33,9 @@ Orchestrates the full drink cycle: ice → pour → mix → strain → serve →
 | `mixer_power_switch_name` | string | Optional | Switch that powers the mixer, e.g. `viam:zigbee2mqtt:switch` on a smart plug. `mix()` turns it on once the shaker is seated and off before withdrawing (and on error, cancel, or close). When set, the switch is a required dependency. If switching fails, the order continues and a Slack warning asks for the mixer to be switched by hand. Empty leaves the mixer manual. |  |
 | `bottles_protector_obstacle` | string | Optional | Obstacle name whose collisions are allowed during `pickupBottle` and `returnBottle` only. |  |
 | `loading_protector_obstacle` | string | Optional | Obstacle covering the loading spot. Its collisions are allowed only on moves to and from the loading spot (`stock_bottle`, `retrieve_bottle`, and `move_bottle` to or from it), so every other flow keeps clear of it. |  |
+| `strainer_obstacle` | string | Optional | Obstacle modeling the hand strainer on its mount, sized to the whole strainer including its handle. The shaker may touch it while seating into it. From `strainer-seat` until it is back on the mount it rides on the shaker, so serving and every other carry plan around it, and its spot on the mount is left out of planning. Required for recipes with a strain step. |  |
+| `strainer_mount_obstacle` | string | Optional | Obstacle modeling the strainer mount. Only the carried strainer may touch it, while it twists on or off. |  |
+| `strainer_mount_shield_obstacle` | string | Optional | Obstacle around the mount that the arm, gripper, shaker and strainer may enter only on the `strainer-*` moves. |  |
 | `glass_finder_name` | string | Optional | Vision service returning world-frame glass point clouds, e.g. `viam:cocktail-bot:glass-finder` on the wrist camera. |  |
 | `glass_table_z_mm` | number | Optional | World z of the table surface; the search aims the camera where its `glass-look` view meets it. | 0 |
 | `glass_search_lower_mm` | []number | Optional | Mm below `glass-look` to lower the camera between search attempts. | `[0, 5, 10]` |
@@ -94,15 +97,14 @@ Stations and dwell times `make_cocktail` passes through to the primitives.
 | `shaker_source` | string | Required | Switch holding shaker-home poses. |  |
 | `ice_station` | string | Required | Switch for the ice lever. |  |
 | `mixer_station` | string | Required | Switch holding mixer poses. |  |
-| `strain_flow` | string | Required | Switch holding strain + shaker-a/b poses. |  |
+| `strain_flow` | string | Required | Switch holding the `strainer-*` and `garbage-*` poses (see `attach_strainer` and `return_strainer`). |  |
 | `serve_station` | string | Required | Default `serving_station` for the serve step. |  |
 | `ice_dwell_ms` | int | Optional | Dwell at the ice lever. | 0 |
 | `mix_dwell_ms` | int | Optional | Mixing bob duration. | 0 |
 | `stir_station` | string | Optional | Switch holding `stir-storage-hover` / `stir-storage-place` / `stir-hover` / `stir-insert`, used by `mix` steps with `"mode": "stir"`. Teach `stir-hover` as `joint_positions_degs` and give `stir-insert` its own `pose_value`: a `stir-hover` given as a pose lets the planner arrive with the wrist flipped and J6 near its limit, and the straight insert then fails with "no direct solutions found". Set `nearest_turn: true` on `stir-hover` so the carry to it doesn't spin the base a full turn. | `stir` |
 | `stir_dwell_ms` | int | Optional | How long a `stir` step circles. | `mix_dwell_ms` |
 | `serve_ms` | int | Optional | Pour duration into the glass. | 0 |
-| `strain_drain_ms` | int | Optional | Drain dwell during straining. | 0 |
-| `strain_dump_ms` | int | Optional | Dump dwell over garbage. | 0 |
+| `strain_dump_ms` | int | Optional | How long a strained drink's shaker stays tipped at `garbage-tilt`, dumping the ice the strainer held back. | 0 |
 
 ##### `shaker_cleaning`
 
@@ -117,7 +119,7 @@ When enabled, `make_cocktail` carries the served shaker straight from the glass 
 | `power_switch_name` | string | Optional | Switch that powers the cleaner (e.g. a smart plug). When set, it turns on once the shaker is pressed onto the cleaner and off before the retreat. A failure to toggle fails the order and posts a Slack alert. When unset, the cleaner is expected to spray mechanically when pressed. |  |
 | `power_on_delay_ms` | int | Optional | Pause after pressing the shaker onto the cleaner before turning the cleaner on. | 0 |
 | `drain_ms` | int | Optional | Pause after cutting cleaner power before lifting the shaker off, so water can drip off. | 0 |
-| `prestage_pose` | string | Optional | Joint-space pose on `station` the empty arm passes through before the cleaner grab, like `mix_prestage_pose`. Only `clean_shaker` grabs the shaker; after a serve it's already held. |  |
+| `prestage_pose` | string | Optional | Joint-space pose on `station` the arm passes through on the way to the cleaner, like `mix_prestage_pose`: empty-handed before the `clean_shaker` grab, and holding the shaker after a strained drink dumps its ice at the garbage. After an unstrained serve the held shaker goes straight to the cleaner. |  |
 | `held_shaker_geometry` | object | Optional | Cylinder attached to the gripper while `clean_shaker` holds the shaker with the `cleaner-grab-*` poses. Same shape as `held_shaker_geometry`. After a serve the shaker keeps the top-level `held_shaker_geometry`. | `held_shaker_geometry` |
 
 The `station` switch needs these poses:
@@ -185,10 +187,11 @@ Fridge slots take the same `hover`, `grab`, `lift` and `carry-hover` poses as sh
     "pour_dwell_ms_by_pourer_oz": {"0.5": 1500, "1": 2500, "1.5": 3500},
     "pickup_obstacles": {
       "vodka": "vodka-bottle",
-      "coffee-liquor": "coffee-liquor-bottle",
-      "shaker-a": "shaker-a-obstacle",
-      "shaker-b": "shaker-b-obstacle"
+      "coffee-liquor": "coffee-liquor-bottle"
     },
+    "strainer_obstacle": "strainer",
+    "strainer_mount_obstacle": "strainer-mount",
+    "strainer_mount_shield_obstacle": "strainer-mount-shield",
     "recipe_defaults": {
       "shaker_source": "ice-station",
       "ice_station": "ice-station",
@@ -251,7 +254,7 @@ Cancel the running order. Pending orders stay queued behind the pickup hold. Wit
 
 Snapshot of the running or last order. Returns `{is_busy, count, current_step, drink, started_at, elapsed_ms, step_history, last_outcome: {drink, ended_at, error?}}`, plus `fridge_door_open_degs` (0 when shut) when `fridge` is configured.
 
-Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_action`, `stock_bottle`, `retrieve_bottle` and `move_bottle` return an error while a queued drink is being made rather than interrupting it.
+Primitives, vision-driven commands, `attach_strainer`, `return_strainer`, `execute_action`, `stock_bottle`, `retrieve_bottle` and `move_bottle` return an error while a queued drink is being made rather than interrupting it.
 
 #### Primitives
 
@@ -261,12 +264,12 @@ Primitives, vision-driven commands, `strain_shaker`, `rotate_shakers`, `execute_
 | `pour_into_shaker` | `{"bottle": "vodka", "oz": 1.5}` |
 | `mix` | `{"station": "mixer", "dwell_ms": 10000}` |
 | `stir` | `{"station": "stir-station", "dwell_ms": 20000}` — `stir-storage-hover` → open → linear down to `stir-storage-place` → close (stirrer held) → linear up to `stir-storage-hover` → `stir-hover` → linear down to `stir-insert` → circles around `stir-insert` for `dwell_ms` → linear back to `stir-hover` → `stir-storage-hover` → linear down to `stir-storage-place` → open (stirrer released) → linear up to `stir-storage-hover`. `stir-storage-hover` must be high enough that the held stirrer clears its storage. When `stir-hover` is a joint-space pose the carry ends at exactly those joints, and the retract goes straight up to where those joints put the arm. Circle size comes from `circle_radius_mm` (default 10) and `circle_points_per_rev` (default 8, min 4) on the `stir-insert` pose. |
-| `strain_shaker` | `{"source": "ice-station", "strain_flow": "strain-flow", "drain_dwell_ms": 4000, "dump_dwell_ms": 2000}` |
+| `attach_strainer` | `{}` or `{"strain_flow": "strain-flow"}` (defaults to `recipe_defaults.strain_flow`) — the shaker must be in the gripper. Carry level to `strainer-hover` → linear under the strainer to `strainer-approach` (may enter the mount shield) → linear up into the strainer to `strainer-seat` (may touch the strainer), where the strainer becomes part of what the arm carries → twist to `strainer-lock` → linear back off the mount to `strainer-retreat`. A strain step in a recipe runs this, picking the shaker up from shaker-home first when a stir left it there. |
+| `return_strainer` | `{}` or `{"strain_flow": "strain-flow"}` — the attach in reverse: carry to `strainer-retreat` → linear to `strainer-lock` → twist back to `strainer-seat`, where the strainer stays on the mount → linear down out of it to `strainer-approach` → linear back to `strainer-hover`. After serving a strained drink, `make_cocktail` runs this, then carries level to `garbage-hover`, tips to `garbage-tilt` for `strain_dump_ms` and back, then goes through `shaker_cleaning.prestage_pose` to the cleaner when cleaning is on. |
 | `pour_from_shaker` | `{"station": "serving-glass-center", "pour_ms": 5000}` |
 | `clean_shaker` | `{"station": "shaker-cleaner", "dwell_ms": 3000, "power_on_delay_ms": 500, "drain_ms": 1000}` — gripper must be empty with the shaker at shaker-home. Optional `shaker_cleaning.prestage_pose` joint move → pick the shaker up with the `cleaner-grab-*` poses → carry level to `cleaner-hover` → flip to `cleaner-flip-hover` → linear down to `cleaner-approach` → linear down to `cleaner-press` → wait `power_on_delay_ms` → cleaner on → wait `dwell_ms` → cleaner off → wait `drain_ms` for drips → linear up to `cleaner-approach` → linear up to `cleaner-flip-hover` → flip upright at `cleaner-hover` → set the shaker back down at shaker-home with the `cleaner-grab-*` poses. The cleaner on/off steps only happen when `shaker_cleaning.power_switch_name` is set. `power_on_delay_ms` and `drain_ms` default to 0 and are optional. Runs regardless of `shaker_cleaning.enabled`, so poses can be tuned before turning it on. |
 | `open_fridge_door` | `{}` — gripper must be empty and the door recorded shut. `closed-hover` → open gripper → linear to `closed-grab` → close gripper → swing to `open-grab` → open gripper → linear to `open-retreat`. Leaves the door open. Returns `{open_degs, duration_ms}`. |
 | `close_fridge_door` | `{}` — gripper must be empty and the door recorded open. `open-hover` → open gripper → linear to `open-grab` → close gripper → swing to `closed-grab` → open gripper → linear to `closed-retreat`. Returns `{open_degs, duration_ms}`. |
-| `rotate_shakers` | `{"strain_flow": "strain-flow"}` |
 | `pickup_pour_return` | `{"bottle": "vodka", "pour_ms": 1500}` |
 | `pour_into_glasses` | `{"bottle": "vodka", "pours": [{"glass": "serving-glass-center", "pour_ms": 1500}]}` |
 | `execute_action` | `{"pose_name": "home"}` — move to any named pose on the configured switchers. |

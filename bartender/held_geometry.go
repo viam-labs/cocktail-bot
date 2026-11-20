@@ -84,9 +84,11 @@ func (b *bartender) attachHeld(ctx context.Context, g *HeldObjectGeometry) error
 	return nil
 }
 
-// Idempotent so release paths don't branch on held-state.
+// Idempotent so release paths don't branch on held-state. A strainer riding on
+// the held shaker leaves the arm with it.
 func (b *bartender) detachHeld() {
 	b.heldGeomFrame = nil
+	b.heldStrainerFrame = nil
 }
 
 // attachParked models the parked bottle as standing upright on the table at
