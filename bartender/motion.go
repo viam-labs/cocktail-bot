@@ -215,13 +215,14 @@ func (b *bartender) inputsWithFridgeDoorAt(ctx context.Context, doorDegs float64
 	if err != nil {
 		return nil, nil, fmt.Errorf("build frame system: %w", err)
 	}
-	if b.heldGeomFrame != nil || b.heldStrainerFrame != nil {
+	carried := []referenceframe.Frame{b.heldGeomFrame, b.heldStrainerFrame, b.heldShakerAttachmentFrame}
+	if slices.ContainsFunc(carried, func(f referenceframe.Frame) bool { return f != nil }) {
 		parent := fs.Frame(gripPointFrameName)
 		if parent == nil {
 			parent = fs.Frame(b.cfg.GripperName)
 			b.logger.Warnf("no %q frame in config; attaching held object to %q origin instead. The virtual capsule will sit at the gripper mount, not where the claws close, so collision checks will be off by the gripper tool length. Add a grip-point component parented to the gripper to fix.", gripPointFrameName, b.cfg.GripperName)
 		}
-		for _, held := range []referenceframe.Frame{b.heldGeomFrame, b.heldStrainerFrame} {
+		for _, held := range carried {
 			if held == nil {
 				continue
 			}
@@ -230,9 +231,12 @@ func (b *bartender) inputsWithFridgeDoorAt(ctx context.Context, doorDegs float64
 			}
 		}
 	}
-	if b.parkedGeomFrame != nil {
-		if err := fs.AddFrame(b.parkedGeomFrame, fs.World()); err != nil {
-			return nil, nil, fmt.Errorf("attach parked geometry frame to world: %w", err)
+	for _, parked := range []referenceframe.Frame{b.parkedGeomFrame, b.parkedShakerAttachmentFrame} {
+		if parked == nil {
+			continue
+		}
+		if err := fs.AddFrame(parked, fs.World()); err != nil {
+			return nil, nil, fmt.Errorf("attach %q to world: %w", parked.Name(), err)
 		}
 	}
 	armInputs, err := b.arm.CurrentInputs(ctx)
@@ -244,15 +248,22 @@ func (b *bartender) inputsWithFridgeDoorAt(ctx context.Context, doorDegs float64
 	return fs, fsInputs, nil
 }
 
-// absentObstacles are the obstacles left out of planning: glasses that aren't at the station, and the
-// strainer's spot on its mount while the strainer rides on the shaker.
+// absentObstacles are the obstacles left out of planning: glasses that aren't at the station, the
+// strainer's spot on its mount while the strainer rides on the shaker, and the shaker attachment's spot
+// at shaker-home while the shaker is away from it.
 func (b *bartender) absentObstacles() map[string]bool {
 	absent := b.absentGlassObstacles()
-	if b.heldStrainerFrame != nil && b.cfg.StrainerObstacle != "" {
+	leaveOut := func(name string) {
 		if absent == nil {
 			absent = map[string]bool{}
 		}
-		absent[b.cfg.StrainerObstacle] = true
+		absent[name] = true
+	}
+	if b.heldStrainerFrame != nil && b.cfg.StrainerObstacle != "" {
+		leaveOut(b.cfg.StrainerObstacle)
+	}
+	if (b.heldShakerAttachmentFrame != nil || b.parkedShakerAttachmentFrame != nil) && b.cfg.ShakerAttachmentObstacle != "" {
+		leaveOut(b.cfg.ShakerAttachmentObstacle)
 	}
 	return absent
 }
@@ -510,19 +521,20 @@ type AllowedCollision struct {
 // withAllowedCollisions returns a copy of constraints with ac added to its
 // collision-spec allow list, so callers can reuse constraints across moves
 // without allows leaking between them. Empty ac is a no-op. Allow
-// entries that reference the held object or strainer when it isn't attached, or
+// entries that reference a carried frame (held object, strainer, shaker attachment) that isn't attached, or
 // an obstacle left out of planning, are dropped, since the planner rejects allow
 // entries whose frame doesn't exist in the current frame system.
 func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, ac []AllowedCollision) *motionplan.Constraints {
-	absent := b.absentObstacles()
+	absent := map[string]bool{
+		heldObjectFrameName:           b.heldGeomFrame == nil,
+		heldStrainerFrameName:         b.heldStrainerFrame == nil,
+		heldShakerAttachmentFrameName: b.heldShakerAttachmentFrame == nil,
+	}
+	for name := range b.absentObstacles() {
+		absent[name] = true
+	}
 	filtered := make([]AllowedCollision, 0, len(ac))
 	for _, a := range ac {
-		if b.heldGeomFrame == nil && (a.Frame1 == heldObjectFrameName || a.Frame2 == heldObjectFrameName) {
-			continue
-		}
-		if b.heldStrainerFrame == nil && (a.Frame1 == heldStrainerFrameName || a.Frame2 == heldStrainerFrameName) {
-			continue
-		}
 		if absent[a.Frame1] || absent[a.Frame2] {
 			continue
 		}
@@ -550,8 +562,14 @@ func (b *bartender) withAllowedCollisions(constraints *motionplan.Constraints, a
 // held-object frame to overlap the obstacle, so the pickup, release, and lift-away moves can plan through what
 // would otherwise be the obstacle's volume. Returns nil when no obstacle is
 // configured — the move then plans with no override.
+// The shaker's own obstacle also covers the attachment on its rim as the shaker sets down or lifts off.
 func (b *bartender) pickupAllowedCollisions(key string) []AllowedCollision {
-	return b.heldVsObstacleAllowed(b.cfg.PickupObstacles[key])
+	obstacle := b.cfg.PickupObstacles[key]
+	allowed := b.heldVsObstacleAllowed(obstacle)
+	if key == shakerPickupKey && obstacle != "" {
+		allowed = append(allowed, AllowedCollision{Frame1: heldShakerAttachmentFrameName, Frame2: obstacle})
+	}
+	return allowed
 }
 
 // heldVsObstacleAllowed lets the claws and the held object enter obstacle, e.g. a shaker lip over a glass rim.
@@ -577,9 +595,15 @@ var armLinkSuffixes = []string{"link_base", "link1", "link2", "link3", "link4", 
 // named obstacle the planner should skip when the gripper is near it with
 // something in the claws. Covers the gripper (claws, case-gripper), the full
 // arm (link_base through link6), and the held object so brush-pasts anywhere
-// along the arm or gripper housing don't fail planning.
+// along the arm or gripper housing don't fail planning. These are keep-out
+// zones the shaker has to enter, so the attachment on its rim may enter too.
 func (b *bartender) gripperAllowedVsObstacle(obstacle string) []AllowedCollision {
-	out := make([]AllowedCollision, 0, 3+len(armLinkSuffixes)+2)
+	return append(b.armAndHeldVsObstacleAllowed(obstacle),
+		AllowedCollision{Frame1: heldShakerAttachmentFrameName, Frame2: obstacle})
+}
+
+func (b *bartender) armAndHeldVsObstacleAllowed(obstacle string) []AllowedCollision {
+	out := make([]AllowedCollision, 0, 3+len(armLinkSuffixes)+3)
 	out = append(out,
 		AllowedCollision{Frame1: "claws-middle", Frame2: obstacle},
 		AllowedCollision{Frame1: b.cfg.GripperName + ":claws", Frame2: obstacle},
@@ -631,14 +655,16 @@ func (b *bartender) cleanerAllowed() []AllowedCollision {
 }
 
 // poseAllowedCollisions expands a pose's allowed_obstacles list into the same
-// frame pairs the protector helpers use.
+// frame pairs the protector helpers use, except the shaker attachment: these
+// name real objects like the mixer head or the table, which the attachment
+// sticking out of the shaker's rim must still clear.
 func (b *bartender) poseAllowedCollisions(pd *poseData) []AllowedCollision {
 	if pd == nil || len(pd.allowedObstacles) == 0 {
 		return nil
 	}
 	out := make([]AllowedCollision, 0, len(pd.allowedObstacles)*4)
 	for _, obstacle := range pd.allowedObstacles {
-		out = append(out, b.gripperAllowedVsObstacle(obstacle)...)
+		out = append(out, b.armAndHeldVsObstacleAllowed(obstacle)...)
 	}
 	return out
 }
@@ -647,6 +673,8 @@ func (b *bartender) poseAllowedCollisions(pd *poseData) []AllowedCollision {
 // when something is in the gripper: only the bodies the held object is clamped
 // against (gripper and wrist link), which the capsule overlaps by construction,
 // and the same for a strainer riding on the shaker, which also sits on it.
+// The attachment on the shaker's rim may touch the shaker and strainer, but
+// not the gripper or wrist it isn't clamped against.
 // The rest of the arm stays checked — a long bottle can physically swing into
 // the base or lower links. Returns nil when nothing is held.
 func (b *bartender) armAndGripperVsHeldAllowed() []AllowedCollision {
@@ -657,6 +685,12 @@ func (b *bartender) armAndGripperVsHeldAllowed() []AllowedCollision {
 	if b.heldStrainerFrame != nil {
 		out = append(out, clampedAllowed(b.cfg, heldStrainerFrameName)...)
 		out = append(out, AllowedCollision{Frame1: heldObjectFrameName, Frame2: heldStrainerFrameName})
+	}
+	if b.heldShakerAttachmentFrame != nil {
+		out = append(out,
+			AllowedCollision{Frame1: heldObjectFrameName, Frame2: heldShakerAttachmentFrameName},
+			AllowedCollision{Frame1: heldStrainerFrameName, Frame2: heldShakerAttachmentFrameName},
+		)
 	}
 	return out
 }
