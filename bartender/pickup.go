@@ -7,6 +7,7 @@ import (
 	"time"
 
 	toggleswitch "go.viam.com/rdk/components/switch"
+	"go.viam.com/rdk/motionplan"
 )
 
 const (
@@ -148,7 +149,15 @@ func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
 	}
 	pd := &poseData{jointPositionsDegs: joints}
 	label := "side-prestage:" + slotName
-	if _, err := b.moveToJoints(ctx, pd, label, nil, nil); err != nil {
+	var constraints *motionplan.Constraints
+	if b.heldGeomFrame != nil {
+		constraints = &motionplan.Constraints{
+			OrientationConstraint: []motionplan.OrientationConstraint{
+				{OrientationToleranceDegs: pd.noSpillToleranceDegs(), IgnoreTheta: true},
+			},
+		}
+	}
+	if _, err := b.moveToJoints(ctx, pd, label, constraints, nil); err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 	return nil
