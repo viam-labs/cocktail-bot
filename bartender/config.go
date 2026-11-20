@@ -79,6 +79,11 @@ type Config struct {
 	// TODO(bandaid): remove once Dan G's motion planning improvements land —
 	// those should pick the correct IK branch itself without the caller
 	// pre-pinning the config.
+	// Kill-switch for the whole side-prestage helper: true no-ops it for every slot
+	// pickup and return. Defaults to false so existing behavior is unchanged. Flip to
+	// true when prestage is timing out often enough to be worse than the cbirrt
+	// failures it was supposed to avoid.
+	BottlePrestageDisabled        bool      `json:"bottle_prestage_disabled,omitempty"`
 	BottlePrestageLeftJoints      []float64 `json:"bottle_prestage_left_joints_degs,omitempty"`
 	BottlePrestageMiddleJoints    []float64 `json:"bottle_prestage_middle_joints_degs,omitempty"`
 	BottlePrestageRightJoints     []float64 `json:"bottle_prestage_right_joints_degs,omitempty"`
