@@ -595,14 +595,9 @@ var armLinkSuffixes = []string{"link_base", "link1", "link2", "link3", "link4", 
 // named obstacle the planner should skip when the gripper is near it with
 // something in the claws. Covers the gripper (claws, case-gripper), the full
 // arm (link_base through link6), and the held object so brush-pasts anywhere
-// along the arm or gripper housing don't fail planning. These are keep-out
-// zones the shaker has to enter, so the attachment on its rim may enter too.
+// along the arm or gripper housing don't fail planning. The attachment on the
+// shaker's rim may go wherever the shaker may.
 func (b *bartender) gripperAllowedVsObstacle(obstacle string) []AllowedCollision {
-	return append(b.armAndHeldVsObstacleAllowed(obstacle),
-		AllowedCollision{Frame1: heldShakerAttachmentFrameName, Frame2: obstacle})
-}
-
-func (b *bartender) armAndHeldVsObstacleAllowed(obstacle string) []AllowedCollision {
 	out := make([]AllowedCollision, 0, 3+len(armLinkSuffixes)+3)
 	out = append(out,
 		AllowedCollision{Frame1: "claws-middle", Frame2: obstacle},
@@ -615,6 +610,7 @@ func (b *bartender) armAndHeldVsObstacleAllowed(obstacle string) []AllowedCollis
 	out = append(out,
 		AllowedCollision{Frame1: heldObjectFrameName, Frame2: obstacle},
 		AllowedCollision{Frame1: heldStrainerFrameName, Frame2: obstacle},
+		AllowedCollision{Frame1: heldShakerAttachmentFrameName, Frame2: obstacle},
 	)
 	return out
 }
@@ -655,16 +651,14 @@ func (b *bartender) cleanerAllowed() []AllowedCollision {
 }
 
 // poseAllowedCollisions expands a pose's allowed_obstacles list into the same
-// frame pairs the protector helpers use, except the shaker attachment: these
-// name real objects like the mixer head or the table, which the attachment
-// sticking out of the shaker's rim must still clear.
+// frame pairs the protector helpers use.
 func (b *bartender) poseAllowedCollisions(pd *poseData) []AllowedCollision {
 	if pd == nil || len(pd.allowedObstacles) == 0 {
 		return nil
 	}
 	out := make([]AllowedCollision, 0, len(pd.allowedObstacles)*4)
 	for _, obstacle := range pd.allowedObstacles {
-		out = append(out, b.armAndHeldVsObstacleAllowed(obstacle)...)
+		out = append(out, b.gripperAllowedVsObstacle(obstacle)...)
 	}
 	return out
 }

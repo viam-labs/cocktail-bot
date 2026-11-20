@@ -165,10 +165,10 @@ func TestShakerAttachmentAllowedCollisions(t *testing.T) {
 	test.That(t, serve, test.ShouldContain, AllowedCollision{Frame1: heldObjectFrameName, Frame2: "highball-glass"})
 	test.That(t, serve, test.ShouldNotContain, ear("highball-glass"))
 
-	pose := b.poseAllowedCollisions(&poseData{allowedObstacles: []string{"mixer-top", "table"}})
-	test.That(t, pose, test.ShouldContain, AllowedCollision{Frame1: heldObjectFrameName, Frame2: "table"})
-	test.That(t, pose, test.ShouldNotContain, ear("mixer-top"))
-	test.That(t, pose, test.ShouldNotContain, ear("table"))
+	pose := b.poseAllowedCollisions(&poseData{allowedObstacles: []string{"ice-maker", "table"}})
+	test.That(t, pose, test.ShouldContain, AllowedCollision{Frame1: heldObjectFrameName, Frame2: "ice-maker"})
+	test.That(t, pose, test.ShouldContain, ear("ice-maker"))
+	test.That(t, pose, test.ShouldContain, ear("table"))
 
 	clamped := b.armAndGripperVsHeldAllowed()
 	test.That(t, clamped, test.ShouldContain, AllowedCollision{Frame1: heldObjectFrameName, Frame2: heldShakerAttachmentFrameName})
