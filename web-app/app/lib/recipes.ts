@@ -24,6 +24,7 @@ export const BASE_SPIRITS = [
   "Tequila & Mezcal",
   "Rum",
   "Whiskey",
+  "Brandy",
   "Wine",
   "Liqueurs",
   "No alcohol",
