@@ -143,6 +143,9 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 // The planner should pick the correct IK branch itself without the caller
 // pre-pinning the configuration.
 func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
+	if b.cfg.BottlePrestageDisabled {
+		return nil
+	}
 	joints := b.sidePrestageJoints(slotName)
 	if len(joints) == 0 {
 		return nil
