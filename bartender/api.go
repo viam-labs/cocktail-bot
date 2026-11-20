@@ -172,6 +172,7 @@ func (b *bartender) handleCancel() (map[string]any, error) {
 	cancelled := b.cancelRunning()
 	b.detachHeld()
 	b.detachParked()
+	b.detachParkedShakerAttachment()
 	// Stopping a swing leaves the door partway; only a Cancel once nothing runs means it was shut by hand.
 	if !cancelled {
 		b.markFridgeDoorShut()

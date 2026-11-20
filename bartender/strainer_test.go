@@ -10,18 +10,18 @@ import (
 	"go.viam.com/test"
 )
 
-// strainerFrameSystem has a grip point at gripPose and a strainer obstacle box at strainerPose, built from
-// config parts the way the machine's frame system is.
+// strainerFrameSystem has a grip point at gripPose and a strainer obstacle box at strainerPose.
 func strainerFrameSystem(t *testing.T, gripPose, strainerPose spatialmath.Pose) *referenceframe.FrameSystem {
 	t.Helper()
-	box, err := spatialmath.NewBox(spatialmath.NewZeroPose(), r3.Vector{X: 200, Y: 125, Z: 50}, "")
+	fs := referenceframe.NewEmptyFrameSystem("strainer")
+	grip, err := referenceframe.NewStaticFrame(gripPointFrameName, gripPose)
 	test.That(t, err, test.ShouldBeNil)
-	parts := []*referenceframe.FrameSystemPart{
-		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, gripPose, gripPointFrameName, nil)},
-		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, strainerPose, "strainer", box)},
-	}
-	fs, err := referenceframe.NewFrameSystem("strainer", parts, nil)
+	test.That(t, fs.AddFrame(grip, fs.World()), test.ShouldBeNil)
+	box, err := spatialmath.NewBox(strainerPose, r3.Vector{X: 200, Y: 125, Z: 50}, "strainer")
 	test.That(t, err, test.ShouldBeNil)
+	obstacle, err := referenceframe.NewStaticFrameWithGeometry("strainer", spatialmath.NewZeroPose(), box)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, fs.AddFrame(obstacle, fs.World()), test.ShouldBeNil)
 	return fs
 }
 
@@ -178,4 +178,22 @@ func override(m map[string]any, key string, value any) map[string]any {
 	}
 	out[key] = value
 	return out
+}
+
+func TestCarriedObstacleFrameFindsAConfiguredObstacle(t *testing.T) {
+	onMount := spatialmath.NewPoseFromPoint(r3.Vector{X: -310, Y: 985, Z: 312})
+	box, err := spatialmath.NewBox(spatialmath.NewZeroPose(), r3.Vector{X: 200, Y: 125, Z: 50}, "")
+	test.That(t, err, test.ShouldBeNil)
+	fs, err := referenceframe.NewFrameSystem("configured", []*referenceframe.FrameSystemPart{
+		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, spatialmath.NewZeroPose(), gripPointFrameName, nil)},
+		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, onMount, "strainer", box)},
+	}, nil)
+	test.That(t, err, test.ShouldBeNil)
+
+	carried, err := carriedObstacleFrame(fs, referenceframe.NewZeroInputs(fs), gripPointFrameName, "strainer", heldStrainerFrameName)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, fs.AddFrame(carried, fs.Frame(gripPointFrameName)), test.ShouldBeNil)
+	geoms, err := referenceframe.FrameSystemGeometries(fs, referenceframe.NewZeroInputs(fs))
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, spatialmath.PoseAlmostEqual(geoms[heldStrainerFrameName].Geometries()[0].Pose(), onMount), test.ShouldBeTrue)
 }

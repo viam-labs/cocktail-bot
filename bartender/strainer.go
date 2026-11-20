@@ -183,10 +183,12 @@ func carriedObstacleFrame(
 		return nil, fmt.Errorf("obstacle geometries: %w", err)
 	}
 	var found []spatialmath.Geometry
-	// A configured geometry lives in the part's "<name>_origin" frame and is labeled with that frame's name.
-	for _, frame := range []string{obstacle, obstacle + "_origin"} {
-		if inFrame, ok := all[frame]; ok {
-			found = append(found, inFrame.Geometries()...)
+	for _, inFrame := range all {
+		for _, g := range inFrame.Geometries() {
+			// A configured component's geometry is labeled after its "<name>_origin" frame.
+			if g.Label() == obstacle || g.Label() == obstacle+"_origin" {
+				found = append(found, g)
+			}
 		}
 	}
 	if len(found) != 1 {
