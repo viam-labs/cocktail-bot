@@ -16,6 +16,8 @@ const (
 	poseStrainerHover    = "strainer-hover"
 	poseStrainerApproach = "strainer-approach"
 	poseStrainerSeat     = "strainer-seat"
+	poseStrainerLock1    = "strainer-lock-1"
+	poseStrainerLock2    = "strainer-lock-2"
 	poseStrainerLock     = "strainer-lock"
 	poseStrainerRetreat  = "strainer-retreat"
 	poseGarbageHover     = "garbage-hover"
@@ -66,6 +68,15 @@ func (b *bartender) attachStrainer(ctx context.Context, flowSw toggleswitch.Swit
 	if err := b.attachHeldStrainer(ctx); err != nil {
 		return err
 	}
+	// Twist is a 90° arc around the mount pivot, split into three short linear-carry steps so
+	// each chord stays within the line tolerance; a single straight shot across the full arc
+	// would leave the gripper dragging the strainer off its seat before it could engage.
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock1, carrying...); err != nil {
+		return fmt.Errorf("twist 1/3 toward the lock at strainer-lock-1: %w", err)
+	}
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock2, carrying...); err != nil {
+		return fmt.Errorf("twist 2/3 toward the lock at strainer-lock-2: %w", err)
+	}
 	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock, carrying...); err != nil {
 		return fmt.Errorf("twist to lock the strainer at strainer-lock: %w", err)
 	}
@@ -88,6 +99,13 @@ func (b *bartender) returnStrainer(ctx context.Context, flowSw toggleswitch.Swit
 	}
 	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock, carrying...); err != nil {
 		return fmt.Errorf("linear-onto the mount at strainer-lock: %w", err)
+	}
+	// Mirror of the attach-side 3-step twist, in reverse: lock → 2/3 → 1/3 → seat.
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock2, carrying...); err != nil {
+		return fmt.Errorf("untwist to strainer-lock-2: %w", err)
+	}
+	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerLock1, carrying...); err != nil {
+		return fmt.Errorf("untwist to strainer-lock-1: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, flowSw, poseStrainerSeat, carrying...); err != nil {
 		return fmt.Errorf("twist to unlock the strainer at strainer-seat: %w", err)
