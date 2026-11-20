@@ -18,6 +18,7 @@ import type { Recipe } from "./lib/recipes";
 import { recipeIngredients } from "./lib/recipes";
 import { Nav } from "./nav";
 import { titleCase } from "./lib/display";
+import { RACK, groupByShelf, parseSlotId, placeName } from "./lib/slots";
 import { planStockingAction } from "./lib/stocking";
 import type { StockingPlan } from "./lib/stocking";
 import { StockingModal } from "./stocking-modal";
@@ -319,12 +320,6 @@ function categoryOf(stock: { category?: string }): string {
   return stock.category && stock.category.trim() ? stock.category : UNCATEGORIZED;
 }
 
-function parseSlotId(id: string): { letter: string; shelf: string; depth: string } {
-  const [, letter = "", shelf = "", ...depth] = id.split("-");
-  return { letter: letter.toUpperCase(), shelf, depth: depth.join("-") };
-}
-
-const SHELF_ORDER = ["top", "bottom"];
 const DEPTH_ORDER = ["back", "front"];
 
 function rank(order: string[], key: string): number {
@@ -340,13 +335,18 @@ function shelfLabel(shelf: string): string {
   return shelf ? `${titleCase(shelf)} shelf` : "Rack";
 }
 
+function shelfTitle(place: string, shelf: string): string {
+  const name = placeName(place);
+  return name ? `${name} · ${shelfLabel(shelf)}` : shelfLabel(shelf);
+}
+
 function depthLabel(depth: string): string {
   return depth ? `${titleCase(depth)} row` : "Row";
 }
 
 function slotLocation(id: string): string {
-  const { letter, shelf, depth } = parseSlotId(id);
-  return `${shelfLabel(shelf)} · ${depthLabel(depth)} · Slot ${letter}`;
+  const { place, letter, shelf, depth } = parseSlotId(id);
+  return `${shelfTitle(place, shelf)} · ${depthLabel(depth)} · Slot ${letter}`;
 }
 
 function splitBrand(ingredient: string): { name: string; brand?: string } {
@@ -373,14 +373,8 @@ function RackSection({
 }) {
   const [showEmpty, setShowEmpty] = useState(true);
 
-  const shelves = new Map<string, Map<string, Slot[]>>();
-  for (const slot of slots) {
-    const { shelf, depth } = parseSlotId(slot.id);
-    const rows = shelves.get(shelf) ?? new Map<string, Slot[]>();
-    rows.set(depth, [...(rows.get(depth) ?? []), slot]);
-    shelves.set(shelf, rows);
-  }
-  const columns = Math.max(...[...shelves.values()].flatMap((rows) => [...rows.values()].map((r) => r.length)));
+  const shelves = groupByShelf(slots);
+  const columns = Math.max(...shelves.flatMap(({ rows }) => [...rows.values()].map((r) => r.length)));
 
   return (
     <section className={styles.section}>
@@ -411,13 +405,13 @@ function RackSection({
         </div>
       </div>
 
-      {[...shelves.keys()].sort(byRank(SHELF_ORDER)).map((shelf) => {
-        const rows = shelves.get(shelf)!;
+      {shelves.map(({ place, shelf, rows }) => {
         const shelfSlots = [...rows.values()].flat();
+        const title = shelfTitle(place, shelf);
         return (
-          <section key={shelf} className={styles.shelf} aria-label={shelfLabel(shelf)}>
+          <section key={`${place}/${shelf}`} className={styles.shelf} aria-label={title}>
             <div className={styles.shelfHead}>
-              <h3>{shelfLabel(shelf)}</h3>
+              <h3>{title}</h3>
               <span className={styles.sectionCount}>
                 {filledCount(shelfSlots)} of {shelfSlots.length} filled
               </span>
@@ -1189,7 +1183,8 @@ function IngredientRow({
     statusLabel = "Not on rack";
     dotColor = "var(--smoke)";
   } else if (stock.in_stock) {
-    statusLabel = `On rack · Slot ${parseSlotId(stock.slot).letter}`;
+    const { place, letter } = parseSlotId(stock.slot);
+    statusLabel = `${place === RACK ? "On rack" : `In ${place}`} · Slot ${letter}`;
     dotColor = "var(--ok)";
   } else {
     statusLabel = "Out of stock";

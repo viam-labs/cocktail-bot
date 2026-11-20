@@ -108,6 +108,10 @@ test("slotLabel: single-row", () => {
   assert.equal(slotLabel("slot-e-front"), "Front E");
 });
 
+test("slotLabel: fridge", () => {
+  assert.equal(slotLabel("fridge-a-top-front"), "Fridge top front A");
+});
+
 test("slotLabel: no row suffix", () => {
   assert.equal(slotLabel("slot-e"), "E");
 });
