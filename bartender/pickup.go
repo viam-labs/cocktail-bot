@@ -147,7 +147,7 @@ func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
 	if len(joints) == 0 {
 		return nil
 	}
-	pd := &poseData{jointPositionsDegs: joints}
+	pd := &poseData{jointPositionsDegs: joints, nearestTurn: true}
 	label := "side-prestage:" + slotName
 	var constraints *motionplan.Constraints
 	if b.heldGeomFrame != nil {
@@ -171,15 +171,27 @@ func (b *bartender) sidePrestageJoints(slotName string) []float64 {
 	left := defaultOr(b.cfg.BottlePrestageLeftLetters, "abcd")
 	middle := defaultOr(b.cfg.BottlePrestageMiddleLetters, "ef")
 	right := defaultOr(b.cfg.BottlePrestageRightLetters, "ghij")
+	top := strings.Contains(slotName, "-top-")
 	switch {
 	case strings.IndexByte(left, letter) >= 0:
-		return b.cfg.BottlePrestageLeftJoints
+		return pickShelf(top, b.cfg.BottlePrestageLeftTopJoints, b.cfg.BottlePrestageLeftJoints)
 	case strings.IndexByte(middle, letter) >= 0:
-		return b.cfg.BottlePrestageMiddleJoints
+		return pickShelf(top, b.cfg.BottlePrestageMiddleTopJoints, b.cfg.BottlePrestageMiddleJoints)
 	case strings.IndexByte(right, letter) >= 0:
-		return b.cfg.BottlePrestageRightJoints
+		return pickShelf(top, b.cfg.BottlePrestageRightTopJoints, b.cfg.BottlePrestageRightJoints)
 	}
 	return nil
+}
+
+// Top-shelf slots prefer the top joints, but fall back to the bottom joints
+// when top isn't configured. Reaching a top slot from a bottom prestage still
+// plans most of the time; it just works less often than from a shelf-matched
+// one, so an operator can roll out top-shelf prestages per zone as needed.
+func pickShelf(top bool, topJoints, bottomJoints []float64) []float64 {
+	if top && len(topJoints) > 0 {
+		return topJoints
+	}
+	return bottomJoints
 }
 
 func defaultOr(s, fallback string) string {
