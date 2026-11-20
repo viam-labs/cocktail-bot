@@ -30,6 +30,14 @@ func (b *bartender) validateSteps(steps []RecipeStep) error {
 				problems = append(problems, fmt.Sprintf("step %d mix mode %q is not yet supported", i+1, step.MixMode))
 			}
 		case "strain":
+			if b.cfg.StrainerObstacle == "" {
+				problems = append(problems, fmt.Sprintf("step %d strain: strainer_obstacle is not configured", i+1))
+			}
+			for j, later := range steps[i+1:] {
+				if later.Kind != "strain" {
+					problems = append(problems, fmt.Sprintf("step %d %s: must come before the strain step, which fits the strainer for serving", i+j+2, later.Kind))
+				}
+			}
 		default:
 			problems = append(problems, fmt.Sprintf("step %d: unknown kind %q", i+1, step.Kind))
 		}
@@ -114,14 +122,8 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 				return fmt.Errorf("step %d mix mode %q is not yet supported", i+1, mode)
 			}
 		case "strain":
-			b.setPhase("Straining")
-			if err := b.strainShaker(ctx, strainShakerRequest{
-				source:            d.ShakerSource,
-				strainFlow:        d.StrainFlow,
-				shakerHomeStation: d.MixerStation,
-				drainDwellMs:      d.StrainDrainMs,
-				dumpDwellMs:       d.StrainDumpMs,
-			}); err != nil {
+			b.setPhase("Fitting the strainer")
+			if err := b.strain(ctx, d); err != nil {
 				return fmt.Errorf("step %d strain: %w", i+1, err)
 			}
 		default:
@@ -131,11 +133,12 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 
 	// Every drink made in the shaker gets served, including stirred ones.
 	if shaker {
-		// strain leaves shaker-A held and mix ends still holding the shaker
-		// above the mixer, so in both cases pourFromShaker gets a shaker
-		// already in the gripper. Only when neither ran (ice-only or stirred
-		// drinks) is the shaker still sitting at shaker-home with contents,
-		// and only then do we go pick it up before serving.
+		// strain leaves the shaker held with the strainer on and mix ends
+		// still holding the shaker above the mixer, so in both cases
+		// pourFromShaker gets a shaker already in the gripper. Only when
+		// neither ran (ice-only or stirred drinks) is the shaker still sitting
+		// at shaker-home with contents, and only then do we go pick it up
+		// before serving.
 		if !mixed && !strained {
 			shakerSw, err := b.findSwitch(d.ShakerSource)
 			if err != nil {
@@ -155,16 +158,13 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 		if err := b.serveFromShaker(ctx, serveSw, d.ServeMs, glassAllow...); err != nil {
 			return fmt.Errorf("serve: %w", err)
 		}
-		if err := b.putShakerAway(ctx, d); err != nil {
-			return err
-		}
-		// rotateShakers resets the strain-flow bookkeeping (shaker-B back to
-		// shaker-A); only relevant when a strain actually ran.
 		if strained {
-			b.setPhase("Resetting")
-			if err := b.rotateShakers(ctx, d.StrainFlow); err != nil {
-				return fmt.Errorf("rotate: %w", err)
+			if err := b.unstrain(ctx, d); err != nil {
+				return err
 			}
+		}
+		if err := b.putShakerAway(ctx, d, strained); err != nil {
+			return err
 		}
 	}
 	if _, err := b.moveArmToPose(ctx, poseHome); err != nil {
@@ -173,27 +173,54 @@ func (b *bartender) makeCocktail(ctx context.Context, plan drinkPlan) error {
 	return nil
 }
 
-// putShakerAway returns the served shaker home, then cleans it when shaker cleaning
-// is on. The shaker-home poses live on the default serve station, not on a glass's
-// own serve switch.
-func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults) error {
+// unstrain puts the strainer back on its mount and dumps the ice it held back.
+func (b *bartender) unstrain(ctx context.Context, d *RecipeDefaults) error {
+	flowSw, err := b.findSwitch(d.StrainFlow)
+	if err != nil {
+		return fmt.Errorf("strain_flow switch %q: %w", d.StrainFlow, err)
+	}
+	b.setPhase("Returning the strainer")
+	if err := b.returnStrainer(ctx, flowSw); err != nil {
+		return fmt.Errorf("return strainer: %w", err)
+	}
+	b.setPhase("Dumping the ice")
+	if err := b.dumpShakerIce(ctx, flowSw, d.StrainDumpMs); err != nil {
+		return fmt.Errorf("dump ice: %w", err)
+	}
+	return nil
+}
+
+// putShakerAway carries the served shaker straight to the cleaner when shaker
+// cleaning is on, since serving grips it low enough to flip, then returns it home.
+// fromGarbage goes through the cleaner prestage first, since the cleaner may not
+// be reachable straight from where the ice was dumped. The shaker-home poses live
+// on the default serve station, not on a glass's own serve switch.
+func (b *bartender) putShakerAway(ctx context.Context, d *RecipeDefaults, fromGarbage bool) error {
 	homeSw, err := b.findSwitch(d.ServeStation)
 	if err != nil {
 		return fmt.Errorf("serve station switch %q: %w", d.ServeStation, err)
 	}
-	if err := b.returnShakerHome(ctx, homeSw); err != nil {
-		return fmt.Errorf("return shaker home: %w", err)
-	}
 	if sc := b.cfg.ShakerCleaning; sc.enabled() {
+		cleanerSw, err := b.findSwitch(sc.Station)
+		if err != nil {
+			return fmt.Errorf("clean shaker: %w", err)
+		}
 		b.setPhase("Cleaning shaker")
-		if err := b.cleanShaker(ctx, cleanShakerRequest{
-			station:        sc.Station,
+		if fromGarbage && sc.PrestagePose != "" {
+			if _, err := b.carryHeld(ctx, cleanerSw, sc.PrestagePose); err != nil {
+				return fmt.Errorf("clean shaker: prestage after dumping the ice: %w", err)
+			}
+		}
+		if err := b.cleanHeldShaker(ctx, cleanerSw, cleanShakerRequest{
 			powerOnDelayMs: sc.PowerOnDelayMs,
 			dwellMs:        sc.DwellMs,
 			drainMs:        sc.DrainMs,
 		}); err != nil {
 			return fmt.Errorf("clean shaker: %w", err)
 		}
+	}
+	if err := b.returnShakerHome(ctx, homeSw); err != nil {
+		return fmt.Errorf("return shaker home: %w", err)
 	}
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 const (
@@ -26,9 +28,7 @@ type cleanShakerRequest struct {
 }
 
 // cleanShaker picks the shaker up from shaker-home with the cleaner-grab-*
-// poses, rinses it on the cleaner, which sprays while the upside-down shaker
-// is pressed onto it, and sets it back down at shaker-home with the same grip.
-// The grip is lower than the other flows use so the shaker can be flipped.
+// poses, cleans it, and sets it back down at shaker-home with the same grip.
 func (b *bartender) cleanShaker(ctx context.Context, req cleanShakerRequest) error {
 	if b.heldGeomFrame != nil {
 		return errors.New("clean_shaker: gripper must be empty with the shaker at shaker-home")
@@ -37,12 +37,21 @@ func (b *bartender) cleanShaker(ctx context.Context, req cleanShakerRequest) err
 	if err != nil {
 		return err
 	}
-	cleanerAllow := b.cleanerAllowed()
 	grip := b.cleanerGrip()
-
 	if err := b.grabShakerAtHomeUsing(ctx, sw, grip, b.cleanerHeldShakerGeometry()); err != nil {
 		return err
 	}
+	if err := b.cleanHeldShaker(ctx, sw, req); err != nil {
+		return err
+	}
+	return b.returnShakerHomeUsing(ctx, sw, grip)
+}
+
+// cleanHeldShaker carries the held shaker to the cleaner, rinses it upside down
+// on the cleaner, which sprays while the shaker is pressed onto it, and ends
+// holding it upright at cleaner-hover. The grip must be low enough to flip it.
+func (b *bartender) cleanHeldShaker(ctx context.Context, sw toggleswitch.Switch, req cleanShakerRequest) error {
+	cleanerAllow := b.cleanerAllowed()
 	if _, err := b.carryHeldLevel(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("carry to cleaner-hover: %w", err)
 	}
@@ -67,7 +76,7 @@ func (b *bartender) cleanShaker(ctx context.Context, req cleanShakerRequest) err
 	if _, err := b.moveArmToPoseOnSwitch(ctx, sw, poseCleanerHover, cleanerAllow...); err != nil {
 		return fmt.Errorf("flip shaker upright at cleaner-hover: %w", err)
 	}
-	return b.returnShakerHomeUsing(ctx, sw, grip)
+	return nil
 }
 
 func (b *bartender) rinse(ctx context.Context, req cleanShakerRequest) error {

@@ -358,7 +358,7 @@ func TestPutShakerAwayUsesDefaultServeStationNotGlassSwitch(t *testing.T) {
 	b := stationTestBartender(t, "glass-center")
 	b.poseSwitches = []toggleswitch.Switch{poseSwitch("serving-glass-center"), poseSwitch("serve-highball")}
 
-	err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"})
+	err := b.putShakerAway(context.Background(), &RecipeDefaults{ServeStation: "serving-glass-center"}, false)
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "return shaker home")
 	test.That(t, asked["serving-glass-center"], test.ShouldResemble, []any{poseShakerHomeCarryHover})

@@ -60,7 +60,12 @@ type Config struct {
 	ParkingSwitchName        string   `json:"parking_switch_name,omitempty"`
 	LoadingSpotSwitchName    string   `json:"loading_spot_switch_name,omitempty"`
 	MixPrestagePose          string   `json:"mix_prestage_pose,omitempty"`
-	RotatePrestagePose       string   `json:"rotate_prestage_pose,omitempty"`
+	// The hand strainer, which rides on the shaker from strainer-seat until it is back on its mount.
+	StrainerObstacle string `json:"strainer_obstacle,omitempty"`
+	// Only the carried strainer may touch the mount, while it seats into or leaves it.
+	StrainerMountObstacle string `json:"strainer_mount_obstacle,omitempty"`
+	// Arm, gripper, shaker and strainer may enter the shield only on the strainer-* moves.
+	StrainerMountShieldObstacle string `json:"strainer_mount_shield_obstacle,omitempty"`
 	// Joint-space configurations the arm snaps to before each bottle pickup or
 	// return, split by which third of the rack the slot is on. Pins the elbow
 	// branch so hover/grab/lift plan from a known-good config instead of
@@ -112,18 +117,17 @@ func (s *ShakerCleaning) enabled() bool {
 }
 
 type RecipeDefaults struct {
-	ShakerSource  string `json:"shaker_source,omitempty"`
-	IceStation    string `json:"ice_station,omitempty"`
-	MixerStation  string `json:"mixer_station,omitempty"`
-	StrainFlow    string `json:"strain_flow,omitempty"`
-	ServeStation  string `json:"serve_station,omitempty"`
-	IceDwellMs    int    `json:"ice_dwell_ms,omitempty"`
-	MixDwellMs    int    `json:"mix_dwell_ms,omitempty"`
-	StirStation   string `json:"stir_station,omitempty"`
-	StirDwellMs   int    `json:"stir_dwell_ms,omitempty"`
-	ServeMs       int    `json:"serve_ms,omitempty"`
-	StrainDrainMs int    `json:"strain_drain_ms,omitempty"`
-	StrainDumpMs  int    `json:"strain_dump_ms,omitempty"`
+	ShakerSource string `json:"shaker_source,omitempty"`
+	IceStation   string `json:"ice_station,omitempty"`
+	MixerStation string `json:"mixer_station,omitempty"`
+	StrainFlow   string `json:"strain_flow,omitempty"`
+	ServeStation string `json:"serve_station,omitempty"`
+	IceDwellMs   int    `json:"ice_dwell_ms,omitempty"`
+	MixDwellMs   int    `json:"mix_dwell_ms,omitempty"`
+	StirStation  string `json:"stir_station,omitempty"`
+	StirDwellMs  int    `json:"stir_dwell_ms,omitempty"`
+	ServeMs      int    `json:"serve_ms,omitempty"`
+	StrainDumpMs int    `json:"strain_dump_ms,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {

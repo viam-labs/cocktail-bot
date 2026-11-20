@@ -35,14 +35,16 @@ func init() {
 type bartender struct {
 	resource.Named
 	resource.AlwaysRebuild
-	logger          logging.Logger
-	cfg             *Config
-	arm             arm.Arm
-	gripper         gripper.Gripper
-	fsSvc           framesystem.Service
-	poseSwitches    []toggleswitch.Switch
-	heldGeomFrame   referenceframe.Frame
-	parkedGeomFrame referenceframe.Frame
+	logger        logging.Logger
+	cfg           *Config
+	arm           arm.Arm
+	gripper       gripper.Gripper
+	fsSvc         framesystem.Service
+	poseSwitches  []toggleswitch.Switch
+	heldGeomFrame referenceframe.Frame
+	// The hand strainer while it rides on the held shaker, between strainer-seat on the way out and back.
+	heldStrainerFrame referenceframe.Frame
+	parkedGeomFrame   referenceframe.Frame
 	// Glass obstacle at the serving station; the other glass obstacles are left out of planning.
 	stationObstacle string
 	filesaver       *filesaver.Saver

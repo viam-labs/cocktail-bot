@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/viam-labs/cocktail-bot/bartender/order"
+	toggleswitch "go.viam.com/rdk/components/switch"
 )
 
 func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[string]any, error) {
@@ -75,11 +76,11 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["pour_into_shaker"]; ok {
 		return b.handlePourIntoShaker(ctx, raw)
 	}
-	if raw, ok := cmd["strain_shaker"]; ok {
-		return b.handleStrainShaker(ctx, raw)
+	if raw, ok := cmd["attach_strainer"]; ok {
+		return b.handleStrainer(ctx, "attach_strainer", raw, b.attachStrainer)
 	}
-	if raw, ok := cmd["rotate_shakers"]; ok {
-		return b.handleRotateShakers(ctx, raw)
+	if raw, ok := cmd["return_strainer"]; ok {
+		return b.handleStrainer(ctx, "return_strainer", raw, b.returnStrainer)
 	}
 	if _, ok := cmd["get_recipes"]; ok {
 		return b.handleGetRecipes()
@@ -138,7 +139,7 @@ func (b *bartender) DoCommand(ctx context.Context, cmd map[string]any) (map[stri
 	if raw, ok := cmd["move_bottle"]; ok {
 		return b.handleMoveBottle(ctx, raw)
 	}
-	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, open_fridge_door, close_fridge_door, pour_into_shaker, strain_shaker, rotate_shakers, get_recipes, get_glasses, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
+	return nil, fmt.Errorf("unknown command, supported: get_queue, start_next, cancel_order, get_status, cancel, execute_action, pickup_pour_return, grab_bottle, grab_shaker, dispense_ice, pour_into_glasses, find_glass, find_and_pour, find_and_pour_from_shaker, mix, stir, pour_from_shaker, clean_shaker, open_fridge_door, close_fridge_door, pour_into_shaker, attach_strainer, return_strainer, get_recipes, get_glasses, get_pour_menus, get_inventory, get_bottles, update_inventory_item, delete_inventory_item, update_recipes, update_pour_menus, update_slot_assignment, clear_slot_assignment, update_pourer_oz, update_category, update_whiskey_profile, clear_whiskey_profile, make_cocktail, stock_bottle, retrieve_bottle, move_bottle")
 }
 
 func (b *bartender) handleGetQueue() (map[string]any, error) {
@@ -334,12 +335,12 @@ func parseGrabShaker(raw any) (string, string, error) {
 	}
 	source, _ := m["source"].(string)
 	switch source {
-	case "shaker-home", "shaker-a", "shaker-b":
+	case "shaker-home":
 		return switchName, source, nil
 	case "":
-		return "", "", fmt.Errorf("grab_shaker: 'source' is required (shaker-home, shaker-a, or shaker-b)")
+		return "", "", fmt.Errorf("grab_shaker: 'source' is required (shaker-home)")
 	default:
-		return "", "", fmt.Errorf("grab_shaker: 'source' must be shaker-home, shaker-a, or shaker-b, got %q", source)
+		return "", "", fmt.Errorf("grab_shaker: 'source' must be shaker-home, got %q", source)
 	}
 }
 
@@ -1198,10 +1199,16 @@ func parseUpdateRecipes(raw any) ([]Recipe, error) {
 	return recipes, nil
 }
 
-func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string]any, error) {
-	req, err := parseStrainShaker(raw)
+func (b *bartender) handleStrainer(
+	ctx context.Context, name string, raw any, run func(context.Context, toggleswitch.Switch) error,
+) (map[string]any, error) {
+	strainFlow, err := b.parseStrainFlow(name, raw)
 	if err != nil {
 		return nil, err
+	}
+	flowSw, err := b.findSwitch(strainFlow)
+	if err != nil {
+		return nil, fmt.Errorf("%s: strain_flow switch %q: %w", name, strainFlow, err)
 	}
 	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
 	ctx, done, err := b.claim(ctx)
@@ -1210,47 +1217,28 @@ func (b *bartender) handleStrainShaker(ctx context.Context, raw any) (map[string
 	}
 	defer done()
 	start := time.Now()
-	if err := b.strainShaker(ctx, req); err != nil {
+	if err := run(ctx, flowSw); err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"source":         req.source,
-		"strain_flow":    req.strainFlow,
-		"drain_dwell_ms": req.drainDwellMs,
-		"dump_dwell_ms":  req.dumpDwellMs,
-		"duration_ms":    time.Since(start).Milliseconds(),
+		"strain_flow": strainFlow,
+		"duration_ms": time.Since(start).Milliseconds(),
 	}, nil
 }
 
-func parseStrainShaker(raw any) (strainShakerRequest, error) {
+// parseStrainFlow reads an optional strain_flow, falling back to recipe_defaults.strain_flow.
+func (b *bartender) parseStrainFlow(name string, raw any) (string, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: expected object, got %T", raw)
+		return "", fmt.Errorf("%s: expected object, got %T", name, raw)
 	}
-	source, _ := m["source"].(string)
-	if source == "" {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'source' is required")
+	if strainFlow, _ := m["strain_flow"].(string); strainFlow != "" {
+		return strainFlow, nil
 	}
-	strainFlow, _ := m["strain_flow"].(string)
-	if strainFlow == "" {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: 'strain_flow' is required")
+	if d := b.cfg.RecipeDefaults; d != nil && d.StrainFlow != "" {
+		return d.StrainFlow, nil
 	}
-	drainDwellMs, err := intField(m, "drain_dwell_ms")
-	if err != nil {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
-	}
-	dumpDwellMs, err := intField(m, "dump_dwell_ms")
-	if err != nil {
-		return strainShakerRequest{}, fmt.Errorf("strain_shaker: %w", err)
-	}
-	shakerHomeStation, _ := m["shaker_home_station"].(string)
-	return strainShakerRequest{
-		source:            source,
-		strainFlow:        strainFlow,
-		shakerHomeStation: shakerHomeStation,
-		drainDwellMs:      drainDwellMs,
-		dumpDwellMs:       dumpDwellMs,
-	}, nil
+	return "", fmt.Errorf("%s: 'strain_flow' is required when recipe_defaults.strain_flow is unset", name)
 }
 
 func intField(m map[string]any, name string) (int, error) {
@@ -1279,39 +1267,6 @@ func optionalIntField(m map[string]any, name string) (int, error) {
 		return 0, nil
 	}
 	return intField(m, name)
-}
-
-func (b *bartender) handleRotateShakers(ctx context.Context, raw any) (map[string]any, error) {
-	strainFlow, err := parseRotateShakers(raw)
-	if err != nil {
-		return nil, err
-	}
-	ctx = ctxWithOrderID(ctx, "manual-"+time.Now().UTC().Format("20060102_150405"))
-	ctx, done, err := b.claim(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	start := time.Now()
-	if err := b.rotateShakers(ctx, strainFlow); err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"strain_flow": strainFlow,
-		"duration_ms": time.Since(start).Milliseconds(),
-	}, nil
-}
-
-func parseRotateShakers(raw any) (string, error) {
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("rotate_shakers: expected object, got %T", raw)
-	}
-	strainFlow, _ := m["strain_flow"].(string)
-	if strainFlow == "" {
-		return "", fmt.Errorf("rotate_shakers: 'strain_flow' is required")
-	}
-	return strainFlow, nil
 }
 
 func (b *bartender) handleMakeCocktail(_ context.Context, raw any) (map[string]any, error) {

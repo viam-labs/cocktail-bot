@@ -70,7 +70,7 @@ func (b *bartender) pourFromShakerAt(ctx context.Context, sw toggleswitch.Switch
 // own pose speed, so only the part of the tilt that pours runs slow.
 func (b *bartender) serveFromShakerAt(ctx context.Context, sw toggleswitch.Switch, pourMs int, approach, preTilt, tilt *poseData, glassAllow ...AllowedCollision) error {
 	if b.heldGeomFrame == nil {
-		return errors.New("pour_from_shaker: shaker must already be in the gripper (call strain_shaker first in a chain)")
+		return errors.New("pour_from_shaker: shaker must already be in the gripper (pick it up first in a chain)")
 	}
 	station := sw.Name().ShortName()
 
