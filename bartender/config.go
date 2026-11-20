@@ -66,6 +66,24 @@ type Config struct {
 	StrainerMountObstacle string `json:"strainer_mount_obstacle,omitempty"`
 	// Arm, gripper, shaker and strainer may enter the shield only on the strainer-* moves.
 	StrainerMountShieldObstacle string `json:"strainer_mount_shield_obstacle,omitempty"`
+	// Joint-space configurations the arm snaps to before each bottle pickup or
+	// return, split by which third of the rack the slot is on. Pins the elbow
+	// branch so hover/grab/lift plan from a known-good config instead of
+	// whatever branch IK picked up from the prior move — cbirrt otherwise
+	// fails on mid-array slots when the previous move left the arm in the
+	// wrong IK family. Letter strings assign each slot letter to a zone; a
+	// letter in none of the strings, or a zone with an empty joint array, is
+	// a no-op for that slot.
+	//
+	// TODO(bandaid): remove once Dan G's motion planning improvements land —
+	// those should pick the correct IK branch itself without the caller
+	// pre-pinning the config.
+	BottlePrestageLeftJoints    []float64 `json:"bottle_prestage_left_joints_degs,omitempty"`
+	BottlePrestageMiddleJoints  []float64 `json:"bottle_prestage_middle_joints_degs,omitempty"`
+	BottlePrestageRightJoints   []float64 `json:"bottle_prestage_right_joints_degs,omitempty"`
+	BottlePrestageLeftLetters   string    `json:"bottle_prestage_left_letters,omitempty"`
+	BottlePrestageMiddleLetters string    `json:"bottle_prestage_middle_letters,omitempty"`
+	BottlePrestageRightLetters  string    `json:"bottle_prestage_right_letters,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.

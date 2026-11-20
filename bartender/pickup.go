@@ -3,6 +3,7 @@ package bartender
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	toggleswitch "go.viam.com/rdk/components/switch"
@@ -103,6 +104,9 @@ func (b *bartender) bottleSpotAllowed(name string, extra []AllowedCollision) []A
 
 func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
+	if err := b.sidePrestage(ctx, name); err != nil {
+		return err
+	}
 	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.moveArmToPoseOnSwitch(ctx, bottleSw, poseHover, allowed...); err != nil {
 		return fmt.Errorf("hover %s: %w", name, err)
@@ -126,6 +130,54 @@ func (b *bartender) pickupBottleAt(ctx context.Context, bottleSw toggleswitch.Sw
 		return fmt.Errorf("carry-hover %s: %w", name, err)
 	}
 	return nil
+}
+
+// sidePrestage snaps the arm to the joint configuration for the zone the given
+// slot is on, so hover/grab/lift plan from a known-good config instead of
+// whichever IK branch the prior move's end pose happened to land in. Any slot
+// letter not covered by a configured zone, or a zone with an empty joint
+// array, is a no-op for that slot.
+//
+// TODO(bandaid): drop this once Dan G's motion planning improvements land.
+// The planner should pick the correct IK branch itself without the caller
+// pre-pinning the configuration.
+func (b *bartender) sidePrestage(ctx context.Context, slotName string) error {
+	joints := b.sidePrestageJoints(slotName)
+	if len(joints) == 0 {
+		return nil
+	}
+	pd := &poseData{jointPositionsDegs: joints}
+	label := "side-prestage:" + slotName
+	if _, err := b.moveToJoints(ctx, pd, label, nil, nil); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
+}
+
+func (b *bartender) sidePrestageJoints(slotName string) []float64 {
+	if !strings.HasPrefix(slotName, "slot-") || len(slotName) < len("slot-x") {
+		return nil
+	}
+	letter := slotName[len("slot-")]
+	left := defaultOr(b.cfg.BottlePrestageLeftLetters, "abcd")
+	middle := defaultOr(b.cfg.BottlePrestageMiddleLetters, "ef")
+	right := defaultOr(b.cfg.BottlePrestageRightLetters, "ghij")
+	switch {
+	case strings.IndexByte(left, letter) >= 0:
+		return b.cfg.BottlePrestageLeftJoints
+	case strings.IndexByte(middle, letter) >= 0:
+		return b.cfg.BottlePrestageMiddleJoints
+	case strings.IndexByte(right, letter) >= 0:
+		return b.cfg.BottlePrestageRightJoints
+	}
+	return nil
+}
+
+func defaultOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // shakerGrip names the poses one way of gripping the shaker at shaker-home
@@ -269,6 +321,9 @@ func (b *bartender) returnBottle(ctx context.Context, bottleSw toggleswitch.Swit
 
 func (b *bartender) returnBottleAt(ctx context.Context, bottleSw toggleswitch.Switch, extra []AllowedCollision) error {
 	name := bottleSw.Name().ShortName()
+	if err := b.sidePrestage(ctx, name); err != nil {
+		return err
+	}
 	allowed := b.bottleSpotAllowed(name, extra)
 	if _, err := b.carryHeldLevel(ctx, bottleSw, poseCarryHover, allowed...); err != nil {
 		return fmt.Errorf("carry back to %s carry-hover: %w", name, err)
