@@ -1,14 +1,14 @@
 import type { Inventory, Slot } from "./inventory";
+import { RACK, parseSlotId } from "./slots";
 
 export type StockingAction = "place" | "move" | "retrieve" | "swap";
 
 // slotLabel formats "slot-j-bottom-back" as "Bottom back J" to match how slots
-// are titled on the inventory page.
+// are titled on the inventory page, and "fridge-a-top-front" as "Fridge top front A".
 export function slotLabel(id: string): string {
-  const parts = id.split("-");
-  const letter = (parts[1] ?? "").toUpperCase();
-  const row = parts
-    .slice(2)
+  const { place, letter, shelf, depth } = parseSlotId(id);
+  const row = [place === RACK ? "" : place, shelf, ...depth.split("-")]
+    .filter(Boolean)
     .join(" ")
     .replace(/^./, (c) => c.toUpperCase());
   return row ? `${row} ${letter}` : letter;

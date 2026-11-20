@@ -33,6 +33,7 @@ import type { Inventory } from "./lib/inventory";
 import { isAvailable } from "./lib/inventory";
 import { Nav } from "./nav";
 import { titleCase as cap } from "./lib/display";
+import { parseSlotId, placeName } from "./lib/slots";
 import styles from "./recipes.module.css";
 
 type IdStep = { id: string; step: RecipeStep };
@@ -324,9 +325,10 @@ function RecipeStatusLine({ status }: { status: RecipeStatus }) {
 }
 
 function slotLabel(slotId: string): string {
-  const parts = slotId.split("-");
-  const letter = (parts[1] ?? "").toUpperCase();
-  return letter ? `Slot ${letter}` : slotId;
+  const { place, letter } = parseSlotId(slotId);
+  if (!letter) return slotId;
+  const name = placeName(place);
+  return name ? `${name} slot ${letter}` : `Slot ${letter}`;
 }
 
 function tiltsLine(oz: number, pourerOz: number | undefined): string | null {
