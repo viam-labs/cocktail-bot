@@ -44,7 +44,10 @@ type bartender struct {
 	heldGeomFrame referenceframe.Frame
 	// The hand strainer while it rides on the held shaker, between strainer-seat on the way out and back.
 	heldStrainerFrame referenceframe.Frame
-	parkedGeomFrame   referenceframe.Frame
+	// The attachment on the shaker's rim while the shaker is gripped, and while it stands set down away from shaker-home.
+	heldShakerAttachmentFrame   referenceframe.Frame
+	parkedShakerAttachmentFrame referenceframe.Frame
+	parkedGeomFrame             referenceframe.Frame
 	// Glass obstacle at the serving station; the other glass obstacles are left out of planning.
 	stationObstacle string
 	filesaver       *filesaver.Saver

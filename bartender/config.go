@@ -84,6 +84,8 @@ type Config struct {
 	BottlePrestageLeftLetters   string    `json:"bottle_prestage_left_letters,omitempty"`
 	BottlePrestageMiddleLetters string    `json:"bottle_prestage_middle_letters,omitempty"`
 	BottlePrestageRightLetters  string    `json:"bottle_prestage_right_letters,omitempty"`
+	// The attachment clamped to the shaker's rim, as it stands at shaker-home. It rides with the shaker.
+	ShakerAttachmentObstacle string `json:"shaker_attachment_obstacle,omitempty"`
 	// Incoming webhook URL for order outcome alerts; empty disables.
 	SlackWebhookURL string `json:"slack_webhook_url,omitempty"`
 	// Viam machine id; when set, failure alerts include a deep-link to app.viam.com machine logs.

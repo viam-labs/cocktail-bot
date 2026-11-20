@@ -46,7 +46,7 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on shaker: %w", err)
 	}
-	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeldShaker(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker: %w", err)
 	}
 	if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
@@ -59,7 +59,7 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.linearCarryToPose(ctx, sw, poseDepositPlace, iceAllow...); err != nil {
 		return fmt.Errorf("linear-place shaker at deposit: %w", err)
 	}
-	if err := b.gripperOpen(ctx); err != nil {
+	if err := b.setShakerDownAway(ctx); err != nil {
 		return fmt.Errorf("release shaker at deposit: %w", err)
 	}
 	if _, err := b.linearMoveToPose(ctx, sw, poseDepositDescend, iceAllow...); err != nil {
@@ -100,7 +100,7 @@ func (b *bartender) dispenseIce(ctx context.Context, stationSwitchName string, d
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on shaker with ice: %w", err)
 	}
-	if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
+	if err := b.attachHeldShaker(ctx, b.cfg.HeldShakerGeometry); err != nil {
 		return fmt.Errorf("attach held shaker with ice: %w", err)
 	}
 	if _, err := b.linearCarryToPose(ctx, sw, poseDepositApproach, iceAllow...); err != nil {

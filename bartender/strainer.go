@@ -185,7 +185,8 @@ func carriedObstacleFrame(
 	var found []spatialmath.Geometry
 	for _, inFrame := range all {
 		for _, g := range inFrame.Geometries() {
-			if g.Label() == obstacle {
+			// A configured component's geometry is labeled after its "<name>_origin" frame.
+			if g.Label() == obstacle || g.Label() == obstacle+"_origin" {
 				found = append(found, g)
 			}
 		}

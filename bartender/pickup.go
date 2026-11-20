@@ -234,7 +234,7 @@ func (b *bartender) grabShakerAtHomeUsing(ctx context.Context, sw toggleswitch.S
 	if _, err := b.gripper.Grab(ctx, nil); err != nil {
 		return fmt.Errorf("close gripper on shaker: %w", err)
 	}
-	if err := b.attachHeld(ctx, held); err != nil {
+	if err := b.attachHeldShaker(ctx, held); err != nil {
 		return fmt.Errorf("attach held shaker: %w", err)
 	}
 	if _, err := b.carryHeldLevel(ctx, sw, grip.carryHover, shakerAllow...); err != nil {
@@ -294,7 +294,7 @@ func (b *bartender) pickupShaker(ctx context.Context, sw toggleswitch.Switch, so
 		if _, err := b.gripper.Grab(ctx, nil); err != nil {
 			return fmt.Errorf("close gripper on shaker-home: %w", err)
 		}
-		if err := b.attachHeld(ctx, b.cfg.HeldShakerGeometry); err != nil {
+		if err := b.attachHeldShaker(ctx, b.cfg.HeldShakerGeometry); err != nil {
 			return fmt.Errorf("attach held shaker from shaker-home: %w", err)
 		}
 		if _, err := b.carryHeldLevel(ctx, sw, poseShakerHomeCarryHover, shakerAllow...); err != nil {
