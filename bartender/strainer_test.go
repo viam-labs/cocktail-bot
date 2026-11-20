@@ -10,18 +10,18 @@ import (
 	"go.viam.com/test"
 )
 
-// strainerFrameSystem has a grip point at gripPose and a strainer obstacle box at strainerPose.
+// strainerFrameSystem has a grip point at gripPose and a strainer obstacle box at strainerPose, built from
+// config parts the way the machine's frame system is.
 func strainerFrameSystem(t *testing.T, gripPose, strainerPose spatialmath.Pose) *referenceframe.FrameSystem {
 	t.Helper()
-	fs := referenceframe.NewEmptyFrameSystem("strainer")
-	grip, err := referenceframe.NewStaticFrame(gripPointFrameName, gripPose)
+	box, err := spatialmath.NewBox(spatialmath.NewZeroPose(), r3.Vector{X: 200, Y: 125, Z: 50}, "")
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, fs.AddFrame(grip, fs.World()), test.ShouldBeNil)
-	box, err := spatialmath.NewBox(strainerPose, r3.Vector{X: 200, Y: 125, Z: 50}, "strainer")
+	parts := []*referenceframe.FrameSystemPart{
+		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, gripPose, gripPointFrameName, nil)},
+		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, strainerPose, "strainer", box)},
+	}
+	fs, err := referenceframe.NewFrameSystem("strainer", parts, nil)
 	test.That(t, err, test.ShouldBeNil)
-	obstacle, err := referenceframe.NewStaticFrameWithGeometry("strainer", spatialmath.NewZeroPose(), box)
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, fs.AddFrame(obstacle, fs.World()), test.ShouldBeNil)
 	return fs
 }
 
