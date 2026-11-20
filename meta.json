@@ -29,6 +29,11 @@
       "api": "rdk:component:sensor",
       "model": "viam:cocktail-bot:maintenance-sensor",
       "short_description": "is_safe=false while arm is moving or bartender has orders queued or running."
+    },
+    {
+      "api": "rdk:component:sensor",
+      "model": "viam:cocktail-bot:inventory-sensor",
+      "short_description": "Snapshots bartender inventory and slot assignments on change and hourly for capture by Data Management."
     }
   ],
   "entrypoint": "bin/cocktail-bot",
