@@ -3,6 +3,8 @@ package bartender
 import (
 	"context"
 	"math"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,19 +189,35 @@ func TestCarryToJointPoseEndsAtThoseJoints(t *testing.T) {
 	}
 }
 
-// The wrist is level, so a full turn of J6 rolls a shaker gripped from the side upside down and back.
+// The wrist starts level, holding a shaker from the side, and the straight joint path to a full turn of
+// J6 rolls it upside down and back.
 func TestCarryToJointPoseKeepsASideHeldObjectLevel(t *testing.T) {
-	startDegs := []float64{0, -90, 90, 0, -90, -90}
-	poseDegs := []float64{0, -90, 90, 0, -90, 270}
+	carryHeldShakerToJointPose(t, heldServeFrameSystem(t), &HeldObjectGeometry{Type: "cylinder", RadiusMM: 10, LengthMM: 50},
+		[]float64{0, -90, 90, 0, -90, -90}, []float64{0, -90, 90, 0, -90, 270}, true)
+}
+
+// The machine's serve-approach (rocks glass) and cleaner-hover joints on 2026-11-19, when this carry failed
+// to plan: the shaker stays upright, but the gripper turns to face the other way.
+func TestCarryFromServeApproachToCleanerHover(t *testing.T) {
+	carryHeldShakerToJointPose(t, xarm850FrameSystem(t), &HeldObjectGeometry{Type: "cylinder", RadiusMM: 38, LengthMM: 166, ZOffsetMM: -35.93},
+		[]float64{-29.2129, -71.6603, -96.752, -116.2623, 100.6769, 23.2066},
+		[]float64{-67.9021, -34.6367, -24.5059, 26.5218, 96.0237, 7.0845}, false)
+}
+
+// carryHeldShakerToJointPose grabs the shaker upright at startDegs, carries it level to a joint-space pose at
+// poseDegs, and checks it ends at those joints without tilting past the no-spill tolerance. A refusal
+// passes only when mayRefuse, and only once the planner has searched.
+func carryHeldShakerToJointPose(t *testing.T, parts []*referenceframe.FrameSystemPart, shaker *HeldObjectGeometry, startDegs, poseDegs []float64, mayRefuse bool) {
+	t.Helper()
 	b, sw, executed := jointPoseBartender(t, startDegs, poseDegs)
 	fsSvc := inject.NewFrameSystemService("fs")
 	fsSvc.FrameSystemConfigFunc = func(context.Context) (*framesystem.Config, error) {
-		return &framesystem.Config{Parts: heldServeFrameSystem(t)}, nil
+		return &framesystem.Config{Parts: parts}, nil
 	}
 	b.fsSvc = fsSvc
 	b.cfg.GripperName = "gripper"
 	ctx := context.Background()
-	test.That(t, b.attachHeld(ctx, &HeldObjectGeometry{Type: "cylinder", RadiusMM: 10, LengthMM: 50}), test.ShouldBeNil)
+	test.That(t, b.attachHeld(ctx, shaker), test.ShouldBeNil)
 	fs, inputs, err := b.currentInputs(ctx)
 	test.That(t, err, test.ShouldBeNil)
 	heldAxis := func(joints []referenceframe.Input) r3.Vector {
@@ -209,15 +227,18 @@ func TestCarryToJointPoseKeepsASideHeldObjectLevel(t *testing.T) {
 		return tf.(*referenceframe.PoseInFrame).Pose().Orientation().OrientationVectorRadians().Vector()
 	}
 	upright := heldAxis(degsToInputs(startDegs))
-	midway := degsToInputs([]float64{0, -90, 90, 0, -90, 90})
-	test.That(t, upright.Angle(heldAxis(midway)).Degrees(), test.ShouldAlmostEqual, 180, 1)
 
-	planCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	planCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if _, err := b.carryHeldLevel(planCtx, sw, "cleaner-hover"); err != nil {
-		// Refusing is fine; failing before the planner searched is not.
+	_, err = b.carryHeldLevel(planCtx, sw, "cleaner-hover")
+	if err != nil && mayRefuse {
 		test.That(t, planCtx.Err(), test.ShouldNotBeNil)
 		return
+	}
+	test.That(t, err, test.ShouldBeNil)
+	last := (*executed)[len(*executed)-1]
+	for i, want := range degsToInputs(poseDegs) {
+		test.That(t, last[i], test.ShouldAlmostEqual, want, 1e-6)
 	}
 	prev := degsToInputs(startDegs)
 	for _, next := range *executed {
@@ -226,10 +247,32 @@ func TestCarryToJointPoseKeepsASideHeldObjectLevel(t *testing.T) {
 			for i := range next {
 				joints[i] = prev[i] + (next[i]-prev[i])*float64(step)/20
 			}
-			tiltDegs := upright.Angle(heldAxis(joints)).Degrees()
-			test.That(t, tiltDegs, test.ShouldBeLessThan, defaultNoSpillOrientationToleranceDegs+5)
+			test.That(t, upright.Angle(heldAxis(joints)).Degrees(), test.ShouldBeLessThan, defaultNoSpillOrientationToleranceDegs+5)
 		}
 		prev = next
+	}
+}
+
+// xarm850FrameSystem is the bartender's xArm850, with link_6 renamed link6 as in the URDF the machine loads,
+// and a gripper whose grip point sits 235 mm out from the flange like the machine's.
+func xarm850FrameSystem(t *testing.T) []*referenceframe.FrameSystemPart {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/xarm850_kinematics.json")
+	test.That(t, err, test.ShouldBeNil)
+	armModel, err := referenceframe.UnmarshalModelJSON([]byte(strings.ReplaceAll(string(raw), "link_6", "link6")), "arm")
+	test.That(t, err, test.ShouldBeNil)
+	gripperModel, err := referenceframe.UnmarshalModelJSON([]byte(`{"name": "gripper", "links": [
+		{"id": "case-gripper", "parent": "world", "geometry": {"type": "box", "x": 60, "y": 60, "z": 60, "translation": {"x": 0, "y": 0, "z": 30}}},
+		{"id": "claws", "parent": "case-gripper", "geometry": {"type": "box", "x": 20, "y": 60, "z": 60, "translation": {"x": 0, "y": 0, "z": 100}}}
+	]}`), "gripper")
+	test.That(t, err, test.ShouldBeNil)
+	clawsMiddle, err := spatialmath.NewBox(spatialmath.NewZeroPose(), r3.Vector{X: 42, Y: 55, Z: 115}, "claws-middle")
+	test.That(t, err, test.ShouldBeNil)
+	return []*referenceframe.FrameSystemPart{
+		{FrameConfig: referenceframe.NewLinkInFrame(referenceframe.World, spatialmath.NewZeroPose(), "arm", nil), ModelFrame: armModel},
+		{FrameConfig: referenceframe.NewLinkInFrame("arm", spatialmath.NewPoseFromPoint(r3.Vector{Z: 105}), "gripper", nil), ModelFrame: gripperModel},
+		{FrameConfig: referenceframe.NewLinkInFrame("gripper", spatialmath.NewPoseFromPoint(r3.Vector{Z: 90}), "claws-middle", clawsMiddle)},
+		{FrameConfig: referenceframe.NewLinkInFrame("gripper", spatialmath.NewPoseFromPoint(r3.Vector{Z: 130}), gripPointFrameName, nil)},
 	}
 }
 
